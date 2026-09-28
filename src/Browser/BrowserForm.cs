@@ -882,7 +882,7 @@ sealed class BrowserForm : Form
                 var query = new Uri(e.Request.Uri).Query;
                 var m = Regex.Match(query, @"[?&]from=(-?\d+)");
                 long from = m.Success && long.TryParse(m.Groups[1].Value, out var n) ? n : -1;
-                var json = ProgramLog.Chunk(p, from, App.Current.RunningIds.Contains(p.Id));
+                var json = ProgramLog.Chunk(p, from, App.Current.RunningIds.Contains(p.Id), App.Current.LauncherFor(p));
                 e.Response = env.CreateWebResourceResponse(ProgramLog.Bytes(json), 200, "OK", ProgramLog.JsonHeaders);
             }
         }
@@ -932,6 +932,12 @@ sealed class BrowserForm : Form
                 break;
             case "input" when project != null && Text("text") is { } typed:
                 if (App.Current.RunningIds.Contains(project.Id)) App.Current.LauncherFor(project).Send(typed);
+                break;
+            case "command" when project != null && Text("text") is { } line:
+                App.Current.LauncherFor(project).Run(line);
+                break;
+            case "stopCommand" when project != null:
+                App.Current.LauncherFor(project).StopCommand();
                 break;
             case "stop" when project != null:
                 App.Current.StopProject(project.Id);

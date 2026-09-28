@@ -249,6 +249,7 @@ sealed class App : ApplicationContext
     public void DeleteProject(Project p)
     {
         StopProject(p.Id);
+        if (launchers.TryGetValue(p.Id, out var launcher)) launcher.StopCommand();
         launchers.Remove(p.Id);
         Icons.Delete(p.Icon);
         ProjectStore.Delete(p.Id);
@@ -335,7 +336,11 @@ sealed class App : ApplicationContext
     {
         exiting = true;
         SystemEvents.UserPreferenceChanged -= OnUserPreferenceChanged; // a static event holds on to this
-        foreach (var launcher in launchers.Values) launcher.Stop();
+        foreach (var launcher in launchers.Values)
+        {
+            launcher.Stop();
+            launcher.StopCommand();
+        }
         base.ExitThreadCore();
     }
 }

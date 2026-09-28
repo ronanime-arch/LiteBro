@@ -37,6 +37,18 @@ sealed class Tab
     public int NetGeneration;
     /// <summary>The journal's listener to responses, only while it is on: each response it hears crosses to this process.</summary>
     public EventHandler<CoreWebView2WebResourceResponseReceivedEventArgs>? NetResponse;
+    /// <summary>
+    /// Pages beyond the engine's history: left behind when the WebView was replaced (a profile change, an unload)
+    /// or by a step out of that history. The last one is the nearest.
+    /// </summary>
+    public readonly List<string> Before = new(), Ahead = new();
+    /// <summary>Entries of the engine's history below this one were stepped out of: they are in Ahead or Before now.</summary>
+    public int Floor;
+    /// <summary>The engine's history as last read, and the entry the tab is on.</summary>
+    public string[] Trail = Array.Empty<string>();
+    public int TrailAt;
+    /// <summary>A page from Before or Ahead is being opened: it does not drop Ahead as a new page would.</summary>
+    public bool Stepping;
 
     /// <summary>The address the tab stands for: the project's (or its link's) while its start or failure page is shown.</summary>
     public string Site => ShowingInternalPage && FailedUrl != null ? FailedUrl

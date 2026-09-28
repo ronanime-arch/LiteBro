@@ -101,8 +101,8 @@ sealed class BrowserForm : Form
         Size = new Size(1100, 800);
         MinimumSize = new Size(480, 320);
 
-        back = MakeButton(GlyphBack, "Назад (Alt+←)", () => Core?.GoBack());
-        forward = MakeButton(GlyphForward, "Вперёд (Alt+→)", () => Core?.GoForward());
+        back = MakeButton(GlyphBack, "Назад (Alt+←)", () => Step(-1));
+        forward = MakeButton(GlyphForward, "Вперёд (Alt+→)", () => Step(1));
         reload = MakeButton(GlyphReload, "Обновить (F5)", ReloadOrStop);
         reset = MakeButton(GlyphReset, "Сбросить Service Worker и кэш сайта, загрузить заново (Ctrl+Shift+R)", ResetSite);
         reset.Visible = false;
@@ -371,7 +371,12 @@ sealed class BrowserForm : Form
             tab.Address = core.Source;
             ShowState(tab);
         };
-        core.HistoryChanged += (_, _) => ShowState(tab);
+        core.HistoryChanged += async (_, _) =>
+        {
+            ShowState(tab);
+            // Read now: when the WebView is replaced there is no time to ask it
+            if (await HistoryOf(core) is { } h && tab.Core == core) Remember(tab, h);
+        };
         core.NavigationStarting += (_, e) =>
         {
             // A search typed on Google's own page keeps the picked country; history is left as it was
@@ -395,6 +400,10 @@ sealed class BrowserForm : Form
                 }));
                 return;
             }
+            // A new page drops what was ahead, as the engine drops its own forward entries; this program's pages do not
+            if (e.NavigationKind == CoreWebView2NavigationKind.NewDocument && !e.IsRedirected && !tab.Stepping && !e.Uri.StartsWith("data:"))
+                tab.Ahead.Clear();
+            tab.Stepping = false;
             // Back on the start page nothing is to be tried again on F5
             if (Home.Is(e.Uri)) tab.LastProject = null;
             if (Home.Is(e.Uri) || !(e.Uri.StartsWith("about:") || e.Uri.StartsWith("data:")))
@@ -463,6 +472,7 @@ sealed class BrowserForm : Form
         await Task.Yield(); // maybe called from the old WebView's own event: closed after it returns
         if (tab.Ctl != old || tab.Profile != profile) return false;
         StopTerm(tab);
+        KeepHistory(tab, current: true, ahead: false);
         tab.Ctl = null;
         tab.Suspended = tab.Loading = tab.PlayingAudio = false;
         old.Close();
@@ -1017,6 +1027,8 @@ sealed class BrowserForm : Form
         if (tab.Ctl is not { } c) return;
         // A project's start or failure page comes back as the project's own address, never as a new start
         tab.Address = tab.Site;
+        KeepHistory(tab, current: false, ahead: true);
+        tab.Stepping = true; // loaded again when picked: what was ahead stays
         tab.Ctl = null;
         tab.Suspended = tab.Loading = tab.PlayingAudio = false;
         c.Close();
@@ -1359,6 +1371,116 @@ sealed class BrowserForm : Form
         foreach (var link in p.Links.ToList()) await OpenProjectInNewTabAsync(p, front: false, link.Url);
     }
 
+    /// <summary>
+    /// Back (-1) or forward (1) in the tab in front. This program's own pages (a project's start or failure page)
+    /// and the address they stood for are passed over, else back from a project would land on its start page again.
+    /// Past the engine's history come the pages of the WebViews the tab had before; a tab with nothing behind it
+    /// goes back to the tiles.
+    /// </summary>
+    async void Step(int dir)
+    {
+        if (active is not { } tab || tab.Core is not { } core) return;
+        var h = await HistoryOf(core);
+        if (tab.Core != core) return;
+        if (h == null)
+        {
+            try { if (dir < 0) core.GoBack(); else core.GoForward(); }
+            catch (Exception) { }
+            return;
+        }
+        Remember(tab, h.Value);
+        var (urls, ids, at) = h.Value;
+        if (at < tab.Floor) // went below it by the mouse's own back button: the rest no longer lines up
+        {
+            tab.Floor = 0;
+            tab.Before.Clear();
+            tab.Ahead.Clear();
+        }
+        var here = tab.Site;
+        for (var i = at + dir; i >= tab.Floor && i < urls.Length; i += dir)
+        {
+            if (!IsPage(urls[i]) || urls[i] == here) continue;
+            try { await core.CallDevToolsProtocolMethodAsync("Page.navigateToHistoryEntry", $"{{\"entryId\":{ids[i]}}}"); }
+            catch (Exception) { }
+            return;
+        }
+        var from = dir < 0 ? tab.Before : tab.Ahead;
+        string? target = null;
+        while (target == null && from.Count > 0)
+        {
+            target = from[from.Count - 1];
+            from.RemoveAt(from.Count - 1);
+            if (target == here) target = null;
+        }
+        if (target == null && dir < 0 && !Home.IsTiles(here)) target = Home.Url;
+        if (target == null) return;
+        // The engine's entries on the other side, and this page, move over: the new page cuts them off
+        if (dir < 0)
+        {
+            for (var i = urls.Length - 1; i > at; i--) if (IsPage(urls[i])) tab.Ahead.Add(urls[i]);
+            if (IsPage(here)) tab.Ahead.Add(here);
+        }
+        else
+        {
+            for (var i = tab.Floor; i < at; i++) if (IsPage(urls[i])) tab.Before.Add(urls[i]);
+            if (IsPage(here)) tab.Before.Add(here);
+        }
+        tab.Floor = at + 1;
+        tab.Stepping = true;
+        if (Home.Is(target)) tab.LastProject = null;
+        core.Navigate(target);
+    }
+
+    /// <summary>An address worth going back to: not about:blank nor this program's start or failure page.</summary>
+    static bool IsPage(string url) => url.Length > 0 && !url.StartsWith("about:") && !url.StartsWith("data:");
+
+    /// <summary>The engine's history of a WebView: addresses, their entry ids, and the entry it is on.</summary>
+    static async Task<(string[] urls, int[] ids, int at)?> HistoryOf(CoreWebView2 core)
+    {
+        try
+        {
+            var h = ProjectStore.Json.Deserialize<NavHistory>(await core.CallDevToolsProtocolMethodAsync("Page.getNavigationHistory", "{}"));
+            if (h?.entries == null || h.entries.Count == 0) return null;
+            return (h.entries.Select(x => x.url ?? "").ToArray(), h.entries.Select(x => x.id).ToArray(), h.currentIndex);
+        }
+        catch (Exception) { return null; }
+    }
+
+    internal sealed class NavHistory
+    {
+        public int currentIndex { get; set; }
+        public List<NavEntry>? entries { get; set; }
+    }
+
+    internal sealed class NavEntry
+    {
+        public int id { get; set; }
+        public string? url { get; set; }
+    }
+
+    static void Remember(Tab tab, (string[] urls, int[] ids, int at) h)
+    {
+        tab.Trail = h.urls;
+        tab.TrailAt = h.at;
+    }
+
+    /// <summary>The tab's WebView is about to be replaced: its history goes on in Before (and Ahead).</summary>
+    static void KeepHistory(Tab tab, bool current, bool ahead)
+    {
+        // A step already moved it over
+        if (!tab.Stepping)
+        {
+            var t = tab.Trail;
+            for (var i = tab.Floor; i < tab.TrailAt && i < t.Length; i++) if (IsPage(t[i])) tab.Before.Add(t[i]);
+            if (current && IsPage(tab.Site)) tab.Before.Add(tab.Site);
+            if (ahead) for (var i = t.Length - 1; i > tab.TrailAt; i--) if (IsPage(t[i])) tab.Ahead.Add(t[i]);
+        }
+        // Consecutive repeats come from a page and its own start page, say
+        for (var i = tab.Before.Count - 1; i > 0; i--) if (tab.Before[i] == tab.Before[i - 1]) tab.Before.RemoveAt(i);
+        tab.Trail = Array.Empty<string>();
+        tab.Floor = 0;
+    }
+
     /// <summary>The start page with the project tiles.</summary>
     void GoHome()
     {
@@ -1381,6 +1503,8 @@ sealed class BrowserForm : Form
             ShowInternalPage(tab, Pages.Starting(p, url.AbsoluteUri, launcher));
             // The address the program prints stands for the project's own, never for a link
             var error = await launcher.StartAndWaitAsync(url, printed: link == null);
+            // Left while it started (back to the tiles, say): the tab stays where it went
+            if (tab.LastProject != p || !tab.ShowingInternalPage) return;
             if (error != null)
             {
                 ShowInternalPage(tab, Pages.Failed(p, error, launcher.LogTail()));
@@ -1765,9 +1889,9 @@ sealed class BrowserForm : Form
             case Keys.Alt | Keys.Home:
                 return GoHome;
             case Keys.Alt | Keys.Left:
-                return () => Core?.GoBack();
+                return () => Step(-1);
             case Keys.Alt | Keys.Right:
-                return () => Core?.GoForward();
+                return () => Step(1);
             case Keys.F5:
             case Keys.Control | Keys.R:
                 return ReloadOrStop;

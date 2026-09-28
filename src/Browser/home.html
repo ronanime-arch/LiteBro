@@ -1,0 +1,399 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<title>Проекты</title>
+<style>
+:root {
+  color-scheme: light dark;
+  --bg: #f2f3f6; --fg: #1b1d22; --muted: #6b7080; --card: #ffffff; --field: #ffffff;
+  --line: rgba(0, 0, 0, .14); --accent: #4d6bfe; --add: #5f82b8; --danger: #d9434b;
+  --text: "Segoe UI Variable Text", "Segoe UI", sans-serif;
+  --display: "Segoe UI Variable Display", "Segoe UI", sans-serif;
+  --icons: "Segoe Fluent Icons", "Segoe MDL2 Assets";
+}
+@media (prefers-color-scheme: dark) {
+  :root { --bg: #121212; --fg: #e9eaee; --muted: #9a9fae; --card: #202226; --field: #17181b;
+    --line: rgba(255, 255, 255, .16); --add: #6f8fc2; }
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; min-height: 100vh; background: var(--bg); color: var(--fg); font: 14px/1.45 var(--text); }
+main { max-width: 1180px; margin: 0 auto; padding: 84px 56px 48px; }
+
+.grid { display: grid; grid-template-columns: repeat(auto-fill, 168px); gap: 44px 56px; }
+.item { position: relative; width: 168px; }
+.tile {
+  width: 168px; height: 168px; padding: 0; border: 0; border-radius: 18px; overflow: hidden; cursor: pointer;
+  display: grid; place-items: center; background: var(--c, var(--accent)); color: #fff;
+  font: 600 56px/1 var(--display); letter-spacing: .02em;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, .25), 0 10px 24px -14px rgba(0, 0, 0, .6);
+  transition: transform .15s ease, box-shadow .15s ease;
+}
+.tile.pic { background: var(--card); }
+.tile img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.tile.small img, .preview.small img { width: 50%; height: 50%; object-fit: contain; }
+.tile:hover { transform: translateY(-3px); box-shadow: 0 2px 4px rgba(0, 0, 0, .25), 0 16px 30px -14px rgba(0, 0, 0, .7); }
+.tile:active { transform: translateY(0); }
+.tile:focus-visible { outline: 3px solid var(--accent); outline-offset: 4px; }
+.label { margin-top: 12px; text-align: center; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* The program runs: a green dot; pointed at, it says so and turns into a stop button */
+.run { position: absolute; top: 6px; left: 6px; width: 28px; height: 28px; padding: 0; border: 0; border-radius: 50%;
+  background: transparent; cursor: pointer; display: grid; place-items: center; }
+.run::before { content: ""; width: 12px; height: 12px; border-radius: 50%; background: #37c46a;
+  box-shadow: 0 0 0 3px rgba(0, 0, 0, .35); transition: all .12s ease; }
+.run:hover::before, .run:focus-visible::before { width: 14px; height: 14px; border-radius: 3px; background: #e5484d; }
+.run::after { content: "Запущено"; position: absolute; left: 32px; top: 50%; transform: translateY(-50%);
+  padding: 3px 9px; border-radius: 6px; background: rgba(0, 0, 0, .82); color: #fff; font: 12.5px var(--text);
+  white-space: nowrap; opacity: 0; pointer-events: none; transition: opacity .12s; }
+.run:hover::after, .run:focus-visible::after { opacity: 1; }
+.run:focus-visible { outline: none; }
+
+.add .tile { background: transparent; color: var(--add); border: 2.5px solid currentColor; border-radius: 30px;
+  box-shadow: none; opacity: .85; }
+.add .tile:hover { opacity: 1; color: var(--accent); box-shadow: none; }
+.add svg { width: 60px; height: 60px; }
+.add .label { color: var(--muted); font-weight: 400; }
+
+.hint { margin-top: 56px; color: var(--muted); font-size: 12.5px; }
+
+dialog { width: min(560px, calc(100vw - 32px)); padding: 0; border: 1px solid var(--line); border-radius: 14px;
+  background: var(--card); color: var(--fg); box-shadow: 0 24px 60px rgba(0, 0, 0, .45); }
+dialog::backdrop { background: rgba(0, 0, 0, .5); }
+form { padding: 18px 22px 16px; display: grid; gap: 10px; }
+h2 { margin: 0 0 2px; font: 600 19px var(--display); }
+label, .field { display: grid; gap: 4px; font-weight: 500; }
+input[type=text] { width: 100%; padding: 6px 10px; font: 14px var(--text); color: var(--fg);
+  background: var(--field); border: 1px solid var(--line); border-radius: 8px; outline: none; }
+input[type=text]:focus { border-color: var(--accent); box-shadow: 0 0 0 2px rgba(77, 107, 254, .25); }
+.row { display: flex; gap: 8px; }
+.row input { flex: 1; }
+button.plain, .actions button { padding: 6px 14px; font: 14px var(--text); color: var(--fg); cursor: pointer;
+  background: transparent; border: 1px solid var(--line); border-radius: 8px; white-space: nowrap; }
+button.plain:hover, .actions button:hover { border-color: var(--muted); }
+.actions { display: flex; gap: 8px; margin-top: 4px; }
+.actions .grow { flex: 1; }
+.actions .primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+.actions .primary:hover { filter: brightness(1.1); border-color: var(--accent); }
+.actions .danger { color: var(--danger); border-color: transparent; padding-left: 4px; }
+.actions .danger.sure { background: var(--danger); color: #fff; padding-left: 14px; }
+
+.look { display: flex; gap: 16px; align-items: center; }
+.preview { width: 72px; height: 72px; flex: none; border-radius: 12px; overflow: hidden; display: grid; place-items: center;
+  background: var(--c, var(--accent)); color: #fff; font: 600 30px var(--display); }
+.preview.pic { background: var(--field); border: 1px solid var(--line); }
+.preview img { width: 100%; height: 100%; object-fit: cover; }
+.look .side { display: grid; gap: 8px; }
+.seg { display: inline-flex; justify-self: start; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+.seg button { padding: 6px 12px; font: 13.5px var(--text); color: var(--fg); background: transparent; border: 0; cursor: pointer; }
+.seg button + button { border-left: 1px solid var(--line); }
+.seg button.on { background: var(--accent); color: #fff; }
+.swatches { display: flex; gap: 8px; flex-wrap: wrap; }
+.swatches button { width: 24px; height: 24px; border-radius: 50%; border: 2px solid transparent; cursor: pointer; padding: 0;
+  background: var(--s); box-shadow: inset 0 0 0 2px var(--card); }
+.swatches button.on { border-color: var(--fg); }
+.error { color: var(--danger); font-size: 13px; }
+
+details { border: 1px solid var(--line); border-radius: 10px; padding: 10px 14px; }
+details[open] { padding-bottom: 12px; }
+details > div { display: grid; gap: 8px; margin-top: 10px; }
+summary { cursor: pointer; font-weight: 500; }
+.check { display: flex; gap: 8px; align-items: flex-start; font-weight: 400; }
+.check input { margin: 3px 0 0; }
+.muted { color: var(--muted); font-size: 12.5px; margin: 0; }
+</style>
+</head>
+<body>
+<main>
+  <div class="grid" id="grid"></div>
+  <p class="hint" id="hint"></p>
+</main>
+
+<dialog id="dlg">
+  <form id="form" method="dialog" autocomplete="off">
+    <h2 id="title">Новый проект</h2>
+    <div class="look">
+      <div class="preview" id="preview"></div>
+      <div class="side">
+        <div class="seg" id="mode">
+          <button type="button" data-mode="site">С сайта</button>
+          <button type="button" data-mode="file">Своя…</button>
+          <button type="button" data-mode="none">Буквы</button>
+        </div>
+        <div class="swatches" id="swatches" title="Цвет плитки, пока у неё нет картинки"></div>
+        <p class="muted" id="iconNote"></p>
+        <div class="error" id="iconError" hidden></div>
+      </div>
+    </div>
+    <label>Название
+      <input type="text" name="Name" placeholder="Например, Mantella">
+    </label>
+    <label>Адрес
+      <input type="text" name="Url" placeholder="http://127.0.0.1:4999/" required>
+    </label>
+    <details id="launch">
+      <summary>Запуск программы, если адрес не отвечает</summary>
+      <div>
+        <label>Программа
+          <span class="row"><input type="text" name="Exe" placeholder="Например: dsh, npm, python или путь к .exe"><button type="button" class="plain" data-browse="Exe">Обзор…</button></span>
+        </label>
+        <label>Аргументы
+          <input type="text" name="Args" placeholder="Например: web --no-open">
+        </label>
+        <label>Запускать в папке
+          <span class="row"><input type="text" name="WorkDir" placeholder="Папка проекта: в ней программа работает с файлами. Пусто — папка программы"><button type="button" class="plain" data-browse="WorkDir">Обзор…</button></span>
+        </label>
+        <label class="check"><input type="checkbox" name="OpenPrintedUrl">
+          <span>Открыть адрес, который напишет программа (со входным токеном)</span></label>
+        <p class="muted">Работает без окна и закрывается вместе с LiteBrowser. В путях можно писать %LOCALAPPDATA% и другие переменные.</p>
+      </div>
+    </details>
+    <div class="actions">
+      <button type="button" class="danger" id="del">Удалить</button>
+      <span class="grow"></span>
+      <button type="button" id="cancel">Отмена</button>
+      <button type="submit" class="primary">Сохранить</button>
+    </div>
+  </form>
+</dialog>
+
+<script>
+"use strict";
+const COLORS = ["#4d6bfe", "#7c4dff", "#d9437a", "#ef6a35", "#e2a232", "#2f9e62", "#1f96b3", "#5c6a82"];
+const STAR = '<svg viewBox="0 0 48 48" aria-hidden="true"><path d="M24 5C25.6 17.2 30.8 22.4 43 24C30.8 25.6 25.6 30.8 24 43C22.4 30.8 17.2 25.6 5 24C17.2 22.4 22.4 17.2 24 5Z" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linejoin="round"/></svg>';
+const $ = s => document.querySelector(s);
+const form = $("#form"), dlg = $("#dlg");
+const post = m => window.chrome.webview.postMessage(m);
+
+let projects = [], running = new Set();
+// The dialog: the project being edited (null = new), and the picture chosen in it
+let editing = null, color = COLORS[0], mode = "site", iconPath = "", iconPreview = "";
+
+function el(tag, cls, text) {
+  const e = document.createElement(tag);
+  if (cls) e.className = cls;
+  if (text !== undefined) e.textContent = text;
+  return e;
+}
+
+function host(url) {
+  try { return new URL(url).host; } catch { return url; }
+}
+
+function initials(name) {
+  const words = name.trim().split(/[\s_\-.:/]+/).filter(Boolean);
+  if (!words.length) return "?";
+  return (words.length > 1 ? words[0][0] + words[1][0] : words[0][0]).toUpperCase();
+}
+
+function colorOf(p) {
+  if (p.Color) return p.Color;
+  let h = 0;
+  for (const c of p.Name + p.Url) h = (h * 31 + c.charCodeAt(0)) >>> 0;
+  return COLORS[h % COLORS.length];
+}
+
+// Letters on colour, or the picture; letters again should the picture fail to load.
+// A site's small favicon sits in the middle, a big icon (apple-touch-icon, svg) or the user's picture fills the tile.
+function paint(box, p, src, site) {
+  box.textContent = "";
+  box.classList.remove("pic", "small");
+  box.style.setProperty("--c", colorOf(p));
+  if (src) {
+    const img = new Image();
+    img.alt = "";
+    img.onerror = () => paint(box, p, "");
+    img.onload = () => { if (site && img.naturalWidth && img.naturalWidth < 120 && !/\.svg$/i.test(src)) box.classList.add("small"); };
+    img.src = src;
+    box.classList.add("pic");
+    box.append(img);
+  } else {
+    box.textContent = initials(p.Name || host(p.Url));
+  }
+}
+
+function iconUrl(name) {
+  return name ? "/icon/" + encodeURIComponent(name) : "";
+}
+
+function render() {
+  const grid = $("#grid");
+  grid.textContent = "";
+  for (const p of projects) grid.append(tile(p));
+  grid.append(addTile());
+  $("#hint").textContent = projects.length
+    ? "Клик — открыть · Ctrl+клик или средняя кнопка — в новой вкладке · Shift+клик — в новом окне · правый клик — изменить · клик по зелёной точке — остановить программу."
+    : "Добавьте первый проект: адрес локального сайта и, если нужно, программу, которая его запускает.";
+}
+
+function tile(p) {
+  const item = el("div", "item");
+  const b = el("button", "tile");
+  b.title = p.Url;
+  paint(b, p, iconUrl(p.Icon), p.IconSource !== "file");
+  b.addEventListener("click", e => post({ type: "open", id: p.Id, newTab: e.ctrlKey && !e.shiftKey, newWindow: e.shiftKey }));
+  b.addEventListener("auxclick", e => { if (e.button === 1) post({ type: "open", id: p.Id, newTab: true }); });
+  item.addEventListener("contextmenu", e => { e.preventDefault(); openDialog(p); });
+  item.append(b);
+
+  if (running.has(p.Id)) {
+    const run = el("button", "run");
+    run.setAttribute("aria-label", "Запущено. Нажмите, чтобы остановить программу");
+    run.addEventListener("click", e => { e.stopPropagation(); post({ type: "stop", id: p.Id }); });
+    item.append(run);
+  }
+  item.append(el("div", "label", p.Name || host(p.Url)));
+  return item;
+}
+
+function addTile() {
+  const item = el("div", "item add");
+  const b = el("button", "tile");
+  b.title = "Добавить проект";
+  b.innerHTML = STAR; // a constant of this page, no data in it
+  b.addEventListener("click", () => openDialog(null));
+  item.append(b, el("div", "label", "Добавить"));
+  return item;
+}
+
+// ---- the dialog
+
+function openDialog(p) {
+  editing = p;
+  const f = form.elements;
+  $("#title").textContent = p ? "Изменить проект" : "Новый проект";
+  f.Name.value = p ? p.Name : "";
+  f.Url.value = p ? p.Url : "";
+  f.Exe.value = p ? p.Exe : "";
+  f.Args.value = p ? p.Args : "";
+  f.WorkDir.value = p ? p.WorkDir : "";
+  f.OpenPrintedUrl.checked = p ? p.OpenPrintedUrl : false;
+  $("#launch").open = !!(p && p.Exe);
+  color = p && p.Color ? p.Color : "";
+  mode = p ? p.IconSource || "site" : "site";
+  iconPath = iconPreview = "";
+  $("#iconError").hidden = true;
+  const del = $("#del");
+  del.hidden = !p;
+  del.classList.remove("sure");
+  del.textContent = "Удалить";
+  swatches();
+  updatePreview();
+  dlg.showModal();
+  f.Name.focus();
+}
+
+function current() {
+  const f = form.elements;
+  return { Name: f.Name.value.trim(), Url: f.Url.value.trim(), Color: color };
+}
+
+// What the tile will show: the site's icon once it has one, the picked picture, or letters
+function updatePreview() {
+  const saved = editing && editing.IconSource === mode ? iconUrl(editing.Icon) : "";
+  const src = mode === "file" ? iconPreview || saved : mode === "site" ? saved : "";
+  paint($("#preview"), current(), src, mode === "site");
+  for (const b of document.querySelectorAll("#mode button")) b.classList.toggle("on", b.dataset.mode === mode);
+  $("#iconNote").textContent = mode === "site" && !src
+    ? "Значок сайта появится сам: сразу, если сайт уже работает, или когда LiteBrowser его откроет."
+    : "";
+}
+
+function swatches() {
+  const box = $("#swatches");
+  box.textContent = "";
+  for (const c of COLORS) {
+    const b = el("button");
+    b.type = "button";
+    b.style.setProperty("--s", c);
+    b.title = c;
+    if (c === (color || colorOf(current()))) b.classList.add("on");
+    b.addEventListener("click", () => { color = c; swatches(); updatePreview(); });
+    box.append(b);
+  }
+}
+
+// 127.0.0.1:3080 and localhost:5173 are http, anything with a dot https, as the address bar does
+function normalize(url) {
+  url = url.trim();
+  if (!url || url.includes("://")) return url;
+  if (/^(localhost|\d{1,3}(\.\d{1,3}){3}|\[)/i.test(url) || !url.includes(".")) return "http://" + url;
+  return "https://" + url;
+}
+
+form.elements.Name.addEventListener("input", () => { if (!color) swatches(); updatePreview(); });
+form.elements.Url.addEventListener("input", () => { if (!color) swatches(); updatePreview(); });
+$("#cancel").addEventListener("click", () => dlg.close());
+for (const b of document.querySelectorAll("#mode button"))
+  b.addEventListener("click", () => {
+    // «Своя…» asks for the picture first; the mode changes once one is picked
+    if (b.dataset.mode === "file") post({ type: "browse", field: "Icon", current: "" });
+    else { mode = b.dataset.mode; updatePreview(); }
+  });
+for (const b of document.querySelectorAll("[data-browse]"))
+  b.addEventListener("click", () => {
+    const field = b.dataset.browse;
+    post({ type: "browse", field, current: form.elements[field].value });
+  });
+
+$("#del").addEventListener("click", () => {
+  const del = $("#del");
+  if (!del.classList.contains("sure")) {
+    del.classList.add("sure");
+    del.textContent = "Точно удалить?";
+    return;
+  }
+  post({ type: "delete", id: editing.Id });
+  dlg.close();
+});
+
+form.addEventListener("submit", e => {
+  e.preventDefault();
+  const f = form.elements;
+  const url = normalize(f.Url.value);
+  if (!url) return;
+  post({
+    type: "save",
+    project: {
+      Id: editing ? editing.Id : "",
+      Name: f.Name.value.trim() || host(url),
+      Url: url,
+      Color: color,
+      Exe: f.Exe.value.trim(),
+      Args: f.Args.value.trim(),
+      WorkDir: f.WorkDir.value.trim(),
+      OpenPrintedUrl: f.OpenPrintedUrl.checked,
+      IconSource: mode,
+    },
+    iconPath: mode === "file" ? iconPath : "",
+  });
+  dlg.close();
+});
+
+// ---- the browser
+
+window.chrome.webview.addEventListener("message", e => {
+  const m = e.data;
+  if (m.type === "projects") {
+    projects = m.projects;
+    running = new Set(m.running);
+    render();
+  } else if (m.type === "browsed") {
+    if (m.field === "Icon") {
+      $("#iconError").hidden = !m.error;
+      $("#iconError").textContent = m.error || "";
+      if (m.error) return;
+      iconPath = m.path;
+      iconPreview = m.preview;
+      mode = "file";
+      updatePreview();
+    } else {
+      form.elements[m.field].value = m.path;
+    }
+  }
+});
+
+render();
+post({ type: "ready" });
+</script>
+</body>
+</html>

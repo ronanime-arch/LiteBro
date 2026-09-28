@@ -126,13 +126,25 @@ sealed class App : ApplicationContext
     }
 
     // One browser process for all windows: a new window costs a renderer, not a whole browser.
-    public Task<CoreWebView2Environment> GetEnvironmentAsync() => envTask ??= CreateEnvironmentAsync();
+    public async Task<CoreWebView2Environment> GetEnvironmentAsync()
+    {
+        // While the engine restarts with other flags, new tabs wait for the new one
+        while (restart != null) await restart;
+        return await (envTask ??= CreateEnvironmentAsync());
+    }
+
+    Task? restart;
 
     async Task<CoreWebView2Environment> CreateEnvironmentAsync()
     {
         var args = MemoryArgs + QuietArgs;
         if (!S.Gpu) args += " --disable-gpu";
         if (S.ExtraBrowserArgs.Length > 0) args += " " + S.ExtraBrowserArgs;
+        engineKey = EngineKey();
+        if (NetGuard.CorsOff) args += " --disable-web-security";
+        // «Только localhost»: all but local traffic through the gateway, which refuses what the rules forbid
+        if (NetGuard.LocalOnly)
+            args += " --proxy-server=http://127.0.0.1:" + Gateway.Start() + " --proxy-bypass-list=" + Gateway.BypassList();
         var options = new CoreWebView2EnvironmentOptions(args);
         // A new WebView starts with the theme's background, not a white flash before its page paints
         var bg = Theme.PageBackground;
@@ -271,12 +283,48 @@ sealed class App : ApplicationContext
     }
 
     /// <summary>The network switches changed (start page or /net): saved, and every tab and page follows.</summary>
-    public void SetNet(bool localOnly, bool journal, string allowHosts)
+    public void SetNet(bool localOnly, bool journal, string allowHosts, bool ignoreCors)
     {
-        NetGuard.Set(localOnly, journal);
+        NetGuard.Set(localOnly, journal, ignoreCors);
         NetGuard.SetAllowed(allowHosts);
-        S.SaveNet(localOnly, journal, NetGuard.AllowText);
+        S.SaveNet(localOnly, journal, NetGuard.AllowText, ignoreCors);
         foreach (var form in forms) form.ApplyNet();
+        Gateway.Enforce();
+        if (Env != null && EngineKey() != engineKey) restart ??= RestartEngineAsync();
+    }
+
+    /// <summary>The network flags the running engine was started with.</summary>
+    string engineKey = "";
+
+    /// <summary>The engine flags that follow the network switches: the gateway (local mode) and CORS.</summary>
+    static string EngineKey() => NetGuard.LocalOnly + "|" + NetGuard.CorsOff;
+
+    /// <summary>
+    /// Flags of the engine apply to its whole browser process: every tab is closed (keeping its address), the process
+    /// is let go, and the tabs on screen load again in a new one. The others load when picked, as unloaded tabs do.
+    /// </summary>
+    async Task RestartEngineAsync()
+    {
+        try
+        {
+            do
+            {
+                var env = Env;
+                if (env != null)
+                {
+                    var exited = new TaskCompletionSource<bool>();
+                    env.BrowserProcessExited += (_, _) => exited.TrySetResult(true);
+                    foreach (var form in forms.ToList()) form.UnloadAll();
+                    await Task.WhenAny(exited.Task, Task.Delay(15000));
+                }
+                Env = null;
+                envTask = null;
+                await (envTask = CreateEnvironmentAsync());
+            } while (EngineKey() != engineKey); // switched again meanwhile
+        }
+        catch (Exception) { envTask = null; }
+        finally { restart = null; }
+        foreach (var form in forms.ToList()) form.ReloadShown();
     }
 
     public void OpenProjectInNewWindow(Project p, string? link = null) => OpenWindow(null, project: p, link: link).Show();

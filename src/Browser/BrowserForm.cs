@@ -966,15 +966,18 @@ sealed class BrowserForm : Form
             else if (!NetGuard.LocalOnly && tab.NetFilter)
                 core.RemoveWebResourceRequestedFilter("*", CoreWebView2WebResourceContext.All, All);
             tab.NetFilter = NetGuard.LocalOnly;
-            // The script carries the allowed hosts: put in anew on every change
+            // The script carries the rules: put in anew on every change, and run on the page already open,
+            // which takes the new rules (and closes the sockets they forbid) without a reload
             if (tab.NetScript is { } old)
             {
                 tab.NetScript = null;
                 core.RemoveScriptToExecuteOnDocumentCreated(old);
             }
-            if (!NetGuard.LocalOnly) return;
-            var id = await core.AddScriptToExecuteOnDocumentCreatedAsync(NetGuard.SocketScript());
-            if (tab.Core == core && NetGuard.LocalOnly && tab.NetScript == null) tab.NetScript = id;
+            var script = NetGuard.PageScript();
+            _ = core.ExecuteScriptAsync(script);
+            if (!NetGuard.Watching) return;
+            var id = await core.AddScriptToExecuteOnDocumentCreatedAsync(script);
+            if (tab.Core == core && NetGuard.Watching && tab.NetScript == null) tab.NetScript = id;
             else core.RemoveScriptToExecuteOnDocumentCreated(id);
         }
         catch (Exception) { } // the WebView closed meanwhile
@@ -989,8 +992,48 @@ sealed class BrowserForm : Form
                 ["localOnly"] = NetGuard.LocalOnly,
                 ["journal"] = NetGuard.Journal,
                 ["allow"] = NetGuard.AllowText,
+                ["cors"] = NetGuard.IgnoreCors,
                 ["file"] = NetLog.FilePath,
             }));
+    }
+
+    /// <summary>The journal entries the /net page shows, into a file the user picks.</summary>
+    void ExportJournal(List<long> seqs, bool csv)
+    {
+        using var dialog = new SaveFileDialog
+        {
+            Title = "Выгрузить журнал сети",
+            FileName = "network-" + DateTime.Now.ToString("yyyy-MM-dd-HHmm") + (csv ? ".csv" : ".json"),
+            Filter = csv ? "CSV (*.csv)|*.csv" : "JSON (*.json)|*.json",
+        };
+        if (dialog.ShowDialog(this) != DialogResult.OK) return;
+        try
+        {
+            // CSV with a BOM, so Excel reads the Cyrillic right
+            File.WriteAllText(dialog.FileName, NetLog.Export(seqs, csv), new UTF8Encoding(csv));
+        }
+        catch (Exception ex) when (ex is IOException || ex is UnauthorizedAccessException)
+        {
+            MessageBox.Show(this, "Не удалось записать файл.\n\n" + ex.Message, "LiteBro", MessageBoxButtons.OK, MessageBoxIcon.Error);
+        }
+    }
+
+    /// <summary>The engine restarts with other flags: every tab lets go of its WebView and keeps its address.</summary>
+    public void UnloadAll()
+    {
+        foreach (var tab in tabs)
+        {
+            StopTerm(tab);
+            Unload(tab);
+        }
+    }
+
+    /// <summary>After an engine restart: the tabs on screen load again.</summary>
+    public async void ReloadShown()
+    {
+        foreach (var tab in OnScreen.ToList())
+            await ShowPaneAsync(tab);
+        if (active != null) ShowState(active, switched: true);
     }
 
     /// <summary>In «только localhost» mode a request to the internet gets a refusal instead; the journal notes it.</summary>
@@ -1067,20 +1110,36 @@ sealed class BrowserForm : Form
         NetLog.Add(e.Request.Method, url, r.StatusCode + (NetGuard.LocalOnly ? " (разрешён)" : ""), blocked: false, size, kind, tab.Site);
     }
 
-    /// <summary>The web socket guard refused a connection: the page says so as a string, which only goes into the journal.</summary>
-    void OnSocketBlocked(Tab tab, CoreWebView2WebMessageReceivedEventArgs e)
+    /// <summary>
+    /// The page script (netpage.js) as a string: the stack of a request to outside, a web socket it refused or opened.
+    /// Any page can send such a string, so it only ever adds to the journal.
+    /// </summary>
+    void OnPageNet(Tab tab, CoreWebView2WebMessageReceivedEventArgs e)
     {
-        const string Prefix = "litebro-ws-blocked:";
+        const string Prefix = "litebro-net:";
         string text;
         try { text = e.TryGetWebMessageAsString(); }
         catch (ArgumentException) { return; }
-        if (!text.StartsWith(Prefix) || !NetGuard.LocalOnly) return;
+        if (!text.StartsWith(Prefix) || !NetGuard.Watching || text.Length > 20000) return;
         try
         {
             var m = ProjectStore.Json.Deserialize<Dictionary<string, object>>(text.Substring(Prefix.Length));
-            if (m.TryGetValue("url", out var u) && u is string s && Uri.TryCreate(s, UriKind.Absolute, out var url) && NetGuard.IsOutside(url))
-                NetLog.Add("GET", url, "заблокировано", blocked: true, -1, "WebSocket", tab.Site,
-                    m.TryGetValue("stack", out var st) && st is string stack ? stack.Length > 4000 ? stack.Substring(0, 4000) : stack : "");
+            string Get(string key) => m.TryGetValue(key, out var v) && v is string s ? s : "";
+            if (!Uri.TryCreate(Get("url"), UriKind.Absolute, out var url) || !NetGuard.IsOutside(url)) return;
+            var stack = Get("stack");
+            var method = Get("method") is { Length: > 0 and < 16 } verb ? verb : "GET";
+            switch (Get("event"))
+            {
+                case "stack":
+                    NetLog.NoteStack(url.AbsoluteUri, stack);
+                    break;
+                case "ws-blocked" when NetGuard.LocalOnly:
+                    NetLog.Add(method, url, "заблокировано", blocked: true, -1, "WebSocket", tab.Site, stack);
+                    break;
+                case "ws":
+                    NetLog.Add(method, url, "соединение" + (NetGuard.LocalOnly ? " (разрешён)" : ""), blocked: false, -1, "WebSocket", tab.Site, stack);
+                    break;
+            }
         }
         catch (Exception) { }
     }
@@ -1280,7 +1339,7 @@ sealed class BrowserForm : Form
     {
         // Any page of a split may say where it is scrolled to; that moves nothing but the other half
         if (syncScroll && IsPane(tab)) OnScrolled(tab, e);
-        OnSocketBlocked(tab, e);
+        OnPageNet(tab, e);
         if (!Home.Is(e.Source)) return;
         Dictionary<string, object>? m;
         try { m = ProjectStore.Json.Deserialize<Dictionary<string, object>>(e.WebMessageAsJson); }
@@ -1302,7 +1361,13 @@ sealed class BrowserForm : Form
                 // The start page's switch or the /net page: what is not sent stays as it is
                 App.Current.SetNet(m.TryGetValue("localOnly", out var lo) ? lo is true : NetGuard.LocalOnly,
                     m.TryGetValue("journal", out var j) ? j is true : NetGuard.Journal,
-                    Text("allow") ?? NetGuard.AllowText);
+                    Text("allow") ?? NetGuard.AllowText,
+                    m.TryGetValue("cors", out var cors) ? cors is true : NetGuard.IgnoreCors);
+                break;
+            case "netExport" when m.TryGetValue("seqs", out var seqs) && seqs is System.Collections.IEnumerable list:
+                var numbers = list.Cast<object>().Select(o => o is int i ? i : o is long l ? l : -1L).Where(n => n > 0).ToList();
+                bool csv = Text("format") == "csv";
+                BeginInvoke(new Action(() => ExportJournal(numbers, csv)));
                 break;
             case "netClear":
                 NetLog.Clear();

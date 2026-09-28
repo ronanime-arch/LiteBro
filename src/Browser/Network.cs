@@ -18,6 +18,10 @@ namespace LiteBro;
 static class NetGuard
 {
     public static bool LocalOnly { get; private set; }
+    /// <summary>The CORS switch as set; it works only together with LocalOnly (see CorsOff).</summary>
+    public static bool IgnoreCors { get; private set; }
+    /// <summary>The engine is to run without CORS and same-origin checks: never outside «только localhost».</summary>
+    public static bool CorsOff => LocalOnly && IgnoreCors;
     /// <summary>Journal the outside requests while the mode is off too (with it on they are always journaled).</summary>
     public static bool Journal { get; private set; }
     static Regex[] allowed = Array.Empty<Regex>();
@@ -29,13 +33,15 @@ static class NetGuard
     {
         LocalOnly = s.LocalOnly;
         Journal = s.NetJournal;
+        IgnoreCors = s.IgnoreCors;
         SetAllowed(s.AllowHosts);
     }
 
-    public static void Set(bool localOnly, bool journal)
+    public static void Set(bool localOnly, bool journal, bool ignoreCors)
     {
         LocalOnly = localOnly;
         Journal = journal;
+        IgnoreCors = ignoreCors;
     }
 
     /// <summary>Hosts through spaces, commas or lines; *.example.com covers example.com and its subdomains.</summary>
@@ -90,26 +96,28 @@ static class NetGuard
 
     public static bool ShouldBlock(Uri u) => LocalOnly && IsOutside(u) && !IsAllowed(u);
 
+    static string? pageScript;
+
     /// <summary>
-    /// Web sockets never reach WebResourceRequested: while the mode is on, a script in every new page refuses
-    /// the ones to outside hosts and tells the browser (with the call stack) for the journal.
+    /// The script of netpage.js with the current rules: stacks of fetch, XHR, sendBeacon and EventSource to outside
+    /// hosts for the journal, and the web socket guard (sockets never reach WebResourceRequested).
     /// </summary>
-    public static string SocketScript()
+    public static string PageScript()
     {
-        var names = Router.LocalNames().Concat(Patterns(App.Current.S.LocalHosts)).Concat(Patterns(AllowText));
-        return "(()=>{const W=window.WebSocket;if(!W)return;" +
-            "const names=" + ProjectStore.Json.Serialize(names.ToArray()) + ".map(p=>new RegExp('^'+(p.startsWith('*.')?'(.*\\\\.)?'+esc(p.slice(2)):esc(p))+'$','i'));" +
-            "function esc(s){return s.replace(/[.+^${}()|[\\]\\\\]/g,'\\\\$&').replace(/\\*/g,'.*').replace(/\\?/g,'.');}" +
-            "function local(h){h=h.replace(/^\\[|\\]$/g,'').toLowerCase();" +
-            "if(h==='localhost'||h.endsWith('.localhost')||h==='::1'||h==='0.0.0.0'||h==='::')return true;" +
-            "const m=h.match(/^(\\d+)\\.(\\d+)\\.\\d+\\.\\d+$/);if(m){const a=+m[1],b=+m[2];" +
-            "return a===127||a===10||(a===172&&b>=16&&b<=31)||(a===192&&b===168)||(a===169&&b===254);}" +
-            "if(/^f[cd]|^fe[89ab]/.test(h)&&h.includes(':'))return true;return names.some(r=>r.test(h));}" +
-            "function S(url,p){const u=new URL(url,location.href);" +
-            "if(!local(u.hostname)){try{window.chrome.webview.postMessage('litebro-ws-blocked:'+JSON.stringify({url:u.href,stack:String(new Error().stack||'')}));}catch(e){}" +
-            "throw new DOMException('Заблокировано режимом «только localhost»: '+u.href,'SecurityError');}" +
-            "return p===undefined?new W(url):new W(url,p);}" +
-            "S.prototype=W.prototype;for(const k of['CONNECTING','OPEN','CLOSING','CLOSED'])S[k]=W[k];window.WebSocket=S;})();";
+        if (pageScript == null)
+        {
+            using var stream = typeof(NetGuard).Assembly.GetManifestResourceStream("netpage.js");
+            using var reader = new StreamReader(stream, Encoding.UTF8);
+            pageScript = reader.ReadToEnd();
+        }
+        var config = ProjectStore.Json.Serialize(new Dictionary<string, object>
+        {
+            ["names"] = Router.LocalNames().Concat(Patterns(App.Current.S.LocalHosts)).ToArray(),
+            ["allow"] = Patterns(AllowText),
+            ["block"] = LocalOnly,
+            ["trace"] = Watching,
+        });
+        return pageScript.Replace("__CONFIG__", config);
     }
 
     /// <summary>What a blocked page shows in place of itself.</summary>
@@ -144,6 +152,7 @@ static class NetLog
         /// <summary>The page it came from.</summary>
         public string Page { get; set; } = "";
         public string Stack { get; set; } = "";
+        internal DateTime Created = DateTime.UtcNow;
     }
 
     const int Kept = 2000;
@@ -152,6 +161,18 @@ static class NetLog
     static readonly LinkedList<Entry> recent = new();
     static readonly ConcurrentDictionary<string, string> ips = new(StringComparer.OrdinalIgnoreCase);
     static long seq;
+    // Stacks the pages sent for outside addresses, waiting for the journal entry of the same address
+    static readonly ConcurrentDictionary<string, (string Stack, DateTime At)> stacks = new();
+    static readonly TimeSpan StackWait = TimeSpan.FromMilliseconds(400), StackKept = TimeSpan.FromSeconds(20);
+
+    /// <summary>A page's script saw a request to this address go out, with this call stack.</summary>
+    public static void NoteStack(string url, string stack)
+    {
+        if (stacks.Count > 2000)
+            foreach (var old in stacks.Where(p => DateTime.UtcNow - p.Value.At > StackKept).Select(p => p.Key).ToList())
+                stacks.TryRemove(old, out _);
+        stacks[url] = (stack, DateTime.UtcNow);
+    }
     static Thread? writer;
 
     public static string FilePath => Path.Combine(Settings.Dir, "logs", "network.log");
@@ -171,10 +192,13 @@ static class NetLog
             Page = page,
             Stack = stack,
         };
-        if (writer == null)
+        lock (queue)
         {
-            writer = new Thread(Write) { IsBackground = true, Name = "Network journal", Priority = ThreadPriority.BelowNormal };
-            writer.Start();
+            if (writer == null)
+            {
+                writer = new Thread(Write) { IsBackground = true, Name = "Network journal", Priority = ThreadPriority.BelowNormal };
+                writer.Start();
+            }
         }
         queue.TryAdd(e); // a flood beyond the queue is dropped rather than slowing the pages
     }
@@ -184,6 +208,10 @@ static class NetLog
         foreach (var e in queue.GetConsumingEnumerable())
         {
             e.Ip = Resolve(e.Host);
+            // The page's message with the stack may come a moment after the request itself
+            var wait = e.Created + StackWait - DateTime.UtcNow;
+            if (e.Stack.Length == 0 && wait > TimeSpan.Zero && !stacks.ContainsKey(e.Url)) Thread.Sleep(wait);
+            if (e.Stack.Length == 0 && stacks.TryRemove(e.Url, out var s) && DateTime.UtcNow - s.At < StackKept) e.Stack = s.Stack;
             lock (recent)
             {
                 e.Seq = ++seq;
@@ -217,11 +245,13 @@ static class NetLog
     static string Resolve(string host)
     {
         if (IPAddress.TryParse(host.Trim('[', ']'), out _)) return host.Trim('[', ']');
+        // Through the gateway («только localhost») the address really connected to is known
+        if (Gateway.IpOf(host) is { } real) return real;
         if (ips.TryGetValue(host, out var ip)) return ip;
         try
         {
             var task = Dns.GetHostAddressesAsync(host);
-            ip = task.Wait(2000) ? string.Join(" ", task.Result.Take(2).Select(a => a.ToString())) : "";
+            ip = task.Wait(2000) ? string.Join(" ", task.Result.Take(2).Select(a => a.ToString())) + " (DNS)" : "";
         }
         catch (Exception) { ip = ""; }
         if (ips.Count > 5000) ips.Clear();
@@ -246,6 +276,37 @@ static class NetLog
             ["entries"] = list,
         });
     }
+
+    /// <summary>The entries with these numbers (those the /net page shows under its filter), as JSON or CSV for Excel.</summary>
+    public static string Export(IEnumerable<long> seqs, bool csv)
+    {
+        var wanted = new HashSet<long>(seqs);
+        List<Entry> list;
+        lock (recent) list = recent.Where(e => wanted.Contains(e.Seq)).ToList();
+        if (!csv)
+            return ProjectStore.Json.Serialize(list.Select(e => new Dictionary<string, object>
+            {
+                ["time"] = e.Time,
+                ["method"] = e.Method,
+                ["url"] = e.Url,
+                ["host"] = e.Host,
+                ["ip"] = e.Ip,
+                ["result"] = e.Result,
+                ["blocked"] = e.Blocked,
+                ["size"] = e.Size < 0 ? null! : e.Size,
+                ["initiator"] = e.Kind,
+                ["page"] = e.Page,
+                ["stack"] = e.Stack,
+            }).ToList());
+        // Excel with Russian settings splits on semicolons
+        var sb = new StringBuilder("время;метод;результат;заблокировано;размер;инициатор;домен;IP;адрес;страница;стек\r\n");
+        foreach (var e in list)
+            sb.Append(string.Join(";", new[] { e.Time, e.Method, e.Result, e.Blocked ? "да" : "нет", e.Size < 0 ? "" : e.Size.ToString(),
+                e.Kind, e.Host, e.Ip, e.Url, e.Page, e.Stack }.Select(Cell))).Append("\r\n");
+        return sb.ToString();
+    }
+
+    static string Cell(string s) => s.IndexOfAny(new[] { ';', '"', '\r', '\n' }) < 0 ? s : "\"" + s.Replace("\"", "\"\"") + "\"";
 
     public static void Clear()
     {

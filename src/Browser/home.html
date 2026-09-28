@@ -751,6 +751,9 @@ window.chrome.webview.addEventListener("message", e => {
     $("#net").title = localOnly
       ? "Режим «только localhost»: включён, запросы в интернет блокируются. Щелчок выключит"
       : "Режим «только localhost»: выключен. Щелчок включит блокировку запросов в интернет";
+    // The mode's gateway is a flag of the engine: switching restarts it
+    $("#net").title += ". Переключение перезапускает движок: вкладки перезагрузятся, терминалы закроются"
+      + (m.cors ? (localOnly ? ". CORS не проверяется" : ". С включением отключится CORS") : "");
   } else if (m.type === "projects") {
     if (drag) waiting = m;
     else show(m);
@@ -772,7 +775,11 @@ window.chrome.webview.addEventListener("message", e => {
 render();
 $("#shell").addEventListener("click", () => post({ type: "terminal" }));
 let localOnly = false;
-$("#net").addEventListener("click", () => post({ type: "net", localOnly: !localOnly }));
+// The mode's gateway is a flag of the engine: asked first, since the restart reloads every tab
+$("#net").addEventListener("click", () => {
+  if (confirm((localOnly ? "Выключить" : "Включить") + " режим «только localhost»?\n\nДвижок браузера перезапустится: все вкладки перезагрузятся, открытые терминалы закроются. Программы проектов продолжат работать."))
+    post({ type: "net", localOnly: !localOnly });
+});
 $("#netLog").addEventListener("click", () => post({ type: "netOpen" }));
 post({ type: "ready" });
 </script>

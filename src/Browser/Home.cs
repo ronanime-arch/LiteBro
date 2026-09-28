@@ -125,8 +125,8 @@ static class Icons
 /// <summary>The pages shown while a project's program starts, or after it failed to.</summary>
 static class Pages
 {
-    public static string Starting(Project p, Launcher launcher) => Page("Запускаю " + p.Name + "…", spinner: true,
-        "<p>Адрес <code>" + H(p.Url) + "</code> пока не отвечает. LiteBro запустил программу проекта и ждёт.</p>" +
+    public static string Starting(Project p, string address, Launcher launcher) => Page("Запускаю " + p.Name + "…", spinner: true,
+        "<p>Адрес <code>" + H(address) + "</code> пока не отвечает. LiteBro запустил программу проекта и ждёт.</p>" +
         "<p class=muted>Программа: <code>" + H(p.Exe + " " + p.Args) + "</code><br>" +
         "Папка: <code>" + H(launcher.WorkDir) + "</code><br>" +
         "Лог: <code>" + H(launcher.LogPath) + "</code></p>");

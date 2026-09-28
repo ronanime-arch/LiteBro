@@ -41,11 +41,11 @@ sealed class BrowserForm : Form
     {
         AutoSize = true,
         Anchor = AnchorStyles.None,
-        ForeColor = SystemColors.GrayText,
         Cursor = Cursors.Hand,
         Margin = new Padding(2, 0, 10, 0),
     };
     readonly ToolTip tips = new();
+    readonly TableLayoutPanel bar;
     readonly ToolButton back, forward, reload, home, country;
     readonly Font countryGlyphFont, countryCodeFont = new("Segoe UI", 9f, FontStyle.Bold);
     readonly Timer ramTimer = new() { Interval = 2000 };
@@ -89,7 +89,7 @@ sealed class BrowserForm : Form
         countryGlyphFont = country.Font;
         back.Enabled = forward.Enabled = false;
 
-        var bar = new TableLayoutPanel
+        bar = new TableLayoutPanel
         {
             Dock = DockStyle.Top,
             AutoSize = true,
@@ -123,6 +123,52 @@ sealed class BrowserForm : Form
         };
         freezeTimer.Tick += (_, _) => FreezeIdleTabs();
         host.Resize += (_, _) => { if (active?.Ctl is { } c) c.Bounds = host.ClientRectangle; };
+        address.HandleCreated += (_, _) => Theme.ApplyEdit(address.Handle);
+        ApplyTheme();
+    }
+
+    protected override void OnHandleCreated(EventArgs e)
+    {
+        base.OnHandleCreated(e);
+        Theme.ApplyFrame(Handle); // before the window first shows
+    }
+
+    /// <summary>Colours of the theme on the frame, the tabs, the toolbar and behind the pages.</summary>
+    public void ApplyTheme()
+    {
+        BackColor = host.BackColor = Theme.PageBackground;
+        bar.BackColor = Theme.Face;
+        foreach (var b in new[] { back, forward, reload, home, country })
+        {
+            b.BackColor = Theme.Face;
+            b.ForeColor = Theme.Text;
+            b.FlatAppearance.MouseOverBackColor = Theme.Mix(Theme.Face, Theme.Text, .12f);
+            b.FlatAppearance.MouseDownBackColor = Theme.Mix(Theme.Face, Theme.Text, .2f);
+        }
+        address.BackColor = Theme.Field;
+        address.ForeColor = Theme.Text;
+        ram.ForeColor = Theme.Dim;
+        strip.ApplyTheme();
+        if (IsHandleCreated)
+        {
+            Theme.ApplyFrame(Handle);
+            Theme.ApplyEdit(address.Handle);
+            address.Invalidate();
+        }
+        foreach (var tab in tabs)
+            if (tab.Ctl is { } c) ApplyTheme(c);
+    }
+
+    static void ApplyTheme(CoreWebView2Controller c)
+    {
+        c.DefaultBackgroundColor = Theme.PageBackground;
+        // "auto" leaves pages to Windows' own choice, as the frame
+        c.CoreWebView2.Profile.PreferredColorScheme = App.Current.S.Theme switch
+        {
+            "dark" => CoreWebView2PreferredColorScheme.Dark,
+            "light" => CoreWebView2PreferredColorScheme.Light,
+            _ => CoreWebView2PreferredColorScheme.Auto,
+        };
     }
 
     ToolButton MakeButton(string glyph, string tip, Action click)
@@ -216,6 +262,7 @@ sealed class BrowserForm : Form
     void Setup(Tab tab)
     {
         var c = tab.Ctl!;
+        ApplyTheme(c);
         c.Bounds = host.ClientRectangle;
         c.ZoomFactor = zoom;
         c.AcceleratorKeyPressed += OnAcceleratorKeyPressed;
@@ -322,6 +369,11 @@ sealed class BrowserForm : Form
     {
         var picked = SearchCountry.Current;
         var menu = new ContextMenuStrip();
+        if (Theme.Dark)
+        {
+            menu.Renderer = new ToolStripProfessionalRenderer(new DarkMenuColors());
+            menu.ForeColor = Theme.Text;
+        }
         menu.Items.Add(new ToolStripMenuItem("Как обычно (без страны)", null, (_, _) => PickCountry(null)) { Checked = picked == null });
         menu.Items.Add(new ToolStripSeparator());
         foreach (var c in SearchCountry.All)
@@ -930,6 +982,24 @@ sealed class BrowserForm : Form
         tabs.Clear();
         active = null;
     }
+}
+
+/// <summary>Menu colours of the dark theme.</summary>
+sealed class DarkMenuColors : ProfessionalColorTable
+{
+    static readonly Color Hover = Theme.Mix(Theme.Face, Theme.Text, .15f), Check = Color.FromArgb(0x4d, 0x6b, 0xfe);
+    public override Color ToolStripDropDownBackground => Theme.Face;
+    public override Color ImageMarginGradientBegin => Theme.Face;
+    public override Color ImageMarginGradientMiddle => Theme.Face;
+    public override Color ImageMarginGradientEnd => Theme.Face;
+    public override Color MenuBorder => Theme.Line;
+    public override Color MenuItemBorder => Hover;
+    public override Color MenuItemSelected => Hover;
+    public override Color SeparatorDark => Theme.Line;
+    public override Color SeparatorLight => Theme.Face;
+    public override Color CheckBackground => Check;
+    public override Color CheckSelectedBackground => Check;
+    public override Color CheckPressedBackground => Check;
 }
 
 /// <summary>A toolbar button that never takes keyboard focus away from the page.</summary>

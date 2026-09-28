@@ -8,6 +8,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Forms;
 using Microsoft.Web.WebView2.Core;
+using Microsoft.Win32;
 
 namespace LiteBro;
 
@@ -58,6 +59,7 @@ static class Program
         SetCurrentProcessExplicitAppUserModelID(Associations.AppUserModelId); // same id as the shortcut
         Application.EnableVisualStyles();
         Application.SetCompatibleTextRenderingDefault(false);
+        Theme.Init(settings.Theme);
         Application.Run(new App(settings, address));
     }
 }
@@ -101,6 +103,8 @@ sealed class App : ApplicationContext
         // Started with an address: show just that. A plain start opens the home page (and the harness).
         OpenWindow(startUrl, isMain: true, home: startUrl == null).Show();
         ui = SynchronizationContext.Current!; // installed by the first window
+        // Raised on this thread: the windows follow Windows switching between light and dark
+        SystemEvents.UserPreferenceChanged += OnUserPreferenceChanged;
         SingleInstance.Listen(message =>
         {
             bool taken = false;
@@ -125,6 +129,9 @@ sealed class App : ApplicationContext
         if (!S.Gpu) args += " --disable-gpu";
         if (S.ExtraBrowserArgs.Length > 0) args += " " + S.ExtraBrowserArgs;
         var options = new CoreWebView2EnvironmentOptions(args);
+        // A new WebView starts with the theme's background, not a white flash before its page paints
+        var bg = Theme.PageBackground;
+        Environment.SetEnvironmentVariable("WEBVIEW2_DEFAULT_BACKGROUND_COLOR", $"FF{bg.R:X2}{bg.G:X2}{bg.B:X2}");
         Env = await CoreWebView2Environment.CreateAsync(null, Path.Combine(Settings.Dir, "WebView2"), options);
         return Env;
     }
@@ -318,9 +325,16 @@ sealed class App : ApplicationContext
         catch (Exception) { } // the browser process is gone
     }
 
+    void OnUserPreferenceChanged(object sender, UserPreferenceChangedEventArgs e)
+    {
+        if (e.Category != UserPreferenceCategory.General || !Theme.Refresh()) return;
+        foreach (var form in forms) form.ApplyTheme();
+    }
+
     protected override void ExitThreadCore()
     {
         exiting = true;
+        SystemEvents.UserPreferenceChanged -= OnUserPreferenceChanged; // a static event holds on to this
         foreach (var launcher in launchers.Values) launcher.Stop();
         base.ExitThreadCore();
     }

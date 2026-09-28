@@ -506,7 +506,7 @@ sealed class BrowserForm : Form
 
     void ShowStrip()
     {
-        bool show = tabs.Count != 1 || !Home.Is(tabs[0].Site);
+        bool show = tabs.Count != 1 || !Home.IsTiles(tabs[0].Site);
         if (strip.Visible != show) strip.Visible = show;
     }
 
@@ -907,7 +907,7 @@ sealed class BrowserForm : Form
         if (i < 0) return;
         if (tabs.Count == 1)
         {
-            if (Home.Is(tab.Site)) Close();
+            if (Home.IsTiles(tab.Site)) Close();
             else ReplaceWithHome(tab);
             return;
         }

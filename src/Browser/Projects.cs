@@ -318,6 +318,136 @@ sealed class Launcher
         catch (Exception e) when (e is IOException || e is InvalidOperationException || e is ObjectDisposedException) { }
     }
 
+    // A command typed in the project's console: one at a time, run by cmd in the console's folder
+    static readonly Regex CdPattern = new(@"^(?:cd|chdir)(?:\s+/d)?(?:\s+(.*))?$", RegexOptions.IgnoreCase);
+    Process? command;
+    KillOnCloseJob? commandJob;
+    string? commandDir;
+
+    /// <summary>Where the console's commands run: the project's folder, else the user's; «cd» changes it.</summary>
+    public string CommandDir
+    {
+        get
+        {
+            if (commandDir != null && Directory.Exists(commandDir)) return commandDir;
+            var dir = WorkDir;
+            return dir.Length > 0 && Directory.Exists(dir) ? dir : Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+        }
+    }
+
+    public bool CommandRunning => command is { HasExited: false };
+
+    /// <summary>
+    /// Runs a command line in the console's folder, its output going to the log with the program's.
+    /// While one runs, what is typed goes to its input instead (a «y» for a question, say).
+    /// </summary>
+    public void Run(string line)
+    {
+        line = line.Trim();
+        if (line.Length == 0) return;
+        if (CommandRunning)
+        {
+            Write("> " + line);
+            try
+            {
+                command!.StandardInput.WriteLine(line);
+                command.StandardInput.Flush();
+            }
+            catch (Exception e) when (e is IOException || e is InvalidOperationException || e is ObjectDisposedException) { }
+            return;
+        }
+        OpenLog();
+        var dir = CommandDir;
+        Write(dir + ">" + line);
+        // cd is kept here: each command is a cmd of its own
+        var cd = CdPattern.Match(line);
+        if (cd.Success)
+        {
+            var target = cd.Groups[1].Value.Trim().Trim('"');
+            if (target.Length == 0)
+            {
+                Write(dir);
+                return;
+            }
+            try
+            {
+                var full = Path.GetFullPath(Path.Combine(dir, Environment.ExpandEnvironmentVariables(target)));
+                if (Directory.Exists(full)) commandDir = full;
+                else Write("Нет такой папки: " + full);
+            }
+            catch (Exception e) when (e is ArgumentException || e is NotSupportedException || e is IOException) { Write("Неверный путь: " + target); }
+            changed();
+            return;
+        }
+        // UTF-8 code page first: cmd's own commands (dir, type) print in the console's one otherwise
+        var info = new ProcessStartInfo(Environment.GetEnvironmentVariable("ComSpec") ?? "cmd.exe", "/d /s /c \"chcp 65001>nul & " + line + "\"")
+        {
+            WorkingDirectory = dir,
+            UseShellExecute = false,
+            CreateNoWindow = true,
+            RedirectStandardInput = true,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            StandardOutputEncoding = Encoding.UTF8,
+            StandardErrorEncoding = Encoding.UTF8,
+        };
+        info.Environment["NO_COLOR"] = "1";
+        info.Environment["PYTHONUNBUFFERED"] = "1";
+        info.Environment["PYTHONIOENCODING"] = "utf-8";
+        var p = new Process { StartInfo = info, EnableRaisingEvents = true };
+        p.OutputDataReceived += (_, e) => Write(e.Data);
+        p.ErrorDataReceived += (_, e) => Write(e.Data);
+        p.Exited += (_, _) =>
+        {
+            try
+            {
+                p.WaitForExit(); // the rest of the output first
+                if (p.ExitCode != 0) Write($"[код выхода {p.ExitCode}]");
+            }
+            catch (Exception) { }
+            changed();
+        };
+        try { p.Start(); }
+        catch (Exception ex)
+        {
+            Write("Не удалось запустить cmd: " + ex.Message);
+            return;
+        }
+        commandJob?.Dispose();
+        commandJob = KillOnCloseJob.For(p);
+        p.BeginOutputReadLine();
+        p.BeginErrorReadLine();
+        command = p;
+        changed();
+    }
+
+    /// <summary>Stops the console's command with everything it started.</summary>
+    public void StopCommand()
+    {
+        var p = command;
+        command = null;
+        bool wasRunning = p is { HasExited: false };
+        if (commandJob != null)
+        {
+            commandJob.Dispose();
+            commandJob = null;
+        }
+        else if (p is { HasExited: false })
+        {
+            try { p.Kill(); } catch (Exception) { }
+        }
+        if (wasRunning) Write("[прервано]");
+        changed();
+    }
+
+    /// <summary>The log for a console used before the program ever ran: added to, not started anew.</summary>
+    void OpenLog()
+    {
+        if (log != null) return;
+        Directory.CreateDirectory(Path.GetDirectoryName(LogPath)!);
+        log = new StreamWriter(new FileStream(LogPath, FileMode.Append, FileAccess.Write, FileShare.ReadWrite)) { AutoFlush = true };
+    }
+
     public string LogTail(int lines = 25)
     {
         try

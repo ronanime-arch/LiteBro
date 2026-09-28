@@ -7,7 +7,8 @@ using System.Text;
 namespace LiteBro;
 
 /// <summary>
-/// The console of a project: its program's output, live from logs\&lt;id&gt;.log, and a line to type into the program.
+/// The console of a project: its program's output, live from logs\&lt;id&gt;.log, a line to type into the program,
+/// and commands run by cmd in the project's folder (their output goes to the same log).
 /// Served on the start page's host under /log/&lt;id&gt;, so it may post web messages; the page fetches what the log gained.
 /// </summary>
 static class ProgramLog
@@ -42,7 +43,7 @@ static class ProgramLog
     /// What the log gained since a byte offset (-1 for the first time), up to its last whole line, so a letter of
     /// several bytes is never cut. A log shorter than the offset was started anew with the program.
     /// </summary>
-    public static string Chunk(Project p, long from, bool running)
+    public static string Chunk(Project p, long from, bool running, Launcher launcher)
     {
         long size = 0;
         bool reset = false;
@@ -80,6 +81,8 @@ static class ProgramLog
             ["reset"] = reset,
             ["text"] = text,
             ["running"] = running,
+            ["command"] = launcher.CommandRunning,
+            ["dir"] = launcher.CommandDir,
         });
     }
 
@@ -89,45 +92,62 @@ static class ProgramLog
     static string Js(string s) => ProjectStore.Json.Serialize(s).Replace("<", "\\u003c");
 
     public static string Page(Project p) =>
-        "<!doctype html><html><head><meta charset=utf-8><title>Вывод: " + H(p.Name) + "</title><style>" +
-        ":root{color-scheme:light dark;--muted:rgba(127,127,127,.9);--line:rgba(127,127,127,.3)}" +
+        "<!doctype html><html><head><meta charset=utf-8><title>Консоль: " + H(p.Name) + "</title><style>" +
+        ":root{color-scheme:light dark;--muted:rgba(127,127,127,.9);--line:rgba(127,127,127,.3);--accent:#4d6bfe}" +
         "html,body{margin:0;height:100%;background:Canvas;color:CanvasText;font:14px 'Segoe UI',sans-serif}" +
         "body{display:flex;flex-direction:column}" +
         "header{display:flex;align-items:center;gap:12px;padding:10px 14px;border-bottom:1px solid var(--line)}" +
-        "h1{font-size:16px;font-weight:600;margin:0}" +
-        "#state{color:var(--muted)}#state.on{color:#37c46a}" +
+        "h1{font-size:16px;font-weight:600;margin:0;white-space:nowrap}" +
+        "#state{color:var(--muted);white-space:nowrap}#state.on{color:#37c46a}" +
         "#path{color:var(--muted);font:12px Consolas,monospace;margin-left:auto;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}" +
-        "button{font:13px 'Segoe UI',sans-serif;padding:4px 12px;border:1px solid var(--line);border-radius:6px;background:transparent;color:inherit;cursor:pointer}" +
+        "button{font:13px 'Segoe UI',sans-serif;padding:4px 12px;border:1px solid var(--line);border-radius:6px;background:transparent;color:inherit;cursor:pointer;white-space:nowrap}" +
         "button:hover{background:rgba(127,127,127,.15)}" +
         "#out{flex:1;margin:0;padding:10px 14px;overflow:auto;white-space:pre-wrap;word-break:break-word;font:13px/1.45 Consolas,monospace}" +
         "form{display:flex;gap:8px;align-items:center;padding:8px 14px;border-top:1px solid var(--line)}" +
-        "form span{font:13px Consolas,monospace;color:var(--muted)}" +
+        "#mode{padding:4px 10px}#mode.cmd{border-color:var(--accent);color:var(--accent)}" +
+        "#prompt{font:13px Consolas,monospace;color:var(--muted);max-width:40%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;direction:rtl}" +
         "#line{flex:1;font:13px Consolas,monospace;padding:6px 8px;border:1px solid var(--line);border-radius:6px;background:transparent;color:inherit;outline:none}" +
-        "#line:focus{border-color:#4d6bfe}#line:disabled{opacity:.5}" +
+        "#line:focus{border-color:var(--accent)}#line:disabled{opacity:.5}" +
         "</style></head><body>" +
         "<header><h1>" + H(p.Name) + "</h1><span id=state></span>" +
-        "<button id=stop hidden>Остановить</button><button id=clear>Очистить экран</button>" +
+        "<button id=stop hidden>Остановить программу</button><button id=halt hidden>Прервать команду</button><button id=clear>Очистить экран</button>" +
         "<span id=path title='" + H(LogPath(p.Id)) + "'>" + H(LogPath(p.Id)) + "</span></header>" +
         "<pre id=out></pre>" +
-        "<form id=send><span>&gt;</span><input id=line autocomplete=off spellcheck=false placeholder='Строка для программы, Enter — отправить'></form>" +
+        "<form id=send><button type=button id=mode></button><span id=prompt></span>" +
+        "<input id=line autocomplete=off spellcheck=false></form>" +
         "<script>" +
-        "const id=" + Js(p.Id) + ",out=document.getElementById('out'),line=document.getElementById('line'),state=document.getElementById('state'),stop=document.getElementById('stop');" +
-        "let from=-1,running=false,busy=false;" +
+        "const id=" + Js(p.Id) + ",$=s=>document.getElementById(s),out=$('out'),line=$('line'),state=$('state'),stopBtn=$('stop'),halt=$('halt'),mode=$('mode'),promptEl=$('prompt');" +
+        "let from=-1,running=false,busy=false,cmd=true,command=false,dir='',typed=[],back=0;" +
         "const post=m=>window.chrome.webview.postMessage(m);" +
-        "function show(r){running=r;state.textContent=r?'● работает':'остановлена';state.className=r?'on':'';stop.hidden=!r;line.disabled=!r;}" +
+        // Two ways to type: a command for cmd in the console's folder, or a line to the running program
+        "function modeShow(){mode.textContent=cmd?'Команда':'Программе';mode.className=cmd?'cmd':'';" +
+        "mode.title=cmd?'Строка выполняется в cmd в папке ниже; cd меняет папку. Нажмите, чтобы писать программе проекта':'Строка уходит на ввод программе проекта. Нажмите, чтобы выполнять команды';" +
+        "promptEl.textContent=cmd?dir+'>':'>';promptEl.title=cmd?dir:'';" +
+        "line.placeholder=cmd?(command?'Команда выполняется: строка уйдёт ей на ввод':'Команда, например: git status, npm install, dir'):(running?'Строка для программы, Enter — отправить':'Программа не запущена');" +
+        "line.disabled=!cmd&&!running;}" +
+        "mode.addEventListener('click',()=>{cmd=!cmd;modeShow();line.focus();});" +
+        "function show(d){running=d.running;command=d.command;dir=d.dir;state.textContent=running?'● программа работает':'программа остановлена';state.className=running?'on':'';" +
+        "stopBtn.hidden=!running;halt.hidden=!command;modeShow();}" +
         "async function poll(){if(busy)return;busy=true;try{" +
         "const r=await fetch(location.pathname+'/text?from='+from,{cache:'no-store'});const d=await r.json();" +
         "const end=out.scrollHeight-out.scrollTop-out.clientHeight<24;" +
-        "if(d.reset)out.textContent='';if(d.text)out.append(d.text);from=d.size;show(d.running);" +
+        "if(d.reset)out.textContent='';if(d.text)out.append(d.text);from=d.size;show(d);" +
         // Only a long log is cut: the page keeps the last lines, as a terminal does
         "if(out.textContent.length>2000000)out.textContent=out.textContent.slice(-1000000);" +
         "if(end||d.reset)out.scrollTop=out.scrollHeight;" +
         "}catch(e){}finally{busy=false;}}" +
-        "document.getElementById('send').addEventListener('submit',e=>{e.preventDefault();if(!running)return;post({type:'input',id,text:line.value});line.value='';setTimeout(poll,150);});" +
-        "stop.addEventListener('click',()=>post({type:'stop',id}));" +
-        "document.getElementById('clear').addEventListener('click',()=>{out.textContent='';});" +
+        "$('send').addEventListener('submit',e=>{e.preventDefault();const t=line.value;" +
+        "if(cmd){if(!t.trim())return;post({type:'command',id,text:t});if(!command&&typed[typed.length-1]!==t)typed.push(t);back=typed.length;}" +
+        "else{if(!running)return;post({type:'input',id,text:t});}" +
+        "line.value='';out.scrollTop=out.scrollHeight;setTimeout(poll,150);});" +
+        // Up and down go through the commands typed before, as in cmd
+        "line.addEventListener('keydown',e=>{if(!cmd||(e.key!=='ArrowUp'&&e.key!=='ArrowDown'))return;e.preventDefault();" +
+        "back=Math.max(0,Math.min(typed.length,back+(e.key==='ArrowUp'?-1:1)));line.value=typed[back]||'';});" +
+        "stopBtn.addEventListener('click',()=>post({type:'stop',id}));" +
+        "halt.addEventListener('click',()=>post({type:'stopCommand',id}));" +
+        "$('clear').addEventListener('click',()=>{out.textContent='';});" +
         // The browser tells the start pages when a program starts or stops: this page listens too
         "window.chrome.webview.addEventListener('message',e=>{if(e.data&&e.data.type==='projects')poll();});" +
-        "poll();setInterval(()=>{if(!document.hidden)poll();},700);" +
+        "modeShow();poll();setInterval(()=>{if(!document.hidden)poll();},700);line.focus();" +
         "</script></body></html>";
 }

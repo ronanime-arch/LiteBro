@@ -129,14 +129,14 @@ sealed class App : ApplicationContext
     public async Task<CoreWebView2Environment> GetEnvironmentAsync()
     {
         // While the engine restarts with other flags, new tabs wait for the new one
-        while (restart != null) await restart;
+        while (restart is { IsCompleted: false } r) await r;
         return await (envTask ??= CreateEnvironmentAsync());
     }
 
     Task? restart;
 
     /// <summary>The engine is being restarted: a WebView made now belongs to the old one.</summary>
-    public bool Restarting => restart != null;
+    public bool Restarting => restart is { IsCompleted: false };
 
     /// <summary>The engine to answer a request with: the current one, or during a restart the one going away.</summary>
     public CoreWebView2Environment? ResponseEnv => Env ?? oldEnv;
@@ -380,6 +380,8 @@ sealed class App : ApplicationContext
     /// </summary>
     async Task RestartEngineAsync()
     {
+        // Out of the caller first: it may be a WebView's own event, and restart must hold this task before it ends
+        await Task.Yield();
         try
         {
             do

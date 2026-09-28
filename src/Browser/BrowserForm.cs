@@ -1091,8 +1091,10 @@ sealed class BrowserForm : Form
             var script = NetGuard.PageScript();
             _ = core.ExecuteScriptAsync(script);
             if (!NetGuard.Watching) return;
+            // Two quick changes overlap here: only the latest one's script stays
+            int generation = ++tab.NetGeneration;
             var id = await core.AddScriptToExecuteOnDocumentCreatedAsync(script);
-            if (tab.Core == core && NetGuard.Watching && tab.NetScript == null) tab.NetScript = id;
+            if (tab.Core == core && NetGuard.Watching && tab.NetScript == null && generation == tab.NetGeneration) tab.NetScript = id;
             else core.RemoveScriptToExecuteOnDocumentCreated(id);
         }
         catch (Exception) { } // the WebView closed meanwhile
@@ -1415,6 +1417,13 @@ sealed class BrowserForm : Form
     {
         var env = App.Current.ResponseEnv;
         if (env == null || !Home.Is(e.Request.Uri)) return;
+        // Consoles, the journal and the rest are read only by the browser's own pages: with CORS off
+        // any site could fetch them otherwise (a console's output, tokens included)
+        if (e.ResourceContext != CoreWebView2WebResourceContext.Document && !(sender is CoreWebView2 asker && Home.Is(asker.Source)))
+        {
+            e.Response = env.CreateWebResourceResponse(null, 403, "Forbidden", "");
+            return;
+        }
         var path = new Uri(e.Request.Uri).AbsolutePath;
         if (path == "/")
             e.Response = env.CreateWebResourceResponse(Home.Page(), 200, "OK", Home.Headers);

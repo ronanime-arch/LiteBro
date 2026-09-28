@@ -74,38 +74,33 @@
     return B.apply(navigator, arguments);
   };
 
+  // Proxies, not stand-in functions: a class that extends them, instanceof and their static members still work
   const E = window.EventSource;
-  if (E) {
-    const ES = function (address, options) {
-      const u = url(address);
+  if (E) window.EventSource = new Proxy(E, {
+    construct(target, args, newTarget) {
+      const u = url(args[0]);
       if (u && outside(u)) note("stack", "EventSource", "GET", u);
-      return new E(address, options);
-    };
-    ES.prototype = E.prototype;
-    for (const k of ["CONNECTING", "OPEN", "CLOSED"]) ES[k] = E[k];
-    window.EventSource = ES;
-  }
+      return Reflect.construct(target, args, newTarget);
+    },
+  });
 
   // Web sockets never reach the browser's request filter: refused here, and journaled from here
   const W = window.WebSocket;
-  if (W) {
-    const WS = function (address, protocols) {
-      const u = url(address);
+  if (W) window.WebSocket = new Proxy(W, {
+    construct(target, args, newTarget) {
+      const u = url(args[0]);
       if (u && refused(u)) {
         note("ws-blocked", "WebSocket", "GET", u);
         throw new DOMException("Заблокировано режимом «только localhost»: " + u.href, "SecurityError");
       }
       if (u && outside(u)) note("ws", "WebSocket", "GET", u);
-      const s = protocols === undefined ? new W(address) : new W(address, protocols);
+      const s = Reflect.construct(target, args, newTarget);
       if (u) {
         s.__litebroUrl = u;
         sockets.add(s);
         s.addEventListener("close", () => sockets.delete(s));
       }
       return s;
-    };
-    WS.prototype = W.prototype;
-    for (const k of ["CONNECTING", "OPEN", "CLOSING", "CLOSED"]) WS[k] = W[k];
-    window.WebSocket = WS;
-  }
+    },
+  });
 })();

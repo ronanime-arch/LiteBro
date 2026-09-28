@@ -81,11 +81,11 @@ static class NetGuard
     /// <summary>Loopback, private ranges (10/8, 172.16/12, 192.168/16), link-local, and their IPv6 kin.</summary>
     public static bool IsLocalIp(IPAddress ip)
     {
+        if (ip.IsIPv4MappedToIPv6) ip = ip.MapToIPv4(); // [::ffff:127.0.0.1] is loopback too
         if (IPAddress.IsLoopback(ip) || ip.Equals(IPAddress.Any) || ip.Equals(IPAddress.IPv6Any)) return true;
-        if (ip.IsIPv4MappedToIPv6) ip = ip.MapToIPv4();
         var b = ip.GetAddressBytes();
         if (ip.AddressFamily == AddressFamily.InterNetwork)
-            return b[0] == 10 || (b[0] == 172 && b[1] >= 16 && b[1] <= 31) || (b[0] == 192 && b[1] == 168) || (b[0] == 169 && b[1] == 254);
+            return b[0] == 127 || b[0] == 10 || (b[0] == 172 && b[1] >= 16 && b[1] <= 31) || (b[0] == 192 && b[1] == 168) || (b[0] == 169 && b[1] == 254);
         return ip.IsIPv6LinkLocal || ip.IsIPv6SiteLocal || (b[0] & 0xfe) == 0xfc; // fc00::/7
     }
 

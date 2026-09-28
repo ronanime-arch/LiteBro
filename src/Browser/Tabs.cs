@@ -34,6 +34,7 @@ sealed class Tab
     /// <summary>The «только localhost» request filter and the web socket script are in place on the current WebView.</summary>
     public bool NetFilter;
     public string? NetScript;
+    public int NetGeneration;
     /// <summary>The journal's listener to responses, only while it is on: each response it hears crosses to this process.</summary>
     public EventHandler<CoreWebView2WebResourceResponseReceivedEventArgs>? NetResponse;
 

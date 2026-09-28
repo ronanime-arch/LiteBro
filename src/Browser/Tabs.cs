@@ -41,13 +41,15 @@ sealed class TabStrip : Control
     readonly ToolTip tip = new();
     readonly Font small = new(BrowserForm.IconFont, 7.5f), plus = new(BrowserForm.IconFont, 9.5f);
     IReadOnlyList<Tab> tabs = Array.Empty<Tab>();
-    Tab? active;
+    Tab? active, beside;
     // Index of the tab under the mouse; tabs.Count is the new tab button
     int hover = -1;
     bool overClose;
     string tipText = "";
 
     public event Action<Tab>? Picked, Closing;
+    /// <summary>A right click on a tab, with where to show its menu.</summary>
+    public event Action<Tab, Point>? Menu;
     public event Action? NewTab;
 
     public TabStrip()
@@ -66,10 +68,12 @@ sealed class TabStrip : Control
         Invalidate();
     }
 
-    public void SetTabs(IReadOnlyList<Tab> list, Tab? front)
+    /// <param name="besideFront">The other tab on screen in a split.</param>
+    public void SetTabs(IReadOnlyList<Tab> list, Tab? front, Tab? besideFront = null)
     {
         tabs = list;
         active = front;
+        beside = besideFront;
         var p = PointToClient(MousePosition);
         hover = ClientRectangle.Contains(p) ? Hit(p, out overClose) : -1;
         Invalidate();
@@ -111,7 +115,7 @@ sealed class TabStrip : Control
         return new(tab.Right - s - Unit / 3, tab.Top + (tab.Height - s) / 2, s, s);
     }
 
-    bool HasClose(int i) => tabs[i] == active || TabWidth >= Unit * 5;
+    bool HasClose(int i) => tabs[i] == active || tabs[i] == beside || TabWidth >= Unit * 5;
 
     int Hit(Point p, out bool close)
     {
@@ -137,14 +141,21 @@ sealed class TabStrip : Control
             var tab = tabs[i];
             var r = TabRect(i);
             bool front = tab == active;
-            if (front || i == hover)
+            if (front || tab == beside)
             {
-                var shape = front ? r : new Rectangle(r.X + 2, r.Y + 2, r.Width - 4, r.Height - 6);
-                using var brush = new SolidBrush(front ? Face : Mix(BackColor, Face, .5f));
-                using var path = Rounded(shape, Unit / 2, allCorners: !front);
+                // The tab beside the one in front in a split: shaped the same, a shade darker
+                using var brush = new SolidBrush(front ? Face : Mix(BackColor, Face, i == hover ? .8f : .6f));
+                using var path = Rounded(r, Unit / 2, allCorners: false);
                 g.FillPath(brush, path);
             }
-            else if (i + 1 < tabs.Count && tabs[i + 1] != active && i + 1 != hover)
+            else if (i == hover)
+            {
+                var shape = new Rectangle(r.X + 2, r.Y + 2, r.Width - 4, r.Height - 6);
+                using var brush = new SolidBrush(Mix(BackColor, Face, .5f));
+                using var path = Rounded(shape, Unit / 2, allCorners: true);
+                g.FillPath(brush, path);
+            }
+            else if (i + 1 < tabs.Count && tabs[i + 1] != active && tabs[i + 1] != beside && i + 1 != hover)
             {
                 using var pen = new Pen(Mix(BackColor, Theme.Text, .25f));
                 g.DrawLine(pen, r.Right - 1, r.Top + r.Height / 4, r.Right - 1, r.Bottom - r.Height / 3);
@@ -259,6 +270,7 @@ sealed class TabStrip : Control
         int h = Hit(e.Location, out bool close);
         if (h < 0 || h >= tabs.Count) return;
         if (e.Button == MouseButtons.Middle || (e.Button == MouseButtons.Left && close)) Closing?.Invoke(tabs[h]);
+        else if (e.Button == MouseButtons.Right) Menu?.Invoke(tabs[h], e.Location);
     }
 
     protected override void Dispose(bool disposing)

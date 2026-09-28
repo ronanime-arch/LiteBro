@@ -279,7 +279,7 @@ sealed class App : ApplicationContext
     async void TrimHiddenTabs()
     {
         if (Env == null) return;
-        var shown = new HashSet<uint>(forms.Select(f => f.ShownFrameId).OfType<uint>());
+        var shown = new HashSet<uint>(forms.SelectMany(f => f.ShownFrameIds));
         try
         {
             foreach (var info in await Env.GetProcessExtendedInfosAsync())

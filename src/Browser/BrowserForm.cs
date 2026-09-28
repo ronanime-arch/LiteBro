@@ -31,6 +31,8 @@ sealed class BrowserForm : Form
     readonly string? startLink;
     readonly TabStrip strip = new();
     readonly Panel host = new() { Dock = DockStyle.Fill };
+    // Between the two tabs of a split, dragged to share the width differently
+    readonly Panel divider = new() { Cursor = Cursors.VSplit, Visible = false };
     readonly TextBox address = new()
     {
         Anchor = AnchorStyles.Left | AnchorStyles.Right,
@@ -55,14 +57,26 @@ sealed class BrowserForm : Form
     readonly Timer freezeTimer = new() { Interval = 15_000 };
     readonly List<Tab> tabs = new();
     Tab? active;
+    // Two tabs side by side: the one in front is one of them, the other stays on screen beside it
+    Tab? paneLeft, paneRight;
+    float splitAt = .5f;
+    int? dragFrom;
     double zoom = 1;
     bool minimized, inBackground;
 
     CoreWebView2? Core => active?.Core;
     /// <summary>Minimized, or not used for a while: its tab in front runs with the Low memory target.</summary>
     public bool InBackground => inBackground;
-    /// <summary>The main frame on screen in this window; null while it is minimized.</summary>
-    public uint? ShownFrameId => minimized || Core == null ? null : Core.FrameId;
+    /// <summary>The main frames on screen in this window: none while it is minimized.</summary>
+    public IEnumerable<uint> ShownFrameIds =>
+        minimized ? Enumerable.Empty<uint>() : OnScreen.Select(t => t.Core?.FrameId).OfType<uint>();
+
+    bool Split => paneLeft != null;
+    bool IsPane(Tab tab) => Split && (tab == paneLeft || tab == paneRight);
+    /// <summary>The other tab on screen in a split.</summary>
+    Tab? Partner => !Split ? null : active == paneLeft ? paneRight : paneLeft;
+    /// <summary>The tabs on screen: the one in front and, in a split, the one beside it.</summary>
+    IEnumerable<Tab> OnScreen => new[] { active, Partner }.OfType<Tab>();
 
     /// <param name="url">What to open in the first tab.</param>
     /// <param name="openHome">Open the start page with the project tiles.</param>
@@ -111,6 +125,16 @@ sealed class BrowserForm : Form
         strip.Picked += SelectTab;
         strip.Closing += CloseTab;
         strip.NewTab += () => OpenNewTab(null);
+        strip.Menu += ShowTabMenu;
+        host.Controls.Add(divider);
+        divider.MouseDown += (_, e) => { if (e.Button == MouseButtons.Left) dragFrom = e.X; };
+        divider.MouseMove += (_, e) =>
+        {
+            if (dragFrom is not { } from || host.Width == 0) return;
+            splitAt = Math.Max(.15f, Math.Min(.85f, (float)(divider.Left + e.X - from + divider.Width / 2) / host.Width));
+            LayoutPanes();
+        };
+        divider.MouseUp += (_, _) => dragFrom = null;
         tips.SetToolTip(ram, "Память браузера, как в диспетчере задач. Клик — диспетчер процессов (Shift+Esc)");
         ram.Click += (_, _) => Core?.OpenTaskManagerWindow();
         address.KeyDown += OnAddressKeyDown;
@@ -122,7 +146,7 @@ sealed class BrowserForm : Form
             EnterBackground();
         };
         freezeTimer.Tick += (_, _) => FreezeIdleTabs();
-        host.Resize += (_, _) => { if (active?.Ctl is { } c) c.Bounds = host.ClientRectangle; };
+        host.Resize += (_, _) => LayoutPanes();
         address.HandleCreated += (_, _) => Theme.ApplyEdit(address.Handle);
         ApplyTheme();
     }
@@ -137,6 +161,7 @@ sealed class BrowserForm : Form
     public void ApplyTheme()
     {
         BackColor = host.BackColor = Theme.PageBackground;
+        divider.BackColor = Theme.Strip;
         bar.BackColor = Theme.Face;
         foreach (var b in new[] { back, forward, reload, home, country })
         {
@@ -263,7 +288,9 @@ sealed class BrowserForm : Form
     {
         var c = tab.Ctl!;
         ApplyTheme(c);
-        c.Bounds = host.ClientRectangle;
+        c.Bounds = BoundsOf(tab);
+        // A click into the tab beside brings it forward: the toolbar follows it
+        c.GotFocus += (_, _) => { if (tab == Partner) FocusPane(tab); };
         c.ZoomFactor = zoom;
         c.AcceleratorKeyPressed += OnAcceleratorKeyPressed;
         var core = c.CoreWebView2;
@@ -368,19 +395,99 @@ sealed class BrowserForm : Form
     void ShowCountryMenu()
     {
         var picked = SearchCountry.Current;
+        var menu = NewMenu();
+        menu.Items.Add(new ToolStripMenuItem("Как обычно (без страны)", null, (_, _) => PickCountry(null)) { Checked = picked == null });
+        menu.Items.Add(new ToolStripSeparator());
+        foreach (var c in SearchCountry.All)
+            menu.Items.Add(new ToolStripMenuItem(c.Name + " (" + c.Code + ")", null, (_, _) => PickCountry(c)) { Checked = c == picked });
+        menu.Show(country, new Point(0, country.Height));
+    }
+
+    /// <summary>A menu in the theme's colours, gone once closed: the next one is built again with the current state.</summary>
+    ContextMenuStrip NewMenu()
+    {
         var menu = new ContextMenuStrip();
         if (Theme.Dark)
         {
             menu.Renderer = new ToolStripProfessionalRenderer(new DarkMenuColors());
             menu.ForeColor = Theme.Text;
         }
-        menu.Items.Add(new ToolStripMenuItem("Как обычно (без страны)", null, (_, _) => PickCountry(null)) { Checked = picked == null });
-        menu.Items.Add(new ToolStripSeparator());
-        foreach (var c in SearchCountry.All)
-            menu.Items.Add(new ToolStripMenuItem(c.Name + " (" + c.Code + ")", null, (_, _) => PickCountry(c)) { Checked = c == picked });
-        // Gone once closed: the next click builds it again with the current tick
         menu.Closed += (_, _) => BeginInvoke(new Action(menu.Dispose));
-        menu.Show(country, new Point(0, country.Height));
+        return menu;
+    }
+
+    /// <summary>A tab's right-click menu: side by side with the tab in front, back to one, close.</summary>
+    void ShowTabMenu(Tab tab, Point at)
+    {
+        var menu = NewMenu();
+        if (active != null && !IsPane(tab) && tab != active)
+            menu.Items.Add(new ToolStripMenuItem("Открыть рядом", null, (_, _) => SplitWith(tab)));
+        if (Split)
+            menu.Items.Add(new ToolStripMenuItem("Убрать разделение", null, (_, _) => Unsplit()));
+        if (menu.Items.Count > 0) menu.Items.Add(new ToolStripSeparator());
+        menu.Items.Add(new ToolStripMenuItem("Закрыть вкладку", null, (_, _) => CloseTab(tab)) { ShortcutKeyDisplayString = tab == active ? "Ctrl+W" : "" });
+        menu.Show(strip, at);
+    }
+
+    /// <summary>Puts a tab beside the one in front, on the right; in a split it takes the place of the tab beside.</summary>
+    async void SplitWith(Tab tab)
+    {
+        if (active == null || tab == active || tab.Closed) return;
+        if (Partner is { } old) SendToBackground(old);
+        paneLeft = active;
+        paneRight = tab;
+        divider.Visible = true;
+        strip.SetTabs(tabs, active, tab);
+        LayoutPanes();
+        await ShowPaneAsync(tab);
+    }
+
+    /// <summary>Back to one tab on screen: the one beside goes to the background.</summary>
+    void Unsplit()
+    {
+        var partner = Partner;
+        EndSplit();
+        if (partner != null) SendToBackground(partner);
+        strip.SetTabs(tabs, active, Partner);
+        LayoutPanes();
+    }
+
+    void EndSplit()
+    {
+        paneLeft = paneRight = null;
+        divider.Visible = false;
+        dragFrom = null;
+    }
+
+    int DividerWidth => Math.Max(4, host.DeviceDpi / 16);
+
+    /// <summary>Where a tab's page goes: the whole of the host, or its side of a split.</summary>
+    Rectangle BoundsOf(Tab tab)
+    {
+        var r = host.ClientRectangle;
+        if (!IsPane(tab)) return r;
+        int d = DividerWidth, x = (int)(r.Width * splitAt) - d / 2;
+        return tab == paneLeft ? new Rectangle(r.X, r.Y, x, r.Height) : new Rectangle(x + d, r.Y, r.Width - x - d, r.Height);
+    }
+
+    void LayoutPanes()
+    {
+        if (Split)
+        {
+            var left = BoundsOf(paneLeft!);
+            divider.Bounds = new Rectangle(left.Right, 0, DividerWidth, host.ClientSize.Height);
+        }
+        foreach (var tab in OnScreen)
+            if (tab.Ctl is { } c) c.Bounds = BoundsOf(tab);
+    }
+
+    /// <summary>The tab beside becomes the tab in front, where it is.</summary>
+    void FocusPane(Tab tab)
+    {
+        if (tab == active || !IsPane(tab)) return;
+        active = tab;
+        strip.SetTabs(tabs, tab, Partner);
+        ShowState(tab, switched: true);
     }
 
     /// <summary>Remembers the country and searches again with it.</summary>
@@ -408,7 +515,7 @@ sealed class BrowserForm : Form
         else
         {
             SendToBackground(tab);
-            strip.SetTabs(tabs, active);
+            strip.SetTabs(tabs, active, Partner);
         }
     }
 
@@ -416,13 +523,33 @@ sealed class BrowserForm : Form
     async void SelectTab(Tab tab)
     {
         if (tab == active || tab.Closed) return;
-        if (active != null) SendToBackground(active);
-        active = tab;
-        tab.InactiveSince = null;
-        strip.SetTabs(tabs, tab);
-        ShowState(tab, switched: true);
-        if (tab.Ctl == null && (!await LoadAsync(tab, tab.Address.Length > 0 ? tab.Address : Home.Url) || tab != active))
+        if (tab == Partner)
+        {
+            FocusPane(tab);
+            tab.Ctl?.MoveFocus(CoreWebView2MoveFocusReason.Programmatic);
             return;
+        }
+        if (active != null)
+        {
+            // In a split the picked tab takes the place of the one in front
+            if (paneLeft == active) paneLeft = tab;
+            else if (paneRight == active) paneRight = tab;
+            SendToBackground(active);
+        }
+        active = tab;
+        strip.SetTabs(tabs, tab, Partner);
+        ShowState(tab, switched: true);
+        if (!await ShowPaneAsync(tab) || tab != active) return;
+        ShowState(tab, switched: true);
+        tab.Ctl!.MoveFocus(CoreWebView2MoveFocusReason.Programmatic);
+    }
+
+    /// <summary>Puts a tab on screen: one closed in the background loads its page again, a paused one resumes.</summary>
+    async Task<bool> ShowPaneAsync(Tab tab)
+    {
+        tab.InactiveSince = null;
+        if (tab.Ctl == null && (!await LoadAsync(tab, tab.Address.Length > 0 ? tab.Address : Home.Url) || !OnScreen.Contains(tab)))
+            return false;
         var c = tab.Ctl!;
         if (tab.Suspended)
         {
@@ -430,14 +557,13 @@ sealed class BrowserForm : Form
             try { c.CoreWebView2.Resume(); }
             catch (Exception) { } // it resumes by itself once visible
         }
-        c.Bounds = host.ClientRectangle;
+        c.Bounds = BoundsOf(tab);
         c.CoreWebView2.MemoryUsageTargetLevel = inBackground
             ? CoreWebView2MemoryUsageTargetLevel.Low : CoreWebView2MemoryUsageTargetLevel.Normal;
         c.IsVisible = !minimized;
         strip.Invalidate();
-        ShowState(tab, switched: true);
         SendProjects(tab); // a start page paused in the background missed the changes
-        c.MoveFocus(CoreWebView2MoveFocusReason.Programmatic);
+        return true;
     }
 
     /// <summary>A tab out of sight: hidden, on the Low memory target, its renderer trimmed soon after.</summary>
@@ -460,6 +586,13 @@ sealed class BrowserForm : Form
             Close();
             return;
         }
+        // Closing either side of a split leaves the other one alone on screen
+        Tab? other = null;
+        if (IsPane(tab))
+        {
+            other = tab == paneLeft ? paneRight : paneLeft;
+            EndSplit();
+        }
         tab.Closed = true;
         tabs.RemoveAt(i);
         var c = tab.Ctl;
@@ -468,9 +601,13 @@ sealed class BrowserForm : Form
         if (tab == active)
         {
             active = null;
-            SelectTab(tabs[Math.Min(i, tabs.Count - 1)]);
+            SelectTab(other ?? tabs[Math.Min(i, tabs.Count - 1)]);
         }
-        else strip.SetTabs(tabs, active);
+        else
+        {
+            strip.SetTabs(tabs, active, Partner);
+            LayoutPanes();
+        }
     }
 
     void SelectNext(int step)
@@ -915,7 +1052,8 @@ sealed class BrowserForm : Form
     {
         if (inBackground) return;
         inBackground = true;
-        if (Core is { } core) core.MemoryUsageTargetLevel = CoreWebView2MemoryUsageTargetLevel.Low;
+        foreach (var tab in OnScreen)
+            if (tab.Core is { } core) core.MemoryUsageTargetLevel = CoreWebView2MemoryUsageTargetLevel.Low;
         App.Current.BackgroundChanged();
     }
 
@@ -924,7 +1062,8 @@ sealed class BrowserForm : Form
         if (!inBackground) return;
         inBackground = false;
         // The other tabs stay on Low: they are out of sight in any case
-        if (Core is { } core) core.MemoryUsageTargetLevel = CoreWebView2MemoryUsageTargetLevel.Normal;
+        foreach (var tab in OnScreen)
+            if (tab.Core is { } core) core.MemoryUsageTargetLevel = CoreWebView2MemoryUsageTargetLevel.Normal;
         App.Current.BackgroundChanged();
     }
 
@@ -934,7 +1073,8 @@ sealed class BrowserForm : Form
         bool now = WindowState == FormWindowState.Minimized;
         if (now == minimized) return;
         minimized = now;
-        if (active?.Ctl is { } c) c.IsVisible = !now;
+        foreach (var tab in OnScreen)
+            if (tab.Ctl is { } c) c.IsVisible = !now;
         if (now) EnterBackground();
         else LeaveBackground();
     }

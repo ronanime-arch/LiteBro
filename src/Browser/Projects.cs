@@ -34,6 +34,13 @@ sealed class Project
     /// <summary>More addresses of the project (its backend, say), opened from the tile's menu or all at once.</summary>
     public List<ProjectLink> Links { get => links; set => links = value ?? new(); } // never null, even from "Links": null
     List<ProjectLink> links = new();
+    /// <summary>The project's pages run in a WebView2 profile of their own: own cookies, storage and permissions.</summary>
+    public bool OwnProfile { get; set; }
+    /// <summary>Its cookies and cache stay when the browser clears them on exit (Settings.ClearOnExit).</summary>
+    public bool KeepData { get; set; }
+
+    /// <summary>The WebView2 profile of the project's pages; "" for the shared one.</summary>
+    public string Profile => OwnProfile && Id.Length > 0 ? "project-" + Id : "";
 
     /// <summary>Url and the links' addresses.</summary>
     public IEnumerable<string> Addresses() => new[] { Url }.Concat(Links.Select(l => l.Url));

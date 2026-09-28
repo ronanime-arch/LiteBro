@@ -52,8 +52,8 @@ sealed class BrowserForm : Form
     };
     readonly ToolTip tips = new();
     readonly TableLayoutPanel bar;
-    readonly ToolButton back, forward, reload, home, country, star;
-    const string GlyphStar = "\uE734", GlyphStarFilled = "\uE735";
+    readonly ToolButton back, forward, reload, reset, home, country, star;
+    const string GlyphStar = "\uE734", GlyphStarFilled = "\uE735", GlyphReset = "\uE75C";
     readonly Font countryGlyphFont, countryCodeFont = new("Segoe UI", 9f, FontStyle.Bold);
     readonly Timer ramTimer = new() { Interval = 2000 };
     // How long a window may sit in the background before it gives memory back
@@ -104,6 +104,8 @@ sealed class BrowserForm : Form
         back = MakeButton(GlyphBack, "Назад (Alt+←)", () => Core?.GoBack());
         forward = MakeButton(GlyphForward, "Вперёд (Alt+→)", () => Core?.GoForward());
         reload = MakeButton(GlyphReload, "Обновить (F5)", ReloadOrStop);
+        reset = MakeButton(GlyphReset, "Сбросить Service Worker и кэш сайта, загрузить заново (Ctrl+Shift+R)", ResetSite);
+        reset.Visible = false;
         home = MakeButton(GlyphHome, "Проекты (Alt+Home)", GoHome);
         country = MakeButton(GlyphGlobe, "Страна поиска", ShowCountryMenu);
         country.Visible = false;
@@ -115,14 +117,14 @@ sealed class BrowserForm : Form
         {
             Dock = DockStyle.Top,
             AutoSize = true,
-            ColumnCount = 8,
+            ColumnCount = 9,
             RowCount = 1,
             Padding = new Padding(4, 3, 0, 3),
         };
-        for (int i = 0; i < 4; i++) bar.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+        for (int i = 0; i < 5; i++) bar.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
         bar.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
         for (int i = 0; i < 3; i++) bar.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
-        bar.Controls.AddRange(new Control[] { back, forward, reload, home, address, star, country, ram });
+        bar.Controls.AddRange(new Control[] { back, forward, reload, reset, home, address, star, country, ram });
 
         // Docking goes from the last added: the strip on top, the toolbar under it, the page in what is left
         Controls.Add(host);
@@ -172,7 +174,7 @@ sealed class BrowserForm : Form
         BackColor = host.BackColor = Theme.PageBackground;
         divider.BackColor = Theme.Strip;
         bar.BackColor = Theme.Face;
-        foreach (var b in new[] { back, forward, reload, home, star, country })
+        foreach (var b in new[] { back, forward, reload, reset, home, star, country })
         {
             b.BackColor = Theme.Face;
             b.ForeColor = Theme.Text;
@@ -258,9 +260,10 @@ sealed class BrowserForm : Form
     }
 
     /// <param name="url">What to open; null for a popup the opening page fills in itself.</param>
-    async Task<Tab?> CreateTabAsync(string? url)
+    /// <param name="profile">The WebView2 profile; by default the one of the project the address belongs to.</param>
+    async Task<Tab?> CreateTabAsync(string? url, string? profile = null)
     {
-        var tab = new Tab();
+        var tab = new Tab { Profile = profile ?? ProfileFor(url) };
         return await LoadAsync(tab, url) ? tab : null;
     }
 
@@ -272,7 +275,7 @@ sealed class BrowserForm : Form
         {
             var env = await App.Current.GetEnvironmentAsync();
             if (IsDisposed) return false;
-            c = await env.CreateCoreWebView2ControllerAsync(host.Handle);
+            c = await App.Current.CreateControllerAsync(env, host.Handle, tab.Profile);
         }
         catch (Exception ex)
         {
@@ -347,6 +350,19 @@ sealed class BrowserForm : Form
                 BeginInvoke(new Action(() => core.Navigate(withCountry)));
                 return;
             }
+            // A project with a profile of its own is opened in it, and one without leaves another's: the tab moves over.
+            // Other sites (a login page the project sends to, say) stay in the profile the tab is in.
+            if (e.NavigationKind == CoreWebView2NavigationKind.NewDocument && !e.IsRedirected
+                && Uri.TryCreate(e.Uri, UriKind.Absolute, out var to) && OwnerOf(tab, to) is { } owner && owner.Profile != tab.Profile)
+            {
+                e.Cancel = true;
+                var target = e.Uri;
+                BeginInvoke(new Action(async () =>
+                {
+                    if (await UseProfileAsync(tab, owner.Profile)) tab.Core?.Navigate(target);
+                }));
+                return;
+            }
             // Back on the start page nothing is to be tried again on F5
             if (Home.Is(e.Uri)) tab.LastProject = null;
             if (Home.Is(e.Uri) || !(e.Uri.StartsWith("about:") || e.Uri.StartsWith("data:")))
@@ -399,9 +415,41 @@ sealed class BrowserForm : Form
         or CoreWebView2WebErrorStatus.Disconnected or CoreWebView2WebErrorStatus.Timeout
         or CoreWebView2WebErrorStatus.ServerUnreachable;
 
+    /// <summary>The profile an address opens in: its project's own, else the shared one.</summary>
+    static string ProfileFor(string? url) =>
+        url != null && Uri.TryCreate(url, UriKind.Absolute, out var u) && ProjectOf(u) is { } p ? p.Profile : "";
+
+    /// <summary>
+    /// Moves a tab to another profile: its WebView is replaced (history does not come along) and shows nothing yet.
+    /// An unloaded tab just loads in the new profile when picked.
+    /// </summary>
+    async Task<bool> UseProfileAsync(Tab tab, string profile)
+    {
+        if (tab.Profile == profile) return tab.Ctl == null || tab.Core != null;
+        tab.Profile = profile;
+        if (tab.Ctl is not { } old) return true;
+        StopTerm(tab);
+        tab.Ctl = null;
+        tab.Suspended = tab.Loading = tab.PlayingAudio = false;
+        old.Close();
+        if (!await LoadAsync(tab, null) || tab.Closed) return false;
+        if (OnScreen.Contains(tab)) await ShowPaneAsync(tab);
+        else SendToBackground(tab);
+        strip.Invalidate();
+        return tab.Core != null;
+    }
+
     /// <summary>The project whose site (or one of whose links) an address is on.</summary>
     static Project? ProjectOf(Uri url) => ProjectStore.All.FirstOrDefault(p => p.Addresses().Any(a =>
         Uri.TryCreate(a, UriKind.Absolute, out var site) && !site.IsFile && SameSite(site, url)));
+
+    /// <summary>The project an address in a tab belongs to: the tile the tab was opened from if the address is on its sites.</summary>
+    static Project? OwnerOf(Tab tab, Uri url)
+    {
+        if (url.IsFile) return null;
+        bool On(Project p) => p.Addresses().Any(a => Uri.TryCreate(a, UriKind.Absolute, out var site) && !site.IsFile && SameSite(site, url));
+        return tab.LastProject is { } last && ProjectStore.Find(last.Id) is { } p && On(p) ? p : ProjectOf(url);
+    }
 
     static bool IsInternal(string uri) => uri.StartsWith("about:") || uri.StartsWith("data:") || Home.Is(uri);
 
@@ -428,6 +476,21 @@ sealed class BrowserForm : Form
         if (switched || !address.Focused) address.Text = AddressOf(tab);
         ShowCountry(tab);
         ShowStar(tab);
+        reset.Visible = SiteOrigin(tab) != null;
+        ShowStrip();
+    }
+
+    /// <summary>The tab strip, hidden while the start page is all the window shows: it comes with the first site or tile.</summary>
+    void SetTabs()
+    {
+        strip.SetTabs(tabs, active, paneLeft, paneRight);
+        ShowStrip();
+    }
+
+    void ShowStrip()
+    {
+        bool show = tabs.Count != 1 || !Home.Is(tabs[0].Site);
+        if (strip.Visible != show) strip.Visible = show;
     }
 
     /// <summary>The address a tab could be saved under: a site or a file, not a page of this program.</summary>
@@ -607,7 +670,7 @@ sealed class BrowserForm : Form
         paneLeft = active;
         paneRight = tab;
         divider.Visible = stripeLeft.Visible = stripeRight.Visible = true;
-        strip.SetTabs(tabs, active, paneLeft, paneRight);
+        SetTabs();
         LayoutPanes();
         await ShowPaneAsync(tab);
     }
@@ -618,7 +681,7 @@ sealed class BrowserForm : Form
         var partner = Partner;
         EndSplit();
         if (partner != null) SendToBackground(partner);
-        strip.SetTabs(tabs, active, paneLeft, paneRight);
+        SetTabs();
         LayoutPanes();
     }
 
@@ -729,7 +792,7 @@ sealed class BrowserForm : Form
     {
         if (tab == active || !IsPane(tab)) return;
         active = tab;
-        strip.SetTabs(tabs, tab, paneLeft, paneRight);
+        SetTabs();
         ShowState(tab, switched: true);
     }
 
@@ -758,7 +821,7 @@ sealed class BrowserForm : Form
         else
         {
             SendToBackground(tab);
-            strip.SetTabs(tabs, active, paneLeft, paneRight);
+            SetTabs();
         }
     }
 
@@ -780,7 +843,7 @@ sealed class BrowserForm : Form
             SendToBackground(active);
         }
         active = tab;
-        strip.SetTabs(tabs, tab, paneLeft, paneRight);
+        SetTabs();
         ShowState(tab, switched: true);
         if (!await ShowPaneAsync(tab) || tab != active) return;
         ShowState(tab, switched: true);
@@ -851,7 +914,7 @@ sealed class BrowserForm : Form
         }
         else
         {
-            strip.SetTabs(tabs, active, paneLeft, paneRight);
+            SetTabs();
             LayoutPanes();
         }
     }
@@ -993,6 +1056,7 @@ sealed class BrowserForm : Form
                 ["journal"] = NetGuard.Journal,
                 ["allow"] = NetGuard.AllowText,
                 ["cors"] = NetGuard.IgnoreCors,
+                ["clearOnExit"] = App.Current.S.ClearOnExit,
                 ["file"] = NetLog.FilePath,
             }));
     }
@@ -1223,7 +1287,7 @@ sealed class BrowserForm : Form
     /// <param name="link">One of the project's links; null for its own address.</param>
     async Task OpenProjectInNewTabAsync(Project p, bool front, string? link = null)
     {
-        var tab = await CreateTabAsync(null);
+        var tab = await CreateTabAsync(null, p.Profile);
         if (tab == null) return;
         tab.Title = link == null ? p.Name : p.Links.FirstOrDefault(l => l.Url == link)?.Name ?? p.Name;
         Add(tab, front);
@@ -1255,6 +1319,7 @@ sealed class BrowserForm : Form
     {
         if (tab.Core == null || !Uri.TryCreate(link ?? p.Url, UriKind.Absolute, out var url)) return;
         tab.LastProject = p;
+        if (!await UseProfileAsync(tab, p.Profile) || tab.LastProject != p) return;
         tab.LastLink = link;
         var launcher = App.Current.LauncherFor(p);
         if (p.Exe.Trim().Length > 0 && !url.IsFile && !await Launcher.IsUpAsync(url))
@@ -1356,6 +1421,10 @@ sealed class BrowserForm : Form
             case "ready":
                 SendProjects(tab);
                 SendNet(tab);
+                break;
+            case "net" when m.TryGetValue("clearOnExit", out var clear):
+                App.Current.S.SaveClearOnExit(clear is true);
+                App.Current.ApplyNet();
                 break;
             case "net":
                 // The start page's switch or the /net page: what is not sent stays as it is
@@ -1540,6 +1609,34 @@ sealed class BrowserForm : Form
         else core.Reload();
     }
 
+    /// <summary>The origin of the site a tab is on (http or https); null on the browser's own pages.</summary>
+    static string? SiteOrigin(Tab tab) =>
+        !tab.ShowingInternalPage && !IsInternal(tab.Site) && Uri.TryCreate(tab.Site, UriKind.Absolute, out var u)
+        && (u.Scheme == "http" || u.Scheme == "https") ? u.GetLeftPart(UriPartial.Authority) : null;
+
+    /// <summary>
+    /// Ctrl+Shift+R: the site's service workers and Cache Storage go (a stale worker otherwise keeps serving
+    /// the old build), the HTTP cache too, and the page loads anew past any cache. Cookies and storage stay.
+    /// </summary>
+    async void ResetSite()
+    {
+        var tab = active;
+        if (tab?.Core is not { } core) return;
+        if (SiteOrigin(tab) is not { } origin)
+        {
+            ReloadOrStop();
+            return;
+        }
+        try
+        {
+            await core.CallDevToolsProtocolMethodAsync("Storage.clearDataForOrigin", ProjectStore.Json.Serialize(
+                new Dictionary<string, object> { ["origin"] = origin, ["storageTypes"] = "service_workers,cache_storage" }));
+            await core.CallDevToolsProtocolMethodAsync("Network.clearBrowserCache", "{}");
+            if (tab.Core == core) await core.CallDevToolsProtocolMethodAsync("Page.reload", "{\"ignoreCache\":true}");
+        }
+        catch (Exception) { if (tab.Core == core) core.Reload(); } // the page went meanwhile, or an old runtime
+    }
+
     void OnAddressKeyDown(object? sender, KeyEventArgs e)
     {
         if (e.KeyCode == Keys.Enter)
@@ -1606,6 +1703,9 @@ sealed class BrowserForm : Form
             case Keys.F5:
             case Keys.Control | Keys.R:
                 return ReloadOrStop;
+            case Keys.Control | Keys.Shift | Keys.R:
+            case Keys.Control | Keys.F5:
+                return ResetSite;
             case Keys.Shift | Keys.Escape:
                 return () => Core?.OpenTaskManagerWindow();
         }
@@ -1615,6 +1715,7 @@ sealed class BrowserForm : Form
     static readonly HashSet<Keys> TermKeys = new()
     {
         Keys.Control | Keys.L, Keys.Control | Keys.R, Keys.F5, Keys.Alt | Keys.D, Keys.Alt | Keys.Left, Keys.Alt | Keys.Right,
+        Keys.Control | Keys.Shift | Keys.R, Keys.Control | Keys.F5,
     };
 
     // Keys pressed while the page has focus arrive here instead of ProcessCmdKey
@@ -1650,7 +1751,8 @@ sealed class BrowserForm : Form
         var deferral = e.GetDeferral();
         try
         {
-            var tab = await CreateTabAsync(null);
+            // A new window shares its opener's profile: the engine wants it so, and a login popup needs its cookies
+            var tab = await CreateTabAsync(null, tabs.FirstOrDefault(t => t.Core == sender)?.Profile ?? "");
             if (tab?.Core is { } core)
             {
                 e.NewWindow = core;
@@ -1730,10 +1832,22 @@ sealed class BrowserForm : Form
         if (!minimized) backgroundTimer.Start();
     }
 
-    protected override void OnFormClosing(FormClosingEventArgs e)
+    bool clearing;
+
+    protected override async void OnFormClosing(FormClosingEventArgs e)
     {
         base.OnFormClosing(e);
         if (e.Cancel) return;
+        // The last window: cookies and cache go first, while the engine still runs (a few seconds at most)
+        if (!clearing && App.Current.ClearsOnClose(this))
+        {
+            clearing = true;
+            e.Cancel = true;
+            Hide();
+            await Task.WhenAny(App.Current.ClearDataAsync(Handle), Task.Delay(8000));
+            Close();
+            return;
+        }
         ramTimer.Stop();
         backgroundTimer.Stop();
         freezeTimer.Stop();

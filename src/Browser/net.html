@@ -16,6 +16,10 @@
 html, body { margin: 0; height: 100%; background: var(--bg); color: var(--fg); font: 14px/1.45 var(--text); }
 body { display: flex; flex-direction: column; }
 header { padding: 16px 22px 12px; display: grid; gap: 12px; border-bottom: 1px solid var(--line); }
+/* Out of the way, in the top right corner */
+header { position: relative; }
+header > .row:first-child { padding-right: 150px; }
+#keysOpen { position: absolute; top: 14px; right: 22px; }
 h1 { margin: 0; font-size: 20px; font-weight: 600; }
 .row { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 22px; }
 .muted { color: var(--muted); font-size: 12.5px; }
@@ -45,6 +49,33 @@ tr.entry { cursor: pointer; }
 tr.entry:hover td { background: rgba(127, 127, 127, .08); }
 tr.more td { white-space: pre-wrap; word-break: break-all; font: 12px Consolas, monospace; color: var(--muted); padding: 6px 10px 10px 24px; }
 #empty { padding: 28px 22px; }
+th.col { cursor: pointer; user-select: none; }
+th.col:hover { background: rgba(127, 127, 127, .15); }
+th.col::after { content: " \25BE"; color: var(--muted); }
+th.col.on { color: var(--accent); }
+th.col.on::after { content: " \25BE\2009\25CF"; color: var(--accent); }
+#pop { position: fixed; z-index: 5; width: 320px; max-height: 60vh; display: flex; flex-direction: column; gap: 6px; padding: 8px;
+  background: var(--card); border: 1px solid var(--line); border-radius: 8px; box-shadow: 0 6px 24px rgba(0, 0, 0, .25); }
+#pop[hidden] { display: none; }
+#pop input[type=search] { min-width: 0; width: 100%; }
+#popList { overflow: auto; flex: 1; }
+#popList label { display: flex; gap: 8px; align-items: center; padding: 2px 4px; border-radius: 4px; cursor: pointer; font-size: 12.5px; }
+#popList label:hover { background: rgba(127, 127, 127, .12); }
+#popList .v { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#popList .n { color: var(--muted); font-variant-numeric: tabular-nums; }
+#pop .row { gap: 8px; }
+#resetFilters[hidden] { display: none; }
+#keys { width: min(760px, calc(100vw - 32px)); max-height: calc(100vh - 48px); padding: 0; border: 1px solid var(--line); border-radius: 10px;
+  background: var(--card); color: var(--fg); box-shadow: 0 10px 40px rgba(0, 0, 0, .35); }
+#keys::backdrop { background: rgba(0, 0, 0, .4); }
+#keys .head { position: sticky; top: 0; display: flex; align-items: center; gap: 12px; padding: 14px 18px 10px; background: var(--card); border-bottom: 1px solid var(--line); }
+#keys h2 { margin: 0; font-size: 17px; font-weight: 600; flex: 1; }
+#keys .body { padding: 4px 18px 16px; }
+#keys h3 { margin: 16px 0 6px; font-size: 13px; color: var(--muted); font-weight: 600; text-transform: uppercase; letter-spacing: .04em; }
+#keys td { white-space: normal; border: none; padding: 5px 10px 5px 0; vertical-align: top; font-size: 13.5px; }
+#keys table { table-layout: fixed; }
+#keys td:first-child { width: 40%; padding-right: 18px; line-height: 1.9; }
+kbd { font: 12px Consolas, monospace; padding: 1px 6px; border: 1px solid var(--line); border-bottom-width: 2px; border-radius: 4px; background: var(--bg); }
 </style>
 </head>
 <body>
@@ -57,6 +88,9 @@ tr.more td { white-space: pre-wrap; word-break: break-all; font: 12px Consolas, 
       <input type="checkbox" id="cors"><span class="track"></span><span>Игнорировать CORS</span></label>
     <label class="switch" title="В режиме «только localhost» журнал ведётся всегда">
       <input type="checkbox" id="journal"><span class="track"></span><span>Вести журнал и без режима</span></label>
+    <label class="switch" title="Когда закрывается последнее окно LiteBro. Хранилище сайтов (localStorage, IndexedDB) остаётся. Проекты с галочкой «Не удалять cookies и кэш при выходе» (в настройках плитки) сохраняют свои.">
+      <input type="checkbox" id="clearOnExit"><span class="track"></span><span>Удалять cookies и кэш при выходе</span></label>
+    <button id="keysOpen" title="Все горячие клавиши и приёмы браузера с описанием">Быстрые команды</button>
   </div>
   <details id="allowBox">
     <summary>Разрешённые сайты (<span id="allowCount">0</span>)</summary>
@@ -65,7 +99,8 @@ tr.more td { white-space: pre-wrap; word-break: break-all; font: 12px Consolas, 
       <span class="muted">По одному на строку. *.example.com пропускает сам сайт и все его поддомены. Уже открытые страницы получат список после обновления.</span></div>
   </details>
   <div class="row">
-    <input type="search" id="filter" placeholder="Фильтр: домен, адрес, метод, статус, инициатор">
+    <span class="muted">Фильтр: нажмите на заголовок колонки.</span>
+    <button id="resetFilters" hidden>Сбросить фильтры</button>
     <label class="switch"><input type="checkbox" id="onlyBlocked"><span class="track"></span><span>Только заблокированные</span></label>
     <button id="json" title="Записи под фильтром в файл JSON">Выгрузить JSON</button>
     <button id="csv" title="Записи под фильтром в файл CSV (для Excel, через точку с запятой)">Выгрузить CSV</button>
@@ -76,10 +111,19 @@ tr.more td { white-space: pre-wrap; word-break: break-all; font: 12px Consolas, 
 </header>
 <div id="wrap">
   <table>
-    <thead><tr><th>Время</th><th>Метод</th><th>Результат</th><th>Размер</th><th>Инициатор</th><th>Домен</th><th>IP</th><th>Адрес</th></tr></thead>
+    <thead><tr><th>Время</th><th class="col" data-col="Method">Метод</th><th class="col" data-col="Result">Результат</th><th>Размер</th><th class="col" data-col="Kind">Инициатор</th><th class="col" data-col="Host">Домен</th><th class="col" data-col="Ip">IP</th><th class="col" data-col="Url">Адрес</th></tr></thead>
     <tbody id="rows"></tbody>
   </table>
   <p class="muted" id="empty">Запросов в интернет пока нет.</p>
+</div>
+<dialog id="keys">
+  <div class="head"><h2>Быстрые команды</h2><button id="keysClose">Закрыть</button></div>
+  <div class="body" id="keysBody"></div>
+</dialog>
+<div id="pop" hidden>
+  <input type="search" id="popFind" placeholder="Найти значение">
+  <div class="row"><button id="popAll">Все</button><button id="popNone">Ни одного</button><button id="popOnly" hidden>Только найденные</button></div>
+  <div id="popList"></div>
 </div>
 <script>
 const $ = s => document.getElementById(s);
@@ -100,11 +144,95 @@ function td(text, cls) {
   return c;
 }
 
-function matches(e) {
+// Column filters: the values let through, per column; a column without one lets everything through
+const filters = {};
+const value = (e, col) => e[col] || "";
+
+function matches(e, except) {
   if ($("onlyBlocked").checked && !e.Blocked) return false;
-  const f = $("filter").value.trim().toLowerCase();
-  return !f || [e.Url, e.Method, e.Ip, e.Kind, e.Result, e.Page].join(" ").toLowerCase().includes(f);
+  for (const col in filters) if (col !== except && !filters[col].has(value(e, col))) return false;
+  return true;
 }
+
+function showFilters() {
+  const n = Object.keys(filters).length;
+  for (const th of document.querySelectorAll("th.col")) th.classList.toggle("on", th.dataset.col in filters);
+  $("resetFilters").hidden = !n;
+  $("resetFilters").textContent = "Сбросить фильтры (" + n + ")";
+}
+
+let popCol = null;
+// Values of the column among the entries the other filters let through, most frequent first
+function popValues() {
+  const counts = new Map();
+  for (const e of entries) if (matches(e, popCol)) { const v = value(e, popCol); counts.set(v, (counts.get(v) || 0) + 1); }
+  return [...counts].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
+}
+
+function popDraw() {
+  const find = $("popFind").value.trim().toLowerCase();
+  const list = $("popList");
+  list.textContent = "";
+  const all = popValues().filter(([v]) => !find || v.toLowerCase().includes(find));
+  const on = filters[popCol];
+  for (const [v, n] of all.slice(0, 500)) {
+    const l = document.createElement("label");
+    const box = document.createElement("input");
+    box.type = "checkbox";
+    box.checked = !on || on.has(v);
+    box.addEventListener("change", () => toggle(v, box.checked));
+    const name = document.createElement("span");
+    name.className = "v";
+    name.textContent = v || "(пусто)";
+    name.title = v;
+    const count = document.createElement("span");
+    count.className = "n";
+    count.textContent = n;
+    l.append(box, name, count);
+    list.append(l);
+  }
+  if (!all.length) list.textContent = "Нет значений.";
+  $("popOnly").hidden = !find;
+}
+
+function setFilter(col, set) {
+  if (set) filters[col] = set; else delete filters[col];
+  showFilters();
+  draw();
+}
+
+function toggle(v, keep) {
+  const set = new Set(filters[popCol] || popValues().map(([x]) => x));
+  if (keep) set.add(v); else set.delete(v);
+  // Every value ticked again: no filter, so new values show up too
+  setFilter(popCol, popValues().every(([x]) => set.has(x)) ? null : set);
+}
+
+function openPop(th) {
+  popCol = th.dataset.col;
+  $("popFind").value = "";
+  popDraw();
+  const pop = $("pop"), r = th.getBoundingClientRect();
+  pop.hidden = false;
+  pop.style.top = r.bottom + 2 + "px";
+  pop.style.left = Math.max(8, Math.min(r.left, innerWidth - pop.offsetWidth - 8)) + "px";
+  $("popFind").focus();
+}
+
+for (const th of document.querySelectorAll("th.col"))
+  th.addEventListener("click", ev => { ev.stopPropagation(); if (!$("pop").hidden && popCol === th.dataset.col) $("pop").hidden = true; else openPop(th); });
+$("pop").addEventListener("click", ev => ev.stopPropagation());
+document.addEventListener("click", () => { $("pop").hidden = true; });
+document.addEventListener("keydown", ev => { if (ev.key === "Escape") $("pop").hidden = true; });
+$("popFind").addEventListener("input", popDraw);
+$("popAll").addEventListener("click", () => { setFilter(popCol, null); popDraw(); });
+$("popNone").addEventListener("click", () => { setFilter(popCol, new Set()); popDraw(); });
+$("popOnly").addEventListener("click", () => {
+  const find = $("popFind").value.trim().toLowerCase();
+  setFilter(popCol, new Set(popValues().map(([v]) => v).filter(v => v.toLowerCase().includes(find))));
+  popDraw();
+});
+$("resetFilters").addEventListener("click", () => { for (const col in filters) delete filters[col]; showFilters(); draw(); });
 
 function row(e) {
   const tr = document.createElement("tr");
@@ -152,6 +280,80 @@ async function poll() {
   } finally { busy = false; }
 }
 
+// Every shortcut of the browser: keep in step with BrowserForm.Shortcut, TermKeys and the pages
+const KEYS = [
+  ["Вкладки и окна", [
+    ["Ctrl+T", "Новая вкладка со стартовой страницей"],
+    ["Ctrl+W, Ctrl+F4", "Закрыть вкладку (последняя закрывает окно)"],
+    ["Ctrl+Tab, Ctrl+Shift+Tab", "Следующая и предыдущая вкладка"],
+    ["Ctrl+N", "Новое окно"],
+    ["Средний клик по вкладке", "Закрыть вкладку"],
+    ["Правый клик по вкладке", "Открыть рядом, убрать разделение, синхронная прокрутка"],
+  ]],
+  ["Страница", [
+    ["F5, Ctrl+R", "Обновить; во время загрузки — остановить"],
+    ["Ctrl+Shift+R, Ctrl+F5", "Сбросить Service Worker и кэш сайта и загрузить заново (cookies остаются)"],
+    ["Alt+←, Alt+→", "Назад и вперёд"],
+    ["Alt+Home", "Стартовая страница с плитками"],
+    ["Ctrl+F", "Найти на странице"],
+    ["Ctrl+P", "Печать"],
+    ["Ctrl+Плюс, Ctrl+Минус, Ctrl+0", "Масштаб: крупнее, мельче, как было"],
+    ["F12", "Инструменты разработчика (DevTools)"],
+    ["Shift+Esc", "Диспетчер процессов браузера (также клик по памяти справа)"],
+  ]],
+  ["Адресная строка", [
+    ["Ctrl+L, Alt+D, F6", "Перейти в адресную строку"],
+    ["Enter", "Открыть адрес или искать текст"],
+    ["Esc", "Вернуть адрес страницы и уйти из строки"],
+  ]],
+  ["Стартовая страница", [
+    ["Клик по плитке", "Открыть проект (и запустить его программу, если адрес не отвечает)"],
+    ["Ctrl+клик, средний клик", "Открыть в новой вкладке"],
+    ["Shift+клик", "Открыть в новом окне"],
+    ["Зажать и тащить плитку", "Поменять порядок плиток (Esc — отменить)"],
+    ["↑, ↓, Esc в меню плитки", "Выбрать пункт меню ссылок, закрыть меню"],
+  ]],
+  ["Терминал", [
+    ["Ctrl+C с выделением", "Копировать (без выделения — прервать команду)"],
+    ["Ctrl+V, правый клик", "Вставить"],
+    ["Ctrl+L, Ctrl+R, F5, Alt+D, Alt+←/→, Ctrl+Shift+R", "Уходят оболочке, а не браузеру"],
+  ]],
+  ["Консоль проекта", [
+    ["↑, ↓ в строке команды", "Предыдущие введённые команды"],
+  ]],
+  ["Журнал сети", [
+    ["Клик по заголовку колонки", "Фильтр по значениям колонки"],
+    ["Клик по строке", "Подробности: полный адрес, страница, стек вызова"],
+    ["Esc", "Закрыть фильтр или это окно"],
+  ]],
+];
+
+function drawKeys() {
+  const body = $("keysBody");
+  if (body.childElementCount) return;
+  for (const [title, rows] of KEYS) {
+    const h = document.createElement("h3");
+    h.textContent = title;
+    const table = document.createElement("table");
+    for (const [keys, what] of rows) {
+      const tr = document.createElement("tr");
+      const k = document.createElement("td");
+      keys.split(", ").forEach((key, i) => {
+        if (i) k.append(" ");
+        const kbd = document.createElement("kbd");
+        kbd.textContent = key;
+        k.append(kbd);
+      });
+      tr.append(k, td(what));
+      table.append(tr);
+    }
+    body.append(h, table);
+  }
+}
+$("keysOpen").addEventListener("click", ev => { ev.stopPropagation(); drawKeys(); $("keys").showModal(); });
+$("keysClose").addEventListener("click", () => $("keys").close());
+$("keys").addEventListener("click", ev => { if (ev.target === $("keys")) $("keys").close(); });
+
 const restart = "Движок браузера перезапустится: все вкладки перезагрузятся, открытые терминалы закроются. Программы проектов продолжат работать.";
 // The mode's gateway and CORS are flags of the engine: asked first, since the restart reloads every tab
 $("localOnly").addEventListener("change", e => {
@@ -162,6 +364,7 @@ $("localOnly").addEventListener("change", e => {
   post({ type: "net", localOnly: e.target.checked });
 });
 $("journal").addEventListener("change", e => post({ type: "net", journal: e.target.checked }));
+$("clearOnExit").addEventListener("change", e => post({ type: "net", clearOnExit: e.target.checked }));
 $("saveAllow").addEventListener("click", () => post({ type: "net", allow: $("allow").value }));
 $("cors").addEventListener("change", e => {
   const question = e.target.checked
@@ -177,7 +380,6 @@ const exportAs = format => post({ type: "netExport", format, seqs: entries.filte
 $("json").addEventListener("click", () => exportAs("json"));
 $("csv").addEventListener("click", () => exportAs("csv"));
 $("clear").addEventListener("click", () => { post({ type: "netClear" }); entries = []; last = 0; draw(); });
-$("filter").addEventListener("input", draw);
 $("onlyBlocked").addEventListener("change", draw);
 
 let allowShown = null;
@@ -187,6 +389,7 @@ window.chrome.webview.addEventListener("message", e => {
   $("localOnly").checked = m.localOnly;
   $("journal").checked = m.journal;
   $("cors").checked = m.cors;
+  $("clearOnExit").checked = !!m.clearOnExit;
   $("cors").disabled = !m.localOnly;
   $("corsBox").classList.toggle("off", !m.localOnly);
   $("file").textContent = m.file;

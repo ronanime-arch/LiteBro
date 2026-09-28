@@ -1556,6 +1556,8 @@ sealed class BrowserForm : Form
         p.Exe = (p.Exe ?? "").Trim();
         p.Args = (p.Args ?? "").Trim();
         p.WorkDir = (p.WorkDir ?? "").Trim();
+        var letters = new System.Globalization.StringInfo((p.Letters ?? "").Trim());
+        p.Letters = letters.LengthInTextElements > 3 ? letters.SubstringByTextElements(0, 3) : letters.String;
         p.IconSource = p.IconSource is "file" or "none" ? p.IconSource : "site";
         var old = ProjectStore.Find(p.Id);
         if (old == null) p.Id = "";

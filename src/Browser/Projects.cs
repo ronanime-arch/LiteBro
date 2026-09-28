@@ -22,6 +22,8 @@ sealed class Project
     public string Color { get; set; } = "";
     /// <summary>The tile's picture: a file name in the icons folder, empty for letters on the colour.</summary>
     public string Icon { get; set; } = "";
+    /// <summary>What the tile shows without a picture, up to three letters; empty = taken from the name.</summary>
+    public string Letters { get; set; } = "";
     /// <summary>Where the picture comes from: "site" (its own icon, found by itself), "file" (picked), "none".</summary>
     public string IconSource { get; set; } = "site";
     /// <summary>Started when Url does not answer; empty = just open Url.</summary>

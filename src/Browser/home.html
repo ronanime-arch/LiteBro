@@ -119,6 +119,9 @@ button.plain:hover, .actions button:hover { border-color: var(--muted); }
 .preview.three { font-size: 22px; }
 .preview img { width: 100%; height: 100%; object-fit: cover; }
 .look .side { display: grid; gap: 8px; }
+.letters { display: flex; align-items: center; gap: 10px; }
+.letters[hidden] { display: none; }
+.letters input { width: 5.5em; text-align: center; font-weight: 600; }
 .seg { display: inline-flex; justify-self: start; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
 .seg button { padding: 6px 12px; font: 13.5px var(--text); color: var(--fg); background: transparent; border: 0; cursor: pointer; }
 .seg button + button { border-left: 1px solid var(--line); }
@@ -195,6 +198,8 @@ summary { cursor: pointer; font-weight: 500; }
           <button type="button" data-mode="none">Буквы</button>
         </div>
         <div class="swatches" id="swatches" title="Цвет плитки, пока у неё нет картинки"></div>
+        <label class="letters" id="lettersBox" hidden>Буквы на плитке
+          <input type="text" name="Letters" maxlength="3" spellcheck="false" autocomplete="off" placeholder="авто"></label>
         <p class="muted" id="iconNote"></p>
         <div class="error" id="iconError" hidden></div>
       </div>
@@ -304,7 +309,7 @@ function paint(box, p, src, site) {
     box.classList.add("pic");
     box.append(img);
   } else {
-    box.textContent = initials(p.Name || host(p.Url));
+    box.textContent = (p.Letters || "").trim() || initials(p.Name || host(p.Url));
     // Three wide letters fit the tile only a size smaller
     box.classList.toggle("three", [...box.textContent].length > 2);
   }
@@ -609,6 +614,7 @@ function openDialog(p) {
   f.Args.value = p ? p.Args : "";
   f.WorkDir.value = p ? p.WorkDir : "";
   f.OpenPrintedUrl.checked = p ? p.OpenPrintedUrl : false;
+  f.Letters.value = p && p.Letters ? p.Letters : "";
   f.OwnProfile.checked = !!(p && p.OwnProfile);
   f.KeepData.checked = p ? p.KeepData !== false : true;
   $("#data").open = !!(p && (p.OwnProfile || p.KeepData === false));
@@ -632,7 +638,7 @@ function openDialog(p) {
 
 function current() {
   const f = form.elements;
-  return { Name: f.Name.value.trim(), Url: f.Url.value.trim(), Color: color };
+  return { Name: f.Name.value.trim(), Url: f.Url.value.trim(), Color: color, Letters: f.Letters.value.trim() };
 }
 
 // What the tile will show: the site's icon once it has one, the picked picture, or letters
@@ -641,6 +647,7 @@ function updatePreview() {
   const src = mode === "file" ? iconPreview || saved : mode === "site" ? saved : "";
   paint($("#preview"), current(), src, mode === "site");
   for (const b of document.querySelectorAll("#mode button")) b.classList.toggle("on", b.dataset.mode === mode);
+  $("#lettersBox").hidden = mode !== "none";
   $("#iconNote").textContent = mode === "site" && !src
     ? "Значок сайта появится сам: сразу, если сайт уже работает, или когда LiteBro его откроет."
     : "";
@@ -669,6 +676,7 @@ function normalize(url) {
 }
 
 form.elements.Name.addEventListener("input", () => { if (!color) swatches(); updatePreview(); });
+form.elements.Letters.addEventListener("input", updatePreview);
 form.elements.Url.addEventListener("input", () => { if (!color) swatches(); updatePreview(); });
 $("#cancel").addEventListener("click", () => dlg.close());
 for (const b of document.querySelectorAll("#mode button"))
@@ -737,6 +745,7 @@ form.addEventListener("submit", e => {
       Args: f.Args.value.trim(),
       WorkDir: f.WorkDir.value.trim(),
       OpenPrintedUrl: f.OpenPrintedUrl.checked,
+      Letters: f.Letters.value.trim(),
       OwnProfile: f.OwnProfile.checked,
       KeepData: f.KeepData.checked,
       IconSource: mode,

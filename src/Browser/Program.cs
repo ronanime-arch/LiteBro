@@ -135,6 +135,13 @@ sealed class App : ApplicationContext
 
     Task? restart;
 
+    /// <summary>The engine is being restarted: a WebView made now belongs to the old one.</summary>
+    public bool Restarting => restart != null;
+
+    /// <summary>The engine to answer a request with: the current one, or during a restart the one going away.</summary>
+    public CoreWebView2Environment? ResponseEnv => Env ?? oldEnv;
+    CoreWebView2Environment? oldEnv;
+
     async Task<CoreWebView2Environment> CreateEnvironmentAsync()
     {
         var args = MemoryArgs + QuietArgs;
@@ -233,15 +240,19 @@ sealed class App : ApplicationContext
     bool Open(string address)
     {
         if (exiting) return false;
+        // A window hidden while it clears data on exit is going: a new one opens instead
+        var open = forms.Where(f => !f.Closing).ToList();
+        var last = lastActive is { Closing: false } ? lastActive : open.LastOrDefault();
         if (address.Length == 0)
         {
-            Show(lastActive ?? forms.LastOrDefault());
+            if (last == null) OpenWindow(null, home: true).Show();
+            else Show(last);
             return true;
         }
-        var window = forms.OrderByDescending(f => f == lastActive).FirstOrDefault(f => f.TryFocusTabOn(address));
+        var window = open.OrderByDescending(f => f == lastActive).FirstOrDefault(f => f.TryFocusTabOn(address));
         if (window == null)
         {
-            window = lastActive ?? forms.LastOrDefault();
+            window = last;
             if (window == null)
             {
                 OpenWindow(address).Show();
@@ -381,6 +392,7 @@ sealed class App : ApplicationContext
                     foreach (var form in forms.ToList()) form.UnloadAll();
                     await Task.WhenAny(exited.Task, Task.Delay(15000));
                 }
+                oldEnv = env ?? oldEnv;
                 Env = null;
                 envTask = null;
                 await (envTask = CreateEnvironmentAsync());

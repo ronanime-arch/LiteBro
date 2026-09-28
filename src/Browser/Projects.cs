@@ -350,6 +350,13 @@ sealed class Launcher
         path = path.Trim().Trim('"');
         if (path.Length == 0) return;
         OpenLog();
+        // A running command would read the change as its own input
+        if (CommandRunning)
+        {
+            Write("Папку можно сменить, когда команда закончится.");
+            changed();
+            return;
+        }
         string full;
         try { full = Path.GetFullPath(Path.Combine(CommandDir, Environment.ExpandEnvironmentVariables(path))); }
         catch (Exception e) when (e is ArgumentException || e is NotSupportedException || e is IOException)

@@ -289,12 +289,19 @@ sealed class BrowserForm : Form
     /// <summary>Gives a tab its WebView: a new tab, or one closed after a long time in the background.</summary>
     async Task<bool> LoadAsync(Tab tab, string? url)
     {
+        if (url != null) tab.Address = url; // the strip and the title know the page before the WebView does
         CoreWebView2Controller c;
         try
         {
-            var env = await App.Current.GetEnvironmentAsync();
-            if (IsDisposed) return false;
-            c = await App.Current.CreateControllerAsync(env, host.Handle, tab.Profile);
+            while (true)
+            {
+                var env = await App.Current.GetEnvironmentAsync();
+                if (IsDisposed) return false;
+                c = await App.Current.CreateControllerAsync(env, host.Handle, tab.Profile);
+                // The engine restarted meanwhile: this WebView belongs to the old one, which is to go
+                if (env == App.Current.Env && !App.Current.Restarting) break;
+                c.Close();
+            }
         }
         catch (Exception ex)
         {
@@ -308,6 +315,12 @@ sealed class BrowserForm : Form
         {
             c.Close();
             return false;
+        }
+        // Loaded twice at once (picked again while loading, or after an engine restart): the first one stays
+        if (tab.Ctl != null)
+        {
+            c.Close();
+            return true;
         }
         c.IsVisible = false; // shown once it is the tab in front
         tab.Ctl = c;
@@ -447,6 +460,8 @@ sealed class BrowserForm : Form
         if (tab.Profile == profile) return tab.Ctl == null || tab.Core != null;
         tab.Profile = profile;
         if (tab.Ctl is not { } old) return true;
+        await Task.Yield(); // maybe called from the old WebView's own event: closed after it returns
+        if (tab.Ctl != old || tab.Profile != profile) return false;
         StopTerm(tab);
         tab.Ctl = null;
         tab.Suspended = tab.Loading = tab.PlayingAudio = false;
@@ -467,7 +482,9 @@ sealed class BrowserForm : Form
     {
         if (url.IsFile) return null;
         bool On(Project p) => p.Addresses().Any(a => Uri.TryCreate(a, UriKind.Absolute, out var site) && !site.IsFile && SameSite(site, url));
-        return tab.LastProject is { } last && ProjectStore.Find(last.Id) is { } p && On(p) ? p : ProjectOf(url);
+        if (tab.LastProject is { } last && ProjectStore.Find(last.Id) is { } p && On(p)) return p;
+        // Of the tiles on that site, one in the tab's own profile keeps the tab where it is
+        return ProjectStore.All.FirstOrDefault(x => x.Profile == tab.Profile && On(x)) ?? ProjectOf(url);
     }
 
     static bool IsInternal(string uri) => uri.StartsWith("about:") || uri.StartsWith("data:") || Home.Is(uri);
@@ -1138,7 +1155,7 @@ sealed class BrowserForm : Form
     /// <summary>In «только localhost» mode a request to the internet gets a refusal instead; the journal notes it.</summary>
     void OnNetRequest(Tab tab, CoreWebView2WebResourceRequestedEventArgs e)
     {
-        var env = App.Current.Env;
+        var env = App.Current.ResponseEnv;
         if (env == null || !NetGuard.LocalOnly || !Uri.TryCreate(e.Request.Uri, UriKind.Absolute, out var url) || !NetGuard.ShouldBlock(url))
             return;
         bool page = e.ResourceContext == CoreWebView2WebResourceContext.Document;
@@ -1396,7 +1413,7 @@ sealed class BrowserForm : Form
 
     void OnHomeRequest(object? sender, CoreWebView2WebResourceRequestedEventArgs e)
     {
-        var env = App.Current.Env;
+        var env = App.Current.ResponseEnv;
         if (env == null || !Home.Is(e.Request.Uri)) return;
         var path = new Uri(e.Request.Uri).AbsolutePath;
         if (path == "/")
@@ -1463,10 +1480,12 @@ sealed class BrowserForm : Form
                 break;
             case "net":
                 // The start page's switch or the /net page: what is not sent stays as it is
-                App.Current.SetNet(m.TryGetValue("localOnly", out var lo) ? lo is true : NetGuard.LocalOnly,
-                    m.TryGetValue("journal", out var j) ? j is true : NetGuard.Journal,
-                    Text("allow") ?? NetGuard.AllowText,
-                    m.TryGetValue("cors", out var cors) ? cors is true : NetGuard.IgnoreCors);
+                bool localOnly = m.TryGetValue("localOnly", out var lo) ? lo is true : NetGuard.LocalOnly,
+                    journal = m.TryGetValue("journal", out var j) ? j is true : NetGuard.Journal,
+                    ignoreCors = m.TryGetValue("cors", out var cors) ? cors is true : NetGuard.IgnoreCors;
+                var allow = Text("allow") ?? NetGuard.AllowText;
+                // Not from inside the WebView's own event: an engine restart closes this WebView too
+                BeginInvoke(new Action(() => App.Current.SetNet(localOnly, journal, allow, ignoreCors)));
                 break;
             case "netExport" when m.TryGetValue("seqs", out var seqs) && seqs is System.Collections.IEnumerable list:
                 var numbers = list.Cast<object>().Select(o => o is int i ? i : o is long l ? l : -1L).Where(n => n > 0).ToList();
@@ -1791,14 +1810,26 @@ sealed class BrowserForm : Form
         var deferral = e.GetDeferral();
         try
         {
-            // A new window shares its opener's profile: the engine wants it so, and a login popup needs its cookies
-            var tab = await CreateTabAsync(null, tabs.FirstOrDefault(t => t.Core == sender)?.Profile ?? "");
-            if (tab?.Core is { } core)
+            // A new window shares its opener's profile (the engine wants it so, and a login popup needs its cookies)
+            // and its project, so that the site does not move it into another tile's profile
+            var opener = tabs.FirstOrDefault(t => t.Core == sender);
+            var tab = await CreateTabAsync(null, opener?.Profile ?? "");
+            if (tab?.Core is not { } core) return;
+            tab.LastProject = opener?.LastProject;
+            try
             {
                 e.NewWindow = core;
                 e.Handled = true;
-                Add(tab, front);
             }
+            catch (Exception)
+            {
+                // The opener went meanwhile (closed, unloaded, the engine restarted)
+                tab.Closed = true;
+                tab.Ctl?.Close();
+                tab.Ctl = null;
+                return;
+            }
+            Add(tab, front);
         }
         finally
         {
@@ -1874,12 +1905,16 @@ sealed class BrowserForm : Form
 
     bool clearing;
 
+    /// <summary>Hidden while it clears cookies and cache on exit: it takes no more addresses.</summary>
+    public bool Closing => clearing;
+
     protected override async void OnFormClosing(FormClosingEventArgs e)
     {
         base.OnFormClosing(e);
         if (e.Cancel) return;
         // The last window: cookies and cache go first, while the engine still runs (a few seconds at most)
-        if (!clearing && App.Current.ClearsOnClose(this))
+        if (!clearing && e.CloseReason != CloseReason.WindowsShutDown && e.CloseReason != CloseReason.TaskManagerClosing
+            && App.Current.ClearsOnClose(this))
         {
             clearing = true;
             e.Cancel = true;

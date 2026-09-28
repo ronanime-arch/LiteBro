@@ -39,7 +39,9 @@ sealed class Tab
 
     /// <summary>The address the tab stands for: the project's (or its link's) while its start or failure page is shown.</summary>
     public string Site => ShowingInternalPage && FailedUrl != null ? FailedUrl
-        : ShowingInternalPage && LastProject != null ? LastLink ?? LastProject.Url : Core?.Source ?? Address;
+        : ShowingInternalPage && LastProject != null ? LastLink ?? LastProject.Url
+        // Until the first navigation starts, the WebView is on about:blank: the address it is going to stands for it
+        : Core?.Source is { } source && !(source == "about:blank" && Address.Length > 0) ? source : Address;
 
     public string Label => Title.Length > 0 ? Title
         : Site.Length > 0 && !Site.StartsWith("about:") ? Site : "Новая вкладка";

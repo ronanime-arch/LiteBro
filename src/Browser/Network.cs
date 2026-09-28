@@ -96,26 +96,28 @@ static class NetGuard
 
     public static bool ShouldBlock(Uri u) => LocalOnly && IsOutside(u) && !IsAllowed(u);
 
+    static string? pageScript;
+
     /// <summary>
-    /// Web sockets never reach WebResourceRequested: while the mode is on, a script in every new page refuses
-    /// the ones to outside hosts and tells the browser (with the call stack) for the journal.
+    /// The script of netpage.js with the current rules: stacks of fetch, XHR, sendBeacon and EventSource to outside
+    /// hosts for the journal, and the web socket guard (sockets never reach WebResourceRequested).
     /// </summary>
-    public static string SocketScript()
+    public static string PageScript()
     {
-        var names = Router.LocalNames().Concat(Patterns(App.Current.S.LocalHosts)).Concat(Patterns(AllowText));
-        return "(()=>{const W=window.WebSocket;if(!W)return;" +
-            "const names=" + ProjectStore.Json.Serialize(names.ToArray()) + ".map(p=>new RegExp('^'+(p.startsWith('*.')?'(.*\\\\.)?'+esc(p.slice(2)):esc(p))+'$','i'));" +
-            "function esc(s){return s.replace(/[.+^${}()|[\\]\\\\]/g,'\\\\$&').replace(/\\*/g,'.*').replace(/\\?/g,'.');}" +
-            "function local(h){h=h.replace(/^\\[|\\]$/g,'').toLowerCase();" +
-            "if(h==='localhost'||h.endsWith('.localhost')||h==='::1'||h==='0.0.0.0'||h==='::')return true;" +
-            "const m=h.match(/^(\\d+)\\.(\\d+)\\.\\d+\\.\\d+$/);if(m){const a=+m[1],b=+m[2];" +
-            "return a===127||a===10||(a===172&&b>=16&&b<=31)||(a===192&&b===168)||(a===169&&b===254);}" +
-            "if(/^f[cd]|^fe[89ab]/.test(h)&&h.includes(':'))return true;return names.some(r=>r.test(h));}" +
-            "function S(url,p){const u=new URL(url,location.href);" +
-            "if(!local(u.hostname)){try{window.chrome.webview.postMessage('litebro-ws-blocked:'+JSON.stringify({url:u.href,stack:String(new Error().stack||'')}));}catch(e){}" +
-            "throw new DOMException('Заблокировано режимом «только localhost»: '+u.href,'SecurityError');}" +
-            "return p===undefined?new W(url):new W(url,p);}" +
-            "S.prototype=W.prototype;for(const k of['CONNECTING','OPEN','CLOSING','CLOSED'])S[k]=W[k];window.WebSocket=S;})();";
+        if (pageScript == null)
+        {
+            using var stream = typeof(NetGuard).Assembly.GetManifestResourceStream("netpage.js");
+            using var reader = new StreamReader(stream, Encoding.UTF8);
+            pageScript = reader.ReadToEnd();
+        }
+        var config = ProjectStore.Json.Serialize(new Dictionary<string, object>
+        {
+            ["names"] = Router.LocalNames().Concat(Patterns(App.Current.S.LocalHosts)).ToArray(),
+            ["allow"] = Patterns(AllowText),
+            ["block"] = LocalOnly,
+            ["trace"] = Watching,
+        });
+        return pageScript.Replace("__CONFIG__", config);
     }
 
     /// <summary>What a blocked page shows in place of itself.</summary>
@@ -150,6 +152,7 @@ static class NetLog
         /// <summary>The page it came from.</summary>
         public string Page { get; set; } = "";
         public string Stack { get; set; } = "";
+        internal DateTime Created = DateTime.UtcNow;
     }
 
     const int Kept = 2000;
@@ -158,6 +161,18 @@ static class NetLog
     static readonly LinkedList<Entry> recent = new();
     static readonly ConcurrentDictionary<string, string> ips = new(StringComparer.OrdinalIgnoreCase);
     static long seq;
+    // Stacks the pages sent for outside addresses, waiting for the journal entry of the same address
+    static readonly ConcurrentDictionary<string, (string Stack, DateTime At)> stacks = new();
+    static readonly TimeSpan StackWait = TimeSpan.FromMilliseconds(400), StackKept = TimeSpan.FromSeconds(20);
+
+    /// <summary>A page's script saw a request to this address go out, with this call stack.</summary>
+    public static void NoteStack(string url, string stack)
+    {
+        if (stacks.Count > 2000)
+            foreach (var old in stacks.Where(p => DateTime.UtcNow - p.Value.At > StackKept).Select(p => p.Key).ToList())
+                stacks.TryRemove(old, out _);
+        stacks[url] = (stack, DateTime.UtcNow);
+    }
     static Thread? writer;
 
     public static string FilePath => Path.Combine(Settings.Dir, "logs", "network.log");
@@ -190,6 +205,10 @@ static class NetLog
         foreach (var e in queue.GetConsumingEnumerable())
         {
             e.Ip = Resolve(e.Host);
+            // The page's message with the stack may come a moment after the request itself
+            var wait = e.Created + StackWait - DateTime.UtcNow;
+            if (e.Stack.Length == 0 && wait > TimeSpan.Zero && !stacks.ContainsKey(e.Url)) Thread.Sleep(wait);
+            if (e.Stack.Length == 0 && stacks.TryRemove(e.Url, out var s) && DateTime.UtcNow - s.At < StackKept) e.Stack = s.Stack;
             lock (recent)
             {
                 e.Seq = ++seq;

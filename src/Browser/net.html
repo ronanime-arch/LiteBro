@@ -72,7 +72,7 @@ tr.more td { white-space: pre-wrap; word-break: break-all; font: 12px Consolas, 
     <button id="clear">Очистить журнал</button>
     <span class="muted" id="file"></span>
   </div>
-  <div class="muted">Телеметрии нет: LiteBro ничего не отправляет, у движка выключены фоновые запросы, отчёты о сбоях и проверка адресов SmartScreen. Стек вызова есть только у веб-сокетов: для остальных запросов WebView2 его не отдаёт.</div>
+  <div class="muted">Телеметрии нет: LiteBro ничего не отправляет, у движка выключены фоновые запросы, отчёты о сбоях и проверка адресов SmartScreen. Стек вызова есть у fetch, XHR, sendBeacon, EventSource и веб-сокетов из самой страницы; у картинок, стилей, скриптов из разметки и запросов воркеров его нет.</div>
 </header>
 <div id="wrap">
   <table>

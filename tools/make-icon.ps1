@@ -1,4 +1,4 @@
-# Draws the LiteBrowser icon (a white feather on a violet-blue rounded square) into a multi-size .ico.
+# Draws the LiteBro icon (a white feather on a violet-blue rounded square) into a multi-size .ico.
 # Sizes up to 128 are stored as 32-bit DIBs, 256 as PNG, which is what Windows expects.
 param(
     [string]$Out = (Join-Path $PSScriptRoot '..\src\Browser\app.ico'),

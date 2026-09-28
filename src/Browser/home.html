@@ -153,7 +153,7 @@ summary { cursor: pointer; font-weight: 500; }
         </label>
         <label class="check"><input type="checkbox" name="OpenPrintedUrl">
           <span>Открыть адрес, который напишет программа (со входным токеном)</span></label>
-        <p class="muted">Работает без окна и закрывается вместе с LiteBrowser. В путях можно писать %LOCALAPPDATA% и другие переменные.</p>
+        <p class="muted">Работает без окна и закрывается вместе с LiteBro. В путях можно писать %LOCALAPPDATA% и другие переменные.</p>
       </div>
     </details>
     <div class="actions">
@@ -445,7 +445,7 @@ function updatePreview() {
   paint($("#preview"), current(), src, mode === "site");
   for (const b of document.querySelectorAll("#mode button")) b.classList.toggle("on", b.dataset.mode === mode);
   $("#iconNote").textContent = mode === "site" && !src
-    ? "Значок сайта появится сам: сразу, если сайт уже работает, или когда LiteBrowser его откроет."
+    ? "Значок сайта появится сам: сразу, если сайт уже работает, или когда LiteBro его откроет."
     : "";
 }
 

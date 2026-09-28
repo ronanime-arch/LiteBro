@@ -5,20 +5,26 @@ using System.Runtime.InteropServices;
 using System.Text;
 using Microsoft.Win32;
 
-namespace LiteBrowser;
+namespace LiteBro;
 
 /// <summary>
-/// Whether Windows gives links to LiteBrowser, which browser is the main one, and how to launch one directly
+/// Whether Windows gives links to LiteBro, which browser is the main one, and how to launch one directly
 /// from its registry command. Shared with the installer.
 /// </summary>
 static class Associations
 {
-    public const string AppName = "LiteBrowser";
-    public const string ProgId = "LiteBrowserURL";
+    public const string AppName = "LiteBro";
+    public const string Company = "ronanime-arch";
+    public const string ProgId = "LiteBroURL";
     /// <summary>Ties the ProgId, the Start menu shortcut and the running windows to one app for Windows.</summary>
-    public const string AppUserModelId = "LiteBrowser";
-    /// <summary>HKCU key with the browser that had https links before LiteBrowser.</summary>
-    const string StateKey = @"Software\LiteBrowser";
+    public const string AppUserModelId = Company + "." + AppName;
+    /// <summary>HKCU key with the browser that had https links before LiteBro.</summary>
+    const string StateKey = @"Software\" + AppName;
+
+    // The names up to 1.9.6, when this browser was LiteBrowser
+    public const string OldAppName = "LiteBrowser";
+    public const string OldProgId = "LiteBrowserURL";
+    const string OldStateKey = @"Software\" + OldAppName;
 
     const int IsProtocol = 0x1000, AssocCommand = 1, AssocFriendlyAppName = 4;
 
@@ -31,17 +37,31 @@ static class Associations
     public static void RemoveStalePerUserRegistration()
     {
         var cu = Registry.CurrentUser;
-        using (var command = cu.OpenSubKey($@"Software\Classes\{ProgId}\shell\open\command"))
+        using (var command = cu.OpenSubKey($@"Software\Classes\{OldProgId}\shell\open\command"))
         {
             // Nothing there, or its program still exists
             if (command?.GetValue("") is not string value || Split(value, "x") != null) return;
         }
-        cu.DeleteSubKeyTree($@"Software\Classes\{ProgId}", false);
-        cu.DeleteSubKeyTree($@"Software\Clients\StartMenuInternet\{AppName}", false);
-        cu.DeleteSubKeyTree($@"Software\Microsoft\Windows\CurrentVersion\Uninstall\{AppName}", false);
-        cu.DeleteSubKeyTree($@"Software\Microsoft\Windows\CurrentVersion\App Paths\{AppName}.exe", false);
-        using (var apps = cu.OpenSubKey(@"Software\RegisteredApplications", writable: true)) apps?.DeleteValue(AppName, false);
+        cu.DeleteSubKeyTree($@"Software\Classes\{OldProgId}", false);
+        cu.DeleteSubKeyTree($@"Software\Clients\StartMenuInternet\{OldAppName}", false);
+        cu.DeleteSubKeyTree($@"Software\Microsoft\Windows\CurrentVersion\Uninstall\{OldAppName}", false);
+        cu.DeleteSubKeyTree($@"Software\Microsoft\Windows\CurrentVersion\App Paths\{OldAppName}.exe", false);
+        using (var apps = cu.OpenSubKey(@"Software\RegisteredApplications", writable: true)) apps?.DeleteValue(OldAppName, false);
         SHChangeNotify(0x08000000, 0, IntPtr.Zero, IntPtr.Zero);
+    }
+
+    /// <summary>Moves the main browser that LiteBrowser remembered under its own key over to LiteBro's.</summary>
+    public static void MoveOldState()
+    {
+        var cu = Registry.CurrentUser;
+        using (var old = cu.OpenSubKey(OldStateKey))
+        {
+            if (old == null) return;
+            using var key = cu.CreateSubKey(StateKey);
+            foreach (var name in old.GetValueNames())
+                if (key.GetValue(name) == null && old.GetValue(name) is { } value) key.SetValue(name, value, old.GetValueKind(name));
+        }
+        cu.DeleteSubKeyTree(OldStateKey, false);
     }
 
     [DllImport("shlwapi.dll", CharSet = CharSet.Unicode)]
@@ -54,23 +74,29 @@ static class Associations
         return AssocQueryString(protocol ? IsProtocol : 0, what, assoc, "open", result, ref length) == 0 ? result.ToString() : null;
     }
 
-    /// <summary>Any LiteBrowser.exe, wherever it is installed.</summary>
-    public static bool IsLiteBrowser(string exe) =>
-        Path.GetFileName(exe).Equals(AppName + ".exe", StringComparison.OrdinalIgnoreCase);
+    static bool IsExe(string exe, string app) => Path.GetFileName(exe).Equals(app + ".exe", StringComparison.OrdinalIgnoreCase);
 
-    /// <summary>True when Windows gives links of this protocol ("http" or "https") to LiteBrowser.</summary>
-    public static bool Handles(string protocol) =>
-        Split(Query(AssocCommand, protocol), "x") is { } c && IsLiteBrowser(c.Exe);
+    /// <summary>Any LiteBro.exe or LiteBrowser.exe, wherever it is installed: never the main browser, never handed a link.</summary>
+    public static bool IsOurs(string exe) => IsExe(exe, AppName) || IsExe(exe, OldAppName);
 
-    /// <summary>The main browser's open command; null when there is none but LiteBrowser.</summary>
+    /// <summary>True when Windows gives links of this protocol ("http" or "https") to LiteBro.</summary>
+    public static bool Handles(string protocol) => HandledBy(protocol, AppName);
+
+    /// <summary>True when they still go to LiteBrowser, as this browser was called up to 1.9.6.</summary>
+    public static bool OldNameHandles(string protocol) => HandledBy(protocol, OldAppName);
+
+    static bool HandledBy(string protocol, string app) =>
+        Split(Query(AssocCommand, protocol), "x") is { } c && IsExe(c.Exe, app);
+
+    /// <summary>The main browser's open command; null when there is none but LiteBro.</summary>
     public static string? OtherBrowserCommand() => MainBrowser()?.Command;
 
     /// <summary>Name of the main browser, "Google Chrome" for one.</summary>
     public static string OtherBrowserName() => MainBrowser()?.Name is { Length: > 0 } name ? name : "основной браузер";
 
     /// <summary>
-    /// Windows hands LiteBrowser http and https together, but the main browser keeps .html files, so it is
-    /// the one that opens them. Should .html go to LiteBrowser as well, the one that had https before it.
+    /// Windows hands LiteBro http and https together, but the main browser keeps .html files, so it is
+    /// the one that opens them. Should .html go to LiteBro as well, the one that had https before it.
     /// </summary>
     static (string Command, string Name)? MainBrowser()
     {
@@ -81,7 +107,7 @@ static class Associations
         return IsOtherBrowser(remembered) ? (remembered!, key!.GetValue("OtherBrowserName") as string ?? "") : null;
     }
 
-    /// <summary>Saves the browser that has https links now, before the user hands them to LiteBrowser.</summary>
+    /// <summary>Saves the browser that has https links now, before the user hands them to LiteBro.</summary>
     public static void RememberDefault()
     {
         var command = Query(AssocCommand, "https");
@@ -91,13 +117,17 @@ static class Associations
         key.SetValue("OtherBrowserName", Query(AssocFriendlyAppName, "https") ?? "");
     }
 
-    /// <summary>Takes away what RememberDefault saved.</summary>
-    public static void Forget() => Registry.CurrentUser.DeleteSubKeyTree(StateKey, false);
+    /// <summary>Takes away what RememberDefault saved, under either name.</summary>
+    public static void Forget()
+    {
+        Registry.CurrentUser.DeleteSubKeyTree(StateKey, false);
+        Registry.CurrentUser.DeleteSubKeyTree(OldStateKey, false);
+    }
 
-    /// <summary>A registered browser other than LiteBrowser, not an editor that happens to open .html files.</summary>
+    /// <summary>A registered browser other than this one, not an editor that happens to open .html files.</summary>
     static bool IsOtherBrowser(string? command)
     {
-        if (Split(command, "x") is not { } c || IsLiteBrowser(c.Exe)) return false;
+        if (Split(command, "x") is not { } c || IsOurs(c.Exe)) return false;
         foreach (var hive in new[] { Registry.CurrentUser, Registry.LocalMachine })
         {
             using var clients = hive.OpenSubKey(@"Software\Clients\StartMenuInternet");

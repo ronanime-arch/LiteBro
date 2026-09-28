@@ -9,7 +9,7 @@ using System.Threading.Tasks;
 using System.Windows.Forms;
 using Microsoft.Web.WebView2.Core;
 
-namespace LiteBrowser;
+namespace LiteBro;
 
 /// <summary>One browser window: a strip of tabs over a toolbar, each tab a WebView2 hosted directly through its controller.</summary>
 sealed class BrowserForm : Form
@@ -71,7 +71,7 @@ sealed class BrowserForm : Form
         this.isMain = isMain;
         goHome = openHome;
         startProject = project;
-        Text = "LiteBrowser";
+        Text = "LiteBro";
         Icon = App.AppIcon;
         Size = new Size(1100, 800);
         MinimumSize = new Size(480, 320);
@@ -189,8 +189,8 @@ sealed class BrowserForm : Form
         {
             if (!IsDisposed)
                 MessageBox.Show(this, "Не удалось запустить движок WebView2.\n\n" + ex.Message +
-                    "\n\nЕсли меняли settings.ini, закройте все окна LiteBrowser и откройте снова.",
-                    "LiteBrowser", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                    "\n\nЕсли меняли settings.ini, закройте все окна LiteBro и откройте снова.",
+                    "LiteBro", MessageBoxButtons.OK, MessageBoxIcon.Error);
             return false;
         }
         if (IsDisposed || tab.Closed)
@@ -281,7 +281,7 @@ sealed class BrowserForm : Form
     void ShowState(Tab tab, bool switched = false)
     {
         if (tab != active) return;
-        Text = tab.Title.Length == 0 ? "LiteBrowser" : tab.Title + " — LiteBrowser";
+        Text = tab.Title.Length == 0 ? "LiteBro" : tab.Title + " — LiteBro";
         back.Enabled = tab.Core?.CanGoBack ?? false;
         forward.Enabled = tab.Core?.CanGoForward ?? false;
         reload.Text = tab.Loading ? GlyphStop : GlyphReload;

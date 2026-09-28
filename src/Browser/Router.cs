@@ -12,10 +12,10 @@ using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
 
-namespace LiteBrowser;
+namespace LiteBro;
 
 /// <summary>
-/// Windows gives LiteBrowser every web link (it hands over http and https only together): local addresses
+/// Windows gives LiteBro every web link (it hands over http and https only together): local addresses
 /// open here, anything else goes straight on to the main browser, launched directly so it cannot come back.
 /// </summary>
 static class Router
@@ -74,7 +74,7 @@ static class Router
 
     /// <summary>
     /// Every link from other programs passes through here, so this must always open it somewhere:
-    /// the settings override, the main browser (see Associations), then Edge. Never LiteBrowser.
+    /// the settings override, the main browser (see Associations), then Edge. Never LiteBro under either name.
     /// </summary>
     public static void OpenElsewhere(string address, Settings settings)
     {
@@ -83,7 +83,7 @@ static class Router
         {
             try
             {
-                if (Associations.Split(command, address) is not { } target || Associations.IsLiteBrowser(target.Exe)) continue;
+                if (Associations.Split(command, address) is not { } target || Associations.IsOurs(target.Exe)) continue;
                 Process.Start(new ProcessStartInfo(target.Exe, target.Args) { UseShellExecute = false });
                 return;
             }
@@ -95,18 +95,18 @@ static class Router
     }
 }
 
-/// <summary>One LiteBrowser process per user: later launches pass their address to it and exit.</summary>
+/// <summary>One LiteBro process per user: later launches pass their address to it and exit.</summary>
 static class SingleInstance
 {
     [DllImport("user32.dll")] static extern bool AllowSetForegroundWindow(int processId);
 
     static readonly string Id = WindowsIdentity.GetCurrent().User!.Value;
-    static readonly string PipeName = "LiteBrowser-" + Id;
-    static readonly Mutex Primary = new(false, @"Local\LiteBrowser-" + Id);
+    static readonly string PipeName = Associations.AppName + "-" + Id;
+    static readonly Mutex Primary = new(false, @"Local\" + Associations.AppName + "-" + Id);
 
     public static bool TryBecomePrimary() => Take(0);
 
-    /// <summary>Whether a LiteBrowser with windows is running for this user (checked without staying primary).</summary>
+    /// <summary>Whether a LiteBro with windows is running for this user (checked without staying primary).</summary>
     public static bool PrimaryRunning()
     {
         if (!Take(0)) return true;
@@ -160,7 +160,7 @@ static class SingleInstance
                 catch (Exception) { Thread.Sleep(200); }
             }
         })
-        { IsBackground = true, Name = "LiteBrowser instances" };
+        { IsBackground = true, Name = "LiteBro instances" };
         thread.Start();
     }
 }

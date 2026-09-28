@@ -5,7 +5,7 @@ using System.Drawing.Drawing2D;
 using System.Windows.Forms;
 using Microsoft.Web.WebView2.Core;
 
-namespace LiteBrowser;
+namespace LiteBro;
 
 /// <summary>A page in a window's tab strip, with a WebView2 controller of its own in the shared environment.</summary>
 sealed class Tab

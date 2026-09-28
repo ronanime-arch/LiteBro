@@ -2,7 +2,7 @@ using System;
 using System.Diagnostics;
 using System.Runtime.InteropServices;
 
-namespace LiteBrowser;
+namespace LiteBro;
 
 /// <summary>Per-process memory numbers and working-set trimming.</summary>
 static class Memory

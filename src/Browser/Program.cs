@@ -9,7 +9,7 @@ using System.Threading.Tasks;
 using System.Windows.Forms;
 using Microsoft.Web.WebView2.Core;
 
-namespace LiteBrowser;
+namespace LiteBro;
 
 static class Program
 {
@@ -19,6 +19,7 @@ static class Program
     [STAThread]
     static void Main(string[] args)
     {
+        Settings.MoveOldData();
         Settings settings;
         try { settings = Settings.Load(); }
         catch (Exception) { settings = new Settings(); } // a broken ini must not stop links from opening
@@ -32,7 +33,7 @@ static class Program
         }
         var address = url == null ? null : Router.Normalize(url).AbsoluteUri;
         // Some programs wait until the browser they started exits. So a launch with an address returns
-        // at once: the page goes to the running LiteBrowser, or to a new one started on its own.
+        // at once: the page goes to the running LiteBro, or to a new one started on its own.
         if (address != null && !args.Contains("--stay"))
         {
             if (!SingleInstance.PrimaryRunning())
@@ -52,6 +53,8 @@ static class Program
             return;
         try { Associations.RemoveStalePerUserRegistration(); }
         catch (Exception) { } // the browser itself still starts
+        try { Associations.MoveOldState(); }
+        catch (Exception) { }
         SetCurrentProcessExplicitAppUserModelID(Associations.AppUserModelId); // same id as the shortcut
         Application.EnableVisualStyles();
         Application.SetCompatibleTextRenderingDefault(false);

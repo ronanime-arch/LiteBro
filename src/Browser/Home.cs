@@ -6,7 +6,7 @@ using System.Net;
 using System.Runtime.InteropServices;
 using System.Windows.Forms;
 
-namespace LiteBrowser;
+namespace LiteBro;
 
 /// <summary>
 /// The start page with the project tiles. It is served from this program under an address no site can
@@ -14,7 +14,7 @@ namespace LiteBrowser;
 /// </summary>
 static class Home
 {
-    public const string Host = "start.litebrowser";
+    public const string Host = "start.litebro";
     public const string Url = "https://" + Host + "/";
     // Nothing but the page's own script and pictures, and no site may frame it to trick a click on a tile
     public const string Headers = "Content-Type: text/html; charset=utf-8\r\nContent-Security-Policy: default-src 'none'; " +
@@ -49,7 +49,7 @@ static class Home
 /// <summary>Tile pictures: copies of the images the user picked, served to the start page under /icon/.</summary>
 static class Icons
 {
-    public static readonly string Dir = Path.Combine(Settings.Dir, "icons");
+    public static string Dir => Path.Combine(Settings.Dir, "icons");
     const long MaxBytes = 2 << 20;
     static readonly Dictionary<string, string> Types = new(StringComparer.OrdinalIgnoreCase)
     {
@@ -126,7 +126,7 @@ static class Icons
 static class Pages
 {
     public static string Starting(Project p, Launcher launcher) => Page("Запускаю " + p.Name + "…", spinner: true,
-        "<p>Адрес <code>" + H(p.Url) + "</code> пока не отвечает. LiteBrowser запустил программу проекта и ждёт.</p>" +
+        "<p>Адрес <code>" + H(p.Url) + "</code> пока не отвечает. LiteBro запустил программу проекта и ждёт.</p>" +
         "<p class=muted>Программа: <code>" + H(p.Exe + " " + p.Args) + "</code><br>" +
         "Папка: <code>" + H(launcher.WorkDir) + "</code><br>" +
         "Лог: <code>" + H(launcher.LogPath) + "</code></p>");

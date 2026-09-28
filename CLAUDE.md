@@ -1,30 +1,31 @@
-# LiteBrowser (скоро LiteBro)
+# LiteBro (до 1.9.6 — LiteBrowser)
 
 Лёгкий браузер для локальных проектов: C# WinForms на .NET Framework 4.8 (встроен в Windows) + Edge WebView2 (SDK 1.0.4191.47), DPI PerMonitorV2. Цель — меньше памяти, чем Chrome: у пользователя языковая модель (qwen) крутится на CPU, поэтому ОЗУ и CPU дороги.
 
 ## Сборка и проверка
 
-- Собирается и запускается только на Windows: `build.ps1` → `dist\LiteBrowser-Setup.exe` (установщик `requireAdministrator`, ставит в Program Files, регистрирует в HKLM).
+- Собирается и запускается только на Windows: `build.ps1` → `dist\LiteBro-Setup.exe` (установщик `requireAdministrator`, ставит в Program Files, регистрирует в HKLM).
 - **Облачная сессия (Linux) не может запустить браузер и увидеть окно.** Пиши код в ветку и открывай PR; собирает, ставит и проверяет пользователь у себя. Сборку под Linux можно попробовать (для net48 может понадобиться пакет `Microsoft.NETFramework.ReferenceAssemblies`), но она не заменяет проверку на Windows.
 - `home.html` (стартовая страница) можно проверить в обычном браузере через локальный http-сервер с заглушкой `window.chrome.webview` (через `file://` не работает).
 - Проверка на Windows кликами: SendKeys при русской раскладке шлёт «t» без Ctrl — нужен `keybd_event` с кодами клавиш.
-- Установка или переустановка закрывает LiteBrowser, а с ним **убивает программы проектов** (они в Job Object с KILL_ON_JOB_CLOSE), в том числе сессию агента dsh. Предупреждать пользователя.
+- Установка или переустановка закрывает LiteBro (и старый LiteBrowser), а с ним **убивает программы проектов** (они в Job Object с KILL_ON_JOB_CLOSE), в том числе сессию агента dsh. Предупреждать пользователя.
 
 ## Правила
 
-- Версии только патчем: 1.9.5 → 1.9.6 → …, не 1.10/2.0. Номер меняется в четырёх местах: `src/Browser/LiteBrowser.csproj`, `src/Setup/Setup.csproj`, оба `app.manifest`.
+- Версии только патчем: 1.9.5 → 1.9.6 → …, не 1.10/2.0. Номер меняется в четырёх местах: `src/Browser/LiteBro.csproj`, `src/Setup/Setup.csproj`, оба `app.manifest`.
 - В описаниях PR и комментариях не писать «Generated with Claude Code». Co-Authored-By в коммитах можно.
 - Комментарии в коде на английском, коротко; тексты интерфейса на русском.
 
 ## Неочевидное
 
-- Данные пользователя: `%LOCALAPPDATA%\LiteBrowser` — `settings.ini`, профиль WebView2 (cookie входа), `projects.json` (плитки), `icons\`, `logs\<id>.log` (вывод программ проектов).
-- Регистрация: ProgId `LiteBrowserURL`, `Clients\StartMenuInternet\LiteBrowser`, AppUserModelId `LiteBrowser`. У пользователя http и https назначены на `LiteBrowserURL`. Сменишь ProgId — Windows забудет выбор, и пользователю придётся заново жать «Приложения по умолчанию». Назначить браузер программно Windows не даёт: не обходить UCPD, не автоматизировать окно Параметров.
-- Маршрутизация (`Router.cs`): локальные адреса (loopback, `*.localhost`, hosts) открываются в LiteBrowser, остальные сразу уходят в основной браузер (обработчик `.html`, обычно Chrome) без окна LiteBrowser.
+- Данные пользователя: `%LOCALAPPDATA%\LiteBro` — `settings.ini`, профиль WebView2 (cookie входа), `projects.json` (плитки), `icons\`, `logs\<id>.log` (вывод программ проектов).
+- Регистрация: ProgId `LiteBroURL`, `Clients\StartMenuInternet\LiteBro`, AppUserModelId `ronanime-arch.LiteBro`, программа в `Program Files\LiteBro`, издатель ronanime-arch (всё в `Associations.cs`). Сменишь ProgId — Windows забудет выбор, и пользователю придётся заново жать «Приложения по умолчанию». Назначить браузер программно Windows не даёт: не обходить UCPD, не автоматизировать окно Параметров.
+- Маршрутизация (`Router.cs`): локальные адреса (loopback, `*.localhost`, hosts) открываются в LiteBro, остальные сразу уходят в основной браузер (обработчик `.html`, обычно Chrome) без окна LiteBro.
 - Один процесс: мьютекс + named pipe. Повторный запуск с адресом передаёт его работающему экземпляру; вкладка на том же сайте переиспользуется.
-- Стартовая страница `https://start.litebrowser/` отдаётся из ресурса через `WebResourceRequested`. Web messages слушаются **только** от неё (`Home.Is(e.Source)`), потому что они запускают программы.
+- Стартовая страница `https://start.litebro/` отдаётся из ресурса через `WebResourceRequested`. Web messages слушаются **только** от неё (`Home.Is(e.Source)`), потому что они запускают программы.
 - Вкладки (1.9.5, `Tabs.cs`, `BrowserForm.cs`): у каждой свой `CoreWebView2Controller` в общем окружении. Фоновая вкладка: `IsVisible=false`, память Low, через 5 с чистка скрытых рендереров (`App.TrimHiddenTabs`); затем `TrySuspendAsync` (`SuspendAfter`, 1 мин с 1.9.6), затем выгрузка (`UnloadAfter`, 5 мин), только если приостановка удалась; таймер обхода — 15 с. Не замораживаются вкладки со звуком и на сайте проекта с работающей программой (dsh держит живое соединение). Выгруженная вкладка загружается по клику обычным `Navigate` и никогда не запускает программу проекта.
 - Порядок плиток (1.9.6): перетаскивание на стартовой странице на pointer-событиях (не HTML5 drag and drop), страница шлёт `{type: "order", ids}`, `ProjectStore.Reorder` сохраняет. Пока плитку тащат, пришедшее от браузера состояние ждёт отпускания; одинаковое состояние страница не перерисовывает.
+- Переименование (1.9.7): старые имена — `Associations.OldAppName`/`OldProgId`. Установщик (`RemoveLiteBrowser`) удаляет `Program Files\LiteBrowser`, его ключи в HKLM и ярлыки, перенацеливает закреп на панели задач, переносит `HKCU\Software\LiteBrowser` → `Software\LiteBro` (`MoveOldState`) и, если ссылки были у LiteBrowser, снова ведёт через `LinksStep`. Браузер при первом запуске переносит `%LOCALAPPDATA%\LiteBrowser` целиком (`Settings.MoveOldData`, `Directory.Move`); не вышло — работает в старой папке и пробует в следующий раз, пустую новую папку не создаёт.
 - Отвергнуто ради памяти: `--in-process-gpu` (без песочницы GPU), `--disable-gpu`, V8 lite mode (тратят CPU).
 - dsh (DeepSeek harness) запускать только с `--no-open`, иначе он сам открывает Chrome.
 
@@ -35,7 +36,7 @@ Ctrl+клик по плитке, защита вкладок со звуком �
 ## Задачи (от пользователя, 2026-09-28)
 
 1. ~~Приостановка через 1 мин, выгрузка через 5 мин (`SuspendAfter`/`UnloadAfter` в `BrowserForm.cs`).~~ Сделано в 1.9.6.
-2. Переименовать в **LiteBro** полностью (решение пользователя), компания/организация **ronanime-arch**: exe, установщик, окна, ярлыки, Program Files, ProgId, AppUserModelId, папка данных. Обязательно: при первом запуске перенести `%LOCALAPPDATA%\LiteBrowser` в новую папку (плитки, значки, логи, профиль WebView2 со входами); установщик удаляет старую установку и регистрацию LiteBrowser и снова ведёт через шаг «Приложения по умолчанию» (окно `LinksStep`), потому что выбор http/https был на старом ProgId.
+2. ~~Переименовать в **LiteBro** полностью (решение пользователя), компания/организация **ronanime-arch**: exe, установщик, окна, ярлыки, Program Files, ProgId, AppUserModelId, папка данных. Обязательно: при первом запуске перенести `%LOCALAPPDATA%\LiteBrowser` в новую папку (плитки, значки, логи, профиль WebView2 со входами); установщик удаляет старую установку и регистрацию LiteBrowser и снова ведёт через шаг «Приложения по умолчанию» (окно `LinksStep`), потому что выбор http/https был на старом ProgId.~~ Сделано в 1.9.7.
 3. «Имитировать браузер из разных стран» в поиске: на Google справа в адресной строке кнопка выбора страны. **Только бесплатно**: параметры `gl`/`hl` (и, возможно, Accept-Language), без прокси и VPN.
 4. Консоль: не DevTools (F12 уже работает). Пользователь имел в виду другую консоль — уточнить какую. Ему интересен вариант «вывод программы проекта» (живой `logs\<id>.log`).
 5. Тёмная тема: при запуске сейчас белая вспышка. `DefaultBackgroundColor` контроллера, тёмный заголовок окна (DWM immersive dark mode), тёмные панель и полоса вкладок.

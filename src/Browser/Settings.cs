@@ -52,6 +52,7 @@ sealed class Settings
     }
 
     public string SearchUrl = "https://www.google.com/search?q=";
+    public string SearchCountry = "";
     public bool Gpu = true;
     public string ExtraBrowserArgs = "";
     public string LocalHosts = "";
@@ -59,7 +60,7 @@ sealed class Settings
 
     static readonly string[] Keys =
     {
-        "searchurl", "gpu", "extrabrowserargs", "localhosts", "otherbrowser",
+        "searchurl", "searchcountry", "gpu", "extrabrowserargs", "localhosts", "otherbrowser",
     };
 
     public static Settings Load()
@@ -83,6 +84,7 @@ sealed class Settings
             switch (key)
             {
                 case "searchurl": s.SearchUrl = value; break;
+                case "searchcountry": s.SearchCountry = value.ToUpperInvariant(); break;
                 case "gpu": s.Gpu = IsTrue(value); break;
                 case "extrabrowserargs": s.ExtraBrowserArgs = value; break;
                 case "localhosts": s.LocalHosts = value; break;
@@ -98,6 +100,13 @@ sealed class Settings
         }
         if (!Keys.All(seen.Contains) || !seen.All(Keys.Contains)) s.Save();
         return s;
+    }
+
+    /// <summary>Remembers the country of the search button: the file is written anew with the values read at startup.</summary>
+    public void SaveSearchCountry(string code)
+    {
+        SearchCountry = code;
+        Save();
     }
 
     void Save()
@@ -118,6 +127,9 @@ sealed class Settings
         "",
         "# Куда уходит текст из адресной строки, если это не адрес",
         "SearchUrl = " + SearchUrl,
+        "# Страна поиска Google: код из кнопки справа в адресной строке (DE, US…), добавляет к поиску gl и hl.",
+        "# Пусто = как обычно. Кнопка сама меняет эту строку.",
+        "SearchCountry = " + SearchCountry,
         "",
         "# --- Движок (Edge WebView2) ---",
         "# false = рисовать без видеокарты; нужно только при проблемах с драйвером",

@@ -17,7 +17,7 @@ sealed class BrowserForm : Form
     public static readonly string IconFont =
         FontFamily.Families.Any(f => f.Name == "Segoe Fluent Icons") ? "Segoe Fluent Icons" : "Segoe MDL2 Assets";
     const string GlyphBack = "", GlyphForward = "", GlyphReload = "",
-        GlyphStop = "", GlyphHome = "";
+        GlyphStop = "", GlyphHome = "", GlyphGlobe = "";
     // A tab in the background is paused after a while, and after a long while closed until it is picked again
     static readonly TimeSpan SuspendAfter = TimeSpan.FromMinutes(1), UnloadAfter = TimeSpan.FromMinutes(5);
 
@@ -46,7 +46,8 @@ sealed class BrowserForm : Form
         Margin = new Padding(2, 0, 10, 0),
     };
     readonly ToolTip tips = new();
-    readonly ToolButton back, forward, reload, home;
+    readonly ToolButton back, forward, reload, home, country;
+    readonly Font countryGlyphFont, countryCodeFont = new("Segoe UI", 9f, FontStyle.Bold);
     readonly Timer ramTimer = new() { Interval = 2000 };
     // How long a window may sit in the background before it gives memory back
     readonly Timer backgroundTimer = new() { Interval = 30_000 };
@@ -83,20 +84,24 @@ sealed class BrowserForm : Form
         forward = MakeButton(GlyphForward, "Вперёд (Alt+→)", () => Core?.GoForward());
         reload = MakeButton(GlyphReload, "Обновить (F5)", ReloadOrStop);
         home = MakeButton(GlyphHome, "Проекты (Alt+Home)", GoHome);
+        country = MakeButton(GlyphGlobe, "Страна поиска", ShowCountryMenu);
+        country.Visible = false;
+        countryGlyphFont = country.Font;
         back.Enabled = forward.Enabled = false;
 
         var bar = new TableLayoutPanel
         {
             Dock = DockStyle.Top,
             AutoSize = true,
-            ColumnCount = 6,
+            ColumnCount = 7,
             RowCount = 1,
             Padding = new Padding(4, 3, 0, 3),
         };
         for (int i = 0; i < 4; i++) bar.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
         bar.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
         bar.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
-        bar.Controls.AddRange(new Control[] { back, forward, reload, home, address, ram });
+        bar.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+        bar.Controls.AddRange(new Control[] { back, forward, reload, home, address, country, ram });
 
         // Docking goes from the last added: the strip on top, the toolbar under it, the page in what is left
         Controls.Add(host);
@@ -239,6 +244,14 @@ sealed class BrowserForm : Form
         core.HistoryChanged += (_, _) => ShowState(tab);
         core.NavigationStarting += (_, e) =>
         {
+            // A search typed on Google's own page keeps the picked country; history is left as it was
+            if (e.NavigationKind == CoreWebView2NavigationKind.NewDocument && !e.IsRedirected &&
+                SearchCountry.Redirect(e.Uri) is { } withCountry)
+            {
+                e.Cancel = true;
+                BeginInvoke(new Action(() => core.Navigate(withCountry)));
+                return;
+            }
             // Back on the start page nothing is to be tried again on F5
             if (Home.Is(e.Uri)) tab.LastProject = null;
             if (Home.Is(e.Uri) || !(e.Uri.StartsWith("about:") || e.Uri.StartsWith("data:"))) tab.ShowingInternalPage = false;
@@ -290,6 +303,42 @@ sealed class BrowserForm : Form
         reload.Text = tab.Loading ? GlyphStop : GlyphReload;
         tips.SetToolTip(reload, tab.Loading ? "Остановить" : "Обновить (F5)");
         if (switched || !address.Focused) address.Text = AddressOf(tab);
+        ShowCountry(tab);
+    }
+
+    /// <summary>The country button: on Google search only, with the code of the picked country or a globe.</summary>
+    void ShowCountry(Tab tab)
+    {
+        country.Visible = !tab.ShowingInternalPage && SearchCountry.IsGoogleSearch(tab.Site);
+        var picked = SearchCountry.Current;
+        var text = picked?.Code ?? GlyphGlobe;
+        if (country.Text == text) return;
+        country.Text = text;
+        country.Font = picked == null ? countryGlyphFont : countryCodeFont;
+        tips.SetToolTip(country, picked == null ? "Страна поиска" : "Страна поиска: " + picked.Name);
+    }
+
+    void ShowCountryMenu()
+    {
+        var picked = SearchCountry.Current;
+        var menu = new ContextMenuStrip();
+        menu.Items.Add(new ToolStripMenuItem("Как обычно (без страны)", null, (_, _) => PickCountry(null)) { Checked = picked == null });
+        menu.Items.Add(new ToolStripSeparator());
+        foreach (var c in SearchCountry.All)
+            menu.Items.Add(new ToolStripMenuItem(c.Name + " (" + c.Code + ")", null, (_, _) => PickCountry(c)) { Checked = c == picked });
+        // Gone once closed: the next click builds it again with the current tick
+        menu.Closed += (_, _) => BeginInvoke(new Action(menu.Dispose));
+        menu.Show(country, new Point(0, country.Height));
+    }
+
+    /// <summary>Remembers the country and searches again with it.</summary>
+    void PickCountry(SearchCountry.Country? picked)
+    {
+        App.Current.S.SaveSearchCountry(picked?.Code ?? "");
+        if (active == null) return;
+        ShowCountry(active);
+        if (Core is { } core && SearchCountry.IsGoogleSearch(core.Source))
+            core.Navigate(SearchCountry.WithCountry(core.Source, picked));
     }
 
     void SetLoading(Tab tab, bool value)
@@ -692,7 +741,7 @@ sealed class BrowserForm : Form
             var url = ToUrl(address.Text);
             if (url == null) return;
             try { Core?.Navigate(url); }
-            catch (ArgumentException) { Core?.Navigate(App.Current.S.SearchUrl + Uri.EscapeDataString(address.Text.Trim())); }
+            catch (ArgumentException) { Core?.Navigate(SearchCountry.SearchUrl(address.Text.Trim())); }
             active?.Ctl?.MoveFocus(CoreWebView2MoveFocusReason.Programmatic);
         }
         else if (e.KeyCode == Keys.Escape)
@@ -713,7 +762,7 @@ sealed class BrowserForm : Form
             if (t.StartsWith("localhost") || Regex.IsMatch(t, @"^\d{1,3}(\.\d{1,3}){3}(:\d+)?(/|$)")) return "http://" + t;
             if (t.Contains(".") && !t.EndsWith(".")) return "https://" + t;
         }
-        return App.Current.S.SearchUrl + Uri.EscapeDataString(t);
+        return SearchCountry.SearchUrl(t);
     }
 
     void FocusAddress()

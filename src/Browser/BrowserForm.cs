@@ -900,14 +900,15 @@ sealed class BrowserForm : Form
         App.Current.TrimHiddenTabsSoon();
     }
 
-    /// <summary>Closes a tab; closing the last one closes the window.</summary>
+    /// <summary>Closes a tab; the last one gives way to the start page, and only the start page itself closes the window.</summary>
     void CloseTab(Tab tab)
     {
         int i = tabs.IndexOf(tab);
         if (i < 0) return;
         if (tabs.Count == 1)
         {
-            Close();
+            if (Home.Is(tab.Site)) Close();
+            else ReplaceWithHome(tab);
             return;
         }
         // Closing either side of a split leaves the other one alone on screen
@@ -935,6 +936,23 @@ sealed class BrowserForm : Form
             LayoutPanes();
         }
     }
+
+    /// <summary>A fresh start page in front (shared profile, no history), then the last tab closes behind it.</summary>
+    async void ReplaceWithHome(Tab tab)
+    {
+        if (replacing) return;
+        replacing = true;
+        try
+        {
+            var home = await CreateTabAsync(Home.Url, "");
+            if (home == null || tab.Closed) return;
+            Add(home, front: true);
+            CloseTab(tab);
+        }
+        finally { replacing = false; }
+    }
+
+    bool replacing;
 
     void SelectNext(int step)
     {

@@ -344,6 +344,31 @@ sealed class Launcher
         }
     }
 
+    /// <summary>The folder typed over the console's prompt: its commands run there from now on.</summary>
+    public void ChangeDir(string path)
+    {
+        path = path.Trim().Trim('"');
+        if (path.Length == 0) return;
+        OpenLog();
+        string full;
+        try { full = Path.GetFullPath(Path.Combine(CommandDir, Environment.ExpandEnvironmentVariables(path))); }
+        catch (Exception e) when (e is ArgumentException || e is NotSupportedException || e is IOException)
+        {
+            Write("Неверный путь: " + path);
+            changed();
+            return;
+        }
+        if (!Directory.Exists(full)) Write("Нет такой папки: " + full);
+        // A running PowerShell keeps its own folder: it goes there itself
+        else if (ProgramLog.IsShell(Project) && shell is { HasExited: false }) RunInShell("Set-Location -LiteralPath '" + full.Replace("'", "''") + "'");
+        else
+        {
+            Write(CommandDir + ">cd /d \"" + full + "\"");
+            commandDir = full;
+        }
+        changed();
+    }
+
     public bool CommandRunning => ProgramLog.IsShell(Project) ? pending > 0 && shell is { HasExited: false } : command is { HasExited: false };
 
     /// <summary>

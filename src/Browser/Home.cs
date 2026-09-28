@@ -25,6 +25,9 @@ static class Home
         Uri.TryCreate(uri, UriKind.Absolute, out var u) && u.Scheme == Uri.UriSchemeHttps
         && u.Host.Equals(Host, StringComparison.OrdinalIgnoreCase);
 
+    /// <summary>The page with the tiles itself, not another page of this host (the journal, a console, a terminal).</summary>
+    public static bool IsTiles(string? uri) => Is(uri) && new Uri(uri!).AbsolutePath == "/";
+
     public static Stream Page()
     {
         if (html == null)

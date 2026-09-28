@@ -49,15 +49,20 @@ tr.entry { cursor: pointer; }
 tr.entry:hover td { background: rgba(127, 127, 127, .08); }
 tr.more td { white-space: pre-wrap; word-break: break-all; font: 12px Consolas, monospace; color: var(--muted); padding: 6px 10px 10px 24px; }
 #empty { padding: 28px 22px; }
-th.col { cursor: pointer; user-select: none; }
-th.col:hover { background: rgba(127, 127, 127, .15); }
-th.col::after { content: " \25BE"; color: var(--muted); }
-th.col.on { color: var(--accent); }
-th.col.on::after { content: " \25BE\2009\25CF"; color: var(--accent); }
+/* The name sorts, the arrow beside it (apart from it) opens the column's filter */
+th .name { cursor: pointer; user-select: none; padding: 2px 4px; margin-left: -4px; border-radius: 4px; }
+th .name:hover { background: rgba(127, 127, 127, .15); }
+th .name[data-dir="asc"]::after { content: " \25B2"; font-size: 10px; }
+th .name[data-dir="desc"]::after { content: " \25BC"; font-size: 10px; }
+th .drop { margin-left: 10px; padding: 0 6px; border: 0; border-radius: 4px; font-size: 17px; line-height: 20px; color: var(--muted); vertical-align: middle; }
+th .drop:hover { background: rgba(127, 127, 127, .2); color: inherit; }
+th.on .drop { color: var(--accent); }
+th.on .drop::after { content: "\25CF"; font-size: 8px; vertical-align: top; margin-left: 1px; }
 #pop { position: fixed; z-index: 5; width: 320px; max-height: 60vh; display: flex; flex-direction: column; gap: 6px; padding: 8px;
   background: var(--card); border: 1px solid var(--line); border-radius: 8px; box-shadow: 0 6px 24px rgba(0, 0, 0, .25); }
 #pop[hidden] { display: none; }
 #pop input[type=search] { min-width: 0; width: 100%; }
+#pop input[type=search][hidden] { display: none; }
 #popList { overflow: auto; flex: 1; }
 #popList label { display: flex; gap: 8px; align-items: center; padding: 2px 4px; border-radius: 4px; cursor: pointer; font-size: 12.5px; }
 #popList label:hover { background: rgba(127, 127, 127, .12); }
@@ -99,7 +104,7 @@ kbd { font: 12px Consolas, monospace; padding: 1px 6px; border: 1px solid var(--
       <span class="muted">По одному на строку. *.example.com пропускает сам сайт и все его поддомены. Уже открытые страницы получат список после обновления.</span></div>
   </details>
   <div class="row">
-    <span class="muted">Фильтр: нажмите на заголовок колонки.</span>
+    <span class="muted">Название колонки — сортировка, стрелка рядом — фильтр.</span>
     <button id="resetFilters" hidden>Сбросить фильтры</button>
     <label class="switch"><input type="checkbox" id="onlyBlocked"><span class="track"></span><span>Только заблокированные</span></label>
     <button id="json" title="Записи под фильтром в файл JSON">Выгрузить JSON</button>
@@ -111,7 +116,7 @@ kbd { font: 12px Consolas, monospace; padding: 1px 6px; border: 1px solid var(--
 </header>
 <div id="wrap">
   <table>
-    <thead><tr><th>Время</th><th class="col" data-col="Method">Метод</th><th class="col" data-col="Result">Результат</th><th>Размер</th><th class="col" data-col="Kind">Инициатор</th><th class="col" data-col="Host">Домен</th><th class="col" data-col="Ip">IP</th><th class="col" data-col="Url">Адрес</th></tr></thead>
+    <thead><tr><th data-col="Time">Время</th><th data-col="Method">Метод</th><th data-col="Result">Результат</th><th data-col="Size">Размер</th><th data-col="Kind">Инициатор</th><th data-col="Host">Домен</th><th data-col="Ip">IP</th><th data-col="Url">Адрес</th></tr></thead>
     <tbody id="rows"></tbody>
   </table>
   <p class="muted" id="empty">Запросов в интернет пока нет.</p>
@@ -146,7 +151,23 @@ function td(text, cls) {
 
 // Column filters: the values let through, per column; a column without one lets everything through
 const filters = {};
-const value = (e, col) => e[col] || "";
+// What a column's filter lists: the minute for the time, a range for the size, else the value itself
+const SIZES = ["нет данных", "до 1 КБ", "1–10 КБ", "10–100 КБ", "100 КБ – 1 МБ", "больше 1 МБ"];
+function value(e, col) {
+  if (col === "Time") return e.Time.slice(11, 16);
+  if (col === "Size") return SIZES[e.Size < 0 ? 0 : e.Size < 1024 ? 1 : e.Size < 10240 ? 2 : e.Size < 102400 ? 3 : e.Size < 1048576 ? 4 : 5];
+  return e[col] || "";
+}
+
+// Newest first until a column's name is clicked: then by it, a second click the other way
+let sortCol = null, sortDir = 1;
+function compare(a, b) {
+  if (!sortCol) return b.Seq - a.Seq;
+  const x = sortCol === "Time" ? a.Seq : sortCol === "Size" ? a.Size : String(a[sortCol] || "");
+  const y = sortCol === "Time" ? b.Seq : sortCol === "Size" ? b.Size : String(b[sortCol] || "");
+  const c = typeof x === "number" ? x - y : x.localeCompare(y, "ru", { numeric: true });
+  return (c || a.Seq - b.Seq) * sortDir;
+}
 
 function matches(e, except) {
   if ($("onlyBlocked").checked && !e.Blocked) return false;
@@ -156,7 +177,7 @@ function matches(e, except) {
 
 function showFilters() {
   const n = Object.keys(filters).length;
-  for (const th of document.querySelectorAll("th.col")) th.classList.toggle("on", th.dataset.col in filters);
+  for (const th of document.querySelectorAll("th[data-col]")) th.classList.toggle("on", th.dataset.col in filters);
   $("resetFilters").hidden = !n;
   $("resetFilters").textContent = "Сбросить фильтры (" + n + ")";
 }
@@ -166,14 +187,21 @@ let popCol = null;
 function popValues() {
   const counts = new Map();
   for (const e of entries) if (matches(e, popCol)) { const v = value(e, popCol); counts.set(v, (counts.get(v) || 0) + 1); }
-  return [...counts].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
+  const list = [...counts];
+  // Minutes newest first, sizes small to large, the rest most frequent first
+  if (popCol === "Time") return list.sort((a, b) => b[0].localeCompare(a[0]));
+  if (popCol === "Size") return list.sort((a, b) => SIZES.indexOf(a[0]) - SIZES.indexOf(b[0]));
+  return list.sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
 }
 
 function popDraw() {
   const find = $("popFind").value.trim().toLowerCase();
   const list = $("popList");
   list.textContent = "";
-  const all = popValues().filter(([v]) => !find || v.toLowerCase().includes(find));
+  const values = popValues();
+  // A search only where the list is long (addresses, domains); a short one is just ticked
+  $("popFind").hidden = values.length <= 12 && !find;
+  const all = values.filter(([v]) => !find || v.toLowerCase().includes(find));
   const on = filters[popCol];
   for (const [v, n] of all.slice(0, 500)) {
     const l = document.createElement("label");
@@ -216,11 +244,31 @@ function openPop(th) {
   pop.hidden = false;
   pop.style.top = r.bottom + 2 + "px";
   pop.style.left = Math.max(8, Math.min(r.left, innerWidth - pop.offsetWidth - 8)) + "px";
-  $("popFind").focus();
+  if (!$("popFind").hidden) $("popFind").focus();
 }
 
-for (const th of document.querySelectorAll("th.col"))
-  th.addEventListener("click", ev => { ev.stopPropagation(); if (!$("pop").hidden && popCol === th.dataset.col) $("pop").hidden = true; else openPop(th); });
+for (const th of document.querySelectorAll("th[data-col]")) {
+  const name = document.createElement("span");
+  name.className = "name";
+  name.textContent = th.textContent;
+  name.title = "Сортировать";
+  const drop = document.createElement("button");
+  drop.className = "drop";
+  drop.textContent = "\u25BE";
+  drop.title = "Фильтр";
+  th.textContent = "";
+  th.append(name, drop);
+  name.addEventListener("click", () => {
+    // Asc, desc, then back to newest first
+    if (sortCol !== th.dataset.col) { sortCol = th.dataset.col; sortDir = 1; }
+    else if (sortDir === 1) sortDir = -1;
+    else sortCol = null;
+    for (const n of document.querySelectorAll("th .name"))
+      n.dataset.dir = sortCol && n.parentNode.dataset.col === sortCol ? (sortDir === 1 ? "asc" : "desc") : "";
+    draw();
+  });
+  drop.addEventListener("click", ev => { ev.stopPropagation(); if (!$("pop").hidden && popCol === th.dataset.col) $("pop").hidden = true; else openPop(th); });
+}
 $("pop").addEventListener("click", ev => ev.stopPropagation());
 document.addEventListener("click", () => { $("pop").hidden = true; });
 document.addEventListener("keydown", ev => { if (ev.key === "Escape") $("pop").hidden = true; });
@@ -257,7 +305,7 @@ function row(e) {
 function draw() {
   const rows = $("rows");
   rows.textContent = "";
-  const shown = entries.filter(matches).slice(-1000).reverse();
+  const shown = entries.filter(matches).sort(compare).slice(0, 1000);
   for (const e of shown) rows.append(row(e));
   $("empty").hidden = shown.length > 0;
   $("empty").textContent = entries.length ? "Под фильтр ничего не подходит." : "Запросов в интернет пока нет.";
@@ -322,7 +370,8 @@ const KEYS = [
     ["↑, ↓ в строке команды", "Предыдущие введённые команды"],
   ]],
   ["Журнал сети", [
-    ["Клик по заголовку колонки", "Фильтр по значениям колонки"],
+    ["Клик по названию колонки", "Сортировка: по возрастанию, по убыванию, снова новые сверху"],
+    ["Стрелка ▾ у названия", "Фильтр по значениям колонки (время — по минутам, размер — по диапазонам)"],
     ["Клик по строке", "Подробности: полный адрес, страница, стек вызова"],
     ["Esc", "Закрыть фильтр или это окно"],
   ]],

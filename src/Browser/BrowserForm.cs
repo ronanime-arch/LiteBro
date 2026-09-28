@@ -506,7 +506,7 @@ sealed class BrowserForm : Form
 
     void ShowStrip()
     {
-        bool show = tabs.Count != 1 || !Home.Is(tabs[0].Site);
+        bool show = tabs.Count != 1 || !Home.IsTiles(tabs[0].Site);
         if (strip.Visible != show) strip.Visible = show;
     }
 
@@ -900,14 +900,15 @@ sealed class BrowserForm : Form
         App.Current.TrimHiddenTabsSoon();
     }
 
-    /// <summary>Closes a tab; closing the last one closes the window.</summary>
+    /// <summary>Closes a tab; the last one gives way to the start page, and only the start page itself closes the window.</summary>
     void CloseTab(Tab tab)
     {
         int i = tabs.IndexOf(tab);
         if (i < 0) return;
         if (tabs.Count == 1)
         {
-            Close();
+            if (Home.IsTiles(tab.Site)) Close();
+            else ReplaceWithHome(tab);
             return;
         }
         // Closing either side of a split leaves the other one alone on screen
@@ -935,6 +936,23 @@ sealed class BrowserForm : Form
             LayoutPanes();
         }
     }
+
+    /// <summary>A fresh start page in front (shared profile, no history), then the last tab closes behind it.</summary>
+    async void ReplaceWithHome(Tab tab)
+    {
+        if (replacing) return;
+        replacing = true;
+        try
+        {
+            var home = await CreateTabAsync(Home.Url, "");
+            if (home == null || tab.Closed) return;
+            Add(home, front: true);
+            CloseTab(tab);
+        }
+        finally { replacing = false; }
+    }
+
+    bool replacing;
 
     void SelectNext(int step)
     {
@@ -1496,6 +1514,9 @@ sealed class BrowserForm : Form
                 break;
             case "command" when console != null && Text("text") is { } line:
                 App.Current.LauncherFor(console).Run(line);
+                break;
+            case "cd" when console != null && Text("dir") is { } folder:
+                App.Current.LauncherFor(console).ChangeDir(folder);
                 break;
             case "stopCommand" when console != null:
                 App.Current.LauncherFor(console).StopCommand();

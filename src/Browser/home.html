@@ -30,6 +30,7 @@ main { max-width: 1180px; margin: 0 auto; padding: 84px 56px 48px; }
   transition: transform .15s ease, box-shadow .15s ease;
 }
 .tile.pic { background: var(--card); }
+.tile.three { font-size: 44px; letter-spacing: 0; }
 .tile img { width: 100%; height: 100%; object-fit: cover; display: block; }
 .tile.small img, .preview.small img { width: 50%; height: 50%; object-fit: contain; }
 .tile:hover { transform: translateY(-3px); box-shadow: 0 2px 4px rgba(0, 0, 0, .25), 0 16px 30px -14px rgba(0, 0, 0, .7); }
@@ -115,8 +116,12 @@ button.plain:hover, .actions button:hover { border-color: var(--muted); }
 .preview { width: 72px; height: 72px; flex: none; border-radius: 12px; overflow: hidden; display: grid; place-items: center;
   background: var(--c, var(--accent)); color: #fff; font: 600 30px var(--display); }
 .preview.pic { background: var(--field); border: 1px solid var(--line); }
+.preview.three { font-size: 22px; }
 .preview img { width: 100%; height: 100%; object-fit: cover; }
 .look .side { display: grid; gap: 8px; }
+.letters { display: flex; align-items: center; gap: 10px; }
+.letters[hidden] { display: none; }
+.letters input { width: 5.5em; text-align: center; font-weight: 600; }
 .seg { display: inline-flex; justify-self: start; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
 .seg button { padding: 6px 12px; font: 13.5px var(--text); color: var(--fg); background: transparent; border: 0; cursor: pointer; }
 .seg button + button { border-left: 1px solid var(--line); }
@@ -193,6 +198,8 @@ summary { cursor: pointer; font-weight: 500; }
           <button type="button" data-mode="none">Буквы</button>
         </div>
         <div class="swatches" id="swatches" title="Цвет плитки, пока у неё нет картинки"></div>
+        <label class="letters" id="lettersBox" hidden>Буквы на плитке
+          <input type="text" name="Letters" maxlength="3" spellcheck="false" autocomplete="off" placeholder="авто"></label>
         <p class="muted" id="iconNote"></p>
         <div class="error" id="iconError" hidden></div>
       </div>
@@ -221,7 +228,8 @@ summary { cursor: pointer; font-weight: 500; }
           <input type="text" name="Args" placeholder="Например: web --no-open">
         </label>
         <label>Запускать в папке
-          <span class="row"><input type="text" name="WorkDir" placeholder="Папка проекта: в ней программа работает с файлами. Пусто — папка программы"><button type="button" class="plain" data-browse="WorkDir">Обзор…</button></span>
+          <span class="row"><input type="text" name="WorkDir" placeholder="Пусто — папка программы"><button type="button" class="plain" data-browse="WorkDir">Обзор…</button></span>
+          <span class="muted">Папка проекта: в ней программа работает с файлами.</span>
         </label>
         <label class="check"><input type="checkbox" name="OpenPrintedUrl">
           <span>Открыть адрес, который напишет программа (со входным токеном)</span></label>
@@ -271,10 +279,12 @@ function host(url) {
   try { return new URL(url).host; } catch { return url; }
 }
 
+// Up to three letters: the first of each of three words, or the start of a single word ("dsh" → DSH)
 function initials(name) {
   const words = name.trim().split(/[\s_\-.:/]+/).filter(Boolean);
   if (!words.length) return "?";
-  return (words.length > 1 ? words[0][0] + words[1][0] : words[0][0]).toUpperCase();
+  const letters = words.length > 1 ? words.slice(0, 3).map(w => [...w][0]).join("") : [...words[0]].slice(0, 3).join("");
+  return letters.toUpperCase();
 }
 
 function colorOf(p) {
@@ -288,7 +298,7 @@ function colorOf(p) {
 // A site's small favicon sits in the middle, a big icon (apple-touch-icon, svg) or the user's picture fills the tile.
 function paint(box, p, src, site) {
   box.textContent = "";
-  box.classList.remove("pic", "small");
+  box.classList.remove("pic", "small", "three");
   box.style.setProperty("--c", colorOf(p));
   if (src) {
     const img = new Image();
@@ -300,7 +310,9 @@ function paint(box, p, src, site) {
     box.classList.add("pic");
     box.append(img);
   } else {
-    box.textContent = initials(p.Name || host(p.Url));
+    box.textContent = (p.Letters || "").trim() || initials(p.Name || host(p.Url));
+    // Three wide letters fit the tile only a size smaller
+    box.classList.toggle("three", [...box.textContent].length > 2);
   }
 }
 
@@ -603,9 +615,10 @@ function openDialog(p) {
   f.Args.value = p ? p.Args : "";
   f.WorkDir.value = p ? p.WorkDir : "";
   f.OpenPrintedUrl.checked = p ? p.OpenPrintedUrl : false;
+  f.Letters.value = p && p.Letters ? p.Letters : "";
   f.OwnProfile.checked = !!(p && p.OwnProfile);
-  f.KeepData.checked = !!(p && p.KeepData);
-  $("#data").open = !!(p && (p.OwnProfile || p.KeepData));
+  f.KeepData.checked = p ? p.KeepData !== false : true;
+  $("#data").open = !!(p && (p.OwnProfile || p.KeepData === false));
   $("#launch").open = !!(p && p.Exe);
   $("#linkRows").textContent = "";
   for (const l of p ? p.Links || [] : []) linkRow(l.Name, l.Url);
@@ -626,7 +639,7 @@ function openDialog(p) {
 
 function current() {
   const f = form.elements;
-  return { Name: f.Name.value.trim(), Url: f.Url.value.trim(), Color: color };
+  return { Name: f.Name.value.trim(), Url: f.Url.value.trim(), Color: color, Letters: f.Letters.value.trim() };
 }
 
 // What the tile will show: the site's icon once it has one, the picked picture, or letters
@@ -635,6 +648,7 @@ function updatePreview() {
   const src = mode === "file" ? iconPreview || saved : mode === "site" ? saved : "";
   paint($("#preview"), current(), src, mode === "site");
   for (const b of document.querySelectorAll("#mode button")) b.classList.toggle("on", b.dataset.mode === mode);
+  $("#lettersBox").hidden = mode !== "none";
   $("#iconNote").textContent = mode === "site" && !src
     ? "Значок сайта появится сам: сразу, если сайт уже работает, или когда LiteBro его откроет."
     : "";
@@ -663,6 +677,7 @@ function normalize(url) {
 }
 
 form.elements.Name.addEventListener("input", () => { if (!color) swatches(); updatePreview(); });
+form.elements.Letters.addEventListener("input", updatePreview);
 form.elements.Url.addEventListener("input", () => { if (!color) swatches(); updatePreview(); });
 $("#cancel").addEventListener("click", () => dlg.close());
 for (const b of document.querySelectorAll("#mode button"))
@@ -731,6 +746,7 @@ form.addEventListener("submit", e => {
       Args: f.Args.value.trim(),
       WorkDir: f.WorkDir.value.trim(),
       OpenPrintedUrl: f.OpenPrintedUrl.checked,
+      Letters: f.Letters.value.trim(),
       OwnProfile: f.OwnProfile.checked,
       KeepData: f.KeepData.checked,
       IconSource: mode,

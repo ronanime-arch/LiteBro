@@ -22,6 +22,8 @@ sealed class Project
     public string Color { get; set; } = "";
     /// <summary>The tile's picture: a file name in the icons folder, empty for letters on the colour.</summary>
     public string Icon { get; set; } = "";
+    /// <summary>What the tile shows without a picture, up to three letters; empty = taken from the name.</summary>
+    public string Letters { get; set; } = "";
     /// <summary>Where the picture comes from: "site" (its own icon, found by itself), "file" (picked), "none".</summary>
     public string IconSource { get; set; } = "site";
     /// <summary>Started when Url does not answer; empty = just open Url.</summary>
@@ -37,7 +39,7 @@ sealed class Project
     /// <summary>The project's pages run in a WebView2 profile of their own: own cookies, storage and permissions.</summary>
     public bool OwnProfile { get; set; }
     /// <summary>Its cookies and cache stay when the browser clears them on exit (Settings.ClearOnExit).</summary>
-    public bool KeepData { get; set; }
+    public bool KeepData { get; set; } = true; // tiles saved before the switch existed keep theirs too
 
     /// <summary>The WebView2 profile of the project's pages; "" for the shared one.</summary>
     public string Profile => OwnProfile && Id.Length > 0 ? "project-" + Id : "";

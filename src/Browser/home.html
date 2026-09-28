@@ -147,6 +147,21 @@ summary { cursor: pointer; font-weight: 500; }
   transition: width .12s, background .12s; }
 #shell:hover, #shell:focus-visible { width: 72px; background: #7d35aa; outline: none; }
 #shell svg { width: 26px; height: 22px; }
+/* «Только localhost»: a tab at the right edge, the mirror of PowerShell's, and the journal under it */
+#net, #netLog { position: fixed; right: 0; border: 0; cursor: pointer; display: flex; align-items: center; gap: 6px;
+  border-radius: 10px 0 0 10px; color: #fff; transition: width .12s, background .12s; }
+#net { top: 36px; width: 64px; height: 38px; padding: 0 6px 0 10px; background: #5b6170; }
+#net:hover, #net:focus-visible { width: 72px; background: #6b7282; outline: none; }
+#net.on { background: #1f7a45; }
+#net.on:hover, #net.on:focus-visible { background: #248c50; }
+#net svg { width: 20px; height: 22px; flex: none; }
+#net .knob { width: 22px; height: 12px; border-radius: 6px; background: rgba(255, 255, 255, .35); position: relative; flex: none; }
+#net .knob::after { content: ""; position: absolute; top: 2px; left: 2px; width: 8px; height: 8px; border-radius: 50%; background: #fff; transition: left .12s; }
+#net.on .knob { background: rgba(255, 255, 255, .55); }
+#net.on .knob::after { left: 12px; }
+#netLog { top: 80px; width: 40px; height: 28px; padding: 0 0 0 10px; background: rgba(127, 127, 127, .35);
+  font: 15px var(--icons); }
+#netLog:hover, #netLog:focus-visible { width: 46px; background: rgba(127, 127, 127, .55); outline: none; }
 </style>
 </head>
 <body>
@@ -155,6 +170,12 @@ summary { cursor: pointer; font-weight: 500; }
   <path d="M7 6l6 5-8 5" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
   <path d="M12 16h6" stroke="#fff" stroke-width="2.2" stroke-linecap="round"/></svg>
 </button>
+<button id="net" title="Режим «только localhost»: выключен. Щелчок включит блокировку запросов в интернет" aria-label="Только localhost" aria-pressed="false">
+  <svg viewBox="0 0 20 22" aria-hidden="true"><path d="M10 1l8 3v6c0 5.2-3.4 9.3-8 11-4.6-1.7-8-5.8-8-11V4z" fill="none" stroke="#fff" stroke-width="2" stroke-linejoin="round"/>
+  <path d="M6 11l3 3 5-6" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+  <span class="knob"></span>
+</button>
+<button id="netLog" title="Журнал запросов в интернет и разрешённые сайты" aria-label="Журнал сети">&#xE8FD;</button>
 <main>
   <div class="grid" id="grid"></div>
   <p class="hint" id="hint"></p>
@@ -723,7 +744,14 @@ function show(m) {
 
 window.chrome.webview.addEventListener("message", e => {
   const m = e.data;
-  if (m.type === "projects") {
+  if (m.type === "net") {
+    localOnly = m.localOnly;
+    $("#net").classList.toggle("on", localOnly);
+    $("#net").setAttribute("aria-pressed", String(localOnly));
+    $("#net").title = localOnly
+      ? "Режим «только localhost»: включён, запросы в интернет блокируются. Щелчок выключит"
+      : "Режим «только localhost»: выключен. Щелчок включит блокировку запросов в интернет";
+  } else if (m.type === "projects") {
     if (drag) waiting = m;
     else show(m);
   } else if (m.type === "browsed") {
@@ -743,6 +771,9 @@ window.chrome.webview.addEventListener("message", e => {
 
 render();
 $("#shell").addEventListener("click", () => post({ type: "terminal" }));
+let localOnly = false;
+$("#net").addEventListener("click", () => post({ type: "net", localOnly: !localOnly }));
+$("#netLog").addEventListener("click", () => post({ type: "netOpen" }));
 post({ type: "ready" });
 </script>
 </body>

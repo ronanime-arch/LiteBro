@@ -308,9 +308,17 @@ sealed class BrowserForm : Form
         core.Settings.IsGeneralAutofillEnabled = false;
         core.Settings.IsPasswordAutosaveEnabled = false;
         core.Settings.AreHostObjectsAllowed = false;
+        // SmartScreen sends the addresses to Microsoft: no telemetry
+        try { core.Settings.IsReputationCheckingRequired = false; }
+        catch (Exception) { } // an older WebView2 runtime
         // The start page is served from here and talks to the browser through web messages
         core.AddWebResourceRequestedFilter(Home.Url + "*", CoreWebView2WebResourceContext.All);
         core.WebResourceRequested += OnHomeRequest;
+        core.WebResourceRequested += (_, e) => OnNetRequest(tab, e);
+        tab.NetFilter = false;
+        tab.NetScript = null;
+        tab.NetResponse = null;
+        ApplyNet(tab);
         core.WebMessageReceived += (_, e) => OnWebMessage(tab, e);
         core.FaviconChanged += (_, _) => TakeSiteIcon(tab);
 
@@ -923,6 +931,160 @@ sealed class BrowserForm : Form
         if (tab != null) Add(tab, front: true);
     }
 
+    /// <summary>The network switches changed: every tab follows, and the start pages and /net show them.</summary>
+    public void ApplyNet()
+    {
+        foreach (var tab in tabs)
+        {
+            ApplyNet(tab);
+            SendNet(tab);
+        }
+    }
+
+    /// <summary>
+    /// «Только localhost» on a tab: every request passes OnNetRequest (a cost per request, so only while the mode
+    /// is on), and new pages get the web socket guard. Pages already open keep their sockets until reloaded.
+    /// </summary>
+    async void ApplyNet(Tab tab)
+    {
+        if (tab.Core is not { } core) return;
+        const CoreWebView2WebResourceRequestSourceKinds All = CoreWebView2WebResourceRequestSourceKinds.All;
+        try
+        {
+            if (NetGuard.Watching && tab.NetResponse == null)
+            {
+                tab.NetResponse = (_, e) => OnNetResponse(tab, e);
+                core.WebResourceResponseReceived += tab.NetResponse;
+            }
+            else if (!NetGuard.Watching && tab.NetResponse != null)
+            {
+                core.WebResourceResponseReceived -= tab.NetResponse;
+                tab.NetResponse = null;
+            }
+            if (NetGuard.LocalOnly && !tab.NetFilter)
+                core.AddWebResourceRequestedFilter("*", CoreWebView2WebResourceContext.All, All);
+            else if (!NetGuard.LocalOnly && tab.NetFilter)
+                core.RemoveWebResourceRequestedFilter("*", CoreWebView2WebResourceContext.All, All);
+            tab.NetFilter = NetGuard.LocalOnly;
+            // The script carries the allowed hosts: put in anew on every change
+            if (tab.NetScript is { } old)
+            {
+                tab.NetScript = null;
+                core.RemoveScriptToExecuteOnDocumentCreated(old);
+            }
+            if (!NetGuard.LocalOnly) return;
+            var id = await core.AddScriptToExecuteOnDocumentCreatedAsync(NetGuard.SocketScript());
+            if (tab.Core == core && NetGuard.LocalOnly && tab.NetScript == null) tab.NetScript = id;
+            else core.RemoveScriptToExecuteOnDocumentCreated(id);
+        }
+        catch (Exception) { } // the WebView closed meanwhile
+    }
+
+    void SendNet(Tab tab)
+    {
+        if (tab.Core is { } core && !tab.Suspended && (Home.Is(core.Source)))
+            core.PostWebMessageAsJson(ProjectStore.Json.Serialize(new Dictionary<string, object>
+            {
+                ["type"] = "net",
+                ["localOnly"] = NetGuard.LocalOnly,
+                ["journal"] = NetGuard.Journal,
+                ["allow"] = NetGuard.AllowText,
+                ["file"] = NetLog.FilePath,
+            }));
+    }
+
+    /// <summary>In «только localhost» mode a request to the internet gets a refusal instead; the journal notes it.</summary>
+    void OnNetRequest(Tab tab, CoreWebView2WebResourceRequestedEventArgs e)
+    {
+        var env = App.Current.Env;
+        if (env == null || !NetGuard.LocalOnly || !Uri.TryCreate(e.Request.Uri, UriKind.Absolute, out var url) || !NetGuard.ShouldBlock(url))
+            return;
+        bool page = e.ResourceContext == CoreWebView2WebResourceContext.Document;
+        e.Response = env.CreateWebResourceResponse(page ? ProgramLog.Bytes(NetGuard.BlockedPage(url.AbsoluteUri)) : null,
+            403, BlockedReason, page ? "Content-Type: text/html; charset=utf-8" : "");
+        NetLog.Add(e.Request.Method, url, "заблокировано", blocked: true, -1, KindOf(e.ResourceContext),
+            page ? "" : tab.Site);
+    }
+
+    const string BlockedReason = "Blocked by LiteBro";
+
+    static string KindOf(CoreWebView2WebResourceContext c) => c switch
+    {
+        CoreWebView2WebResourceContext.Document => "документ",
+        CoreWebView2WebResourceContext.Stylesheet => "стиль",
+        CoreWebView2WebResourceContext.Image => "картинка",
+        CoreWebView2WebResourceContext.Media => "медиа",
+        CoreWebView2WebResourceContext.Font => "шрифт",
+        CoreWebView2WebResourceContext.Script => "скрипт",
+        CoreWebView2WebResourceContext.XmlHttpRequest => "XHR",
+        CoreWebView2WebResourceContext.Fetch => "fetch",
+        CoreWebView2WebResourceContext.EventSource => "EventSource",
+        CoreWebView2WebResourceContext.Websocket => "WebSocket",
+        CoreWebView2WebResourceContext.Manifest => "манифест",
+        CoreWebView2WebResourceContext.Ping => "ping/beacon",
+        CoreWebView2WebResourceContext.CspViolationReport => "отчёт CSP",
+        _ => "другое",
+    };
+
+    /// <summary>What a request was for, from the Sec-Fetch-Dest header the engine adds (https only), else its Accept.</summary>
+    static string KindOf(CoreWebView2HttpRequestHeaders headers)
+    {
+        string? Get(string name) => headers.Contains(name) ? headers.GetHeader(name) : null;
+        var dest = Get("Sec-Fetch-Dest");
+        if (dest != null)
+            return dest switch
+            {
+                "document" or "iframe" or "frame" => "документ",
+                "script" or "worker" or "sharedworker" or "serviceworker" => "скрипт",
+                "style" => "стиль",
+                "image" => "картинка",
+                "font" => "шрифт",
+                "audio" or "video" or "track" => "медиа",
+                "empty" => "fetch/XHR",
+                "manifest" => "манифест",
+                _ => dest,
+            };
+        var accept = Get("Accept") ?? "";
+        return accept.StartsWith("text/html") ? "документ" : accept.StartsWith("text/css") ? "стиль"
+            : accept.StartsWith("image/") ? "картинка" : "";
+    }
+
+    /// <summary>A response from the internet: into the journal while it is on (always in «только localhost» mode).</summary>
+    void OnNetResponse(Tab tab, CoreWebView2WebResourceResponseReceivedEventArgs e)
+    {
+        if (!NetGuard.Watching || !Uri.TryCreate(e.Request.Uri, UriKind.Absolute, out var url) || !NetGuard.IsOutside(url)) return;
+        var r = e.Response;
+        if (r.ReasonPhrase == BlockedReason) return; // journaled when refused
+        long size = -1;
+        try
+        {
+            if (r.Headers.Contains("Content-Length") && long.TryParse(r.Headers.GetHeader("Content-Length"), out var n)) size = n;
+        }
+        catch (Exception) { }
+        string kind;
+        try { kind = KindOf(e.Request.Headers); }
+        catch (Exception) { kind = ""; }
+        NetLog.Add(e.Request.Method, url, r.StatusCode + (NetGuard.LocalOnly ? " (разрешён)" : ""), blocked: false, size, kind, tab.Site);
+    }
+
+    /// <summary>The web socket guard refused a connection: the page says so as a string, which only goes into the journal.</summary>
+    void OnSocketBlocked(Tab tab, CoreWebView2WebMessageReceivedEventArgs e)
+    {
+        const string Prefix = "litebro-ws-blocked:";
+        string text;
+        try { text = e.TryGetWebMessageAsString(); }
+        catch (ArgumentException) { return; }
+        if (!text.StartsWith(Prefix) || !NetGuard.LocalOnly) return;
+        try
+        {
+            var m = ProjectStore.Json.Deserialize<Dictionary<string, object>>(text.Substring(Prefix.Length));
+            if (m.TryGetValue("url", out var u) && u is string s && Uri.TryCreate(s, UriKind.Absolute, out var url) && NetGuard.IsOutside(url))
+                NetLog.Add("GET", url, "заблокировано", blocked: true, -1, "WebSocket", tab.Site,
+                    m.TryGetValue("stack", out var st) && st is string stack ? stack.Length > 4000 ? stack.Substring(0, 4000) : stack : "");
+        }
+        catch (Exception) { }
+    }
+
     /// <summary>A terminal tab in front with PowerShell in the folder.</summary>
     async void OpenTerminal(string dir)
     {
@@ -1093,6 +1255,14 @@ sealed class BrowserForm : Form
                 e.Response = env.CreateWebResourceResponse(ProgramLog.Bytes(json), 200, "OK", ProgramLog.JsonHeaders);
             }
         }
+        else if (path == NetPage.Path)
+            e.Response = env.CreateWebResourceResponse(NetPage.Html(), 200, "OK", ProgramLog.Headers);
+        else if (path == NetPage.Path + "/log")
+        {
+            var m = Regex.Match(new Uri(e.Request.Uri).Query, @"[?&]after=(\d+)");
+            long after = m.Success && long.TryParse(m.Groups[1].Value, out var n) ? n : 0;
+            e.Response = env.CreateWebResourceResponse(ProgramLog.Bytes(NetLog.Since(after)), 200, "OK", ProgramLog.JsonHeaders);
+        }
         else if (TermPage.File(path, out var headers) is { } file)
             e.Response = env.CreateWebResourceResponse(file, 200, "OK", headers);
         else if (path.StartsWith("/icon/") && Icons.Read(Uri.UnescapeDataString(path.Substring(6))) is { } bytes)
@@ -1110,6 +1280,7 @@ sealed class BrowserForm : Form
     {
         // Any page of a split may say where it is scrolled to; that moves nothing but the other half
         if (syncScroll && IsPane(tab)) OnScrolled(tab, e);
+        OnSocketBlocked(tab, e);
         if (!Home.Is(e.Source)) return;
         Dictionary<string, object>? m;
         try { m = ProjectStore.Json.Deserialize<Dictionary<string, object>>(e.WebMessageAsJson); }
@@ -1125,6 +1296,19 @@ sealed class BrowserForm : Form
         {
             case "ready":
                 SendProjects(tab);
+                SendNet(tab);
+                break;
+            case "net":
+                // The start page's switch or the /net page: what is not sent stays as it is
+                App.Current.SetNet(m.TryGetValue("localOnly", out var lo) ? lo is true : NetGuard.LocalOnly,
+                    m.TryGetValue("journal", out var j) ? j is true : NetGuard.Journal,
+                    Text("allow") ?? NetGuard.AllowText);
+                break;
+            case "netClear":
+                NetLog.Clear();
+                break;
+            case "netOpen":
+                OpenNewTab(NetPage.Url);
                 break;
             case "open" when project != null:
                 // One of the project's own links, never an address the page makes up

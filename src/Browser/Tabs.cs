@@ -29,6 +29,11 @@ sealed class Tab
     public Terminal? Term;
     /// <summary>The folder a terminal tab starts its shell in; set only by the browser when it opens the tab.</summary>
     public string? TermDir;
+    /// <summary>The «только localhost» request filter and the web socket script are in place on the current WebView.</summary>
+    public bool NetFilter;
+    public string? NetScript;
+    /// <summary>The journal's listener to responses, only while it is on: each response it hears crosses to this process.</summary>
+    public EventHandler<CoreWebView2WebResourceResponseReceivedEventArgs>? NetResponse;
 
     /// <summary>The address the tab stands for: the project's (or its link's) while its start or failure page is shown.</summary>
     public string Site => ShowingInternalPage && FailedUrl != null ? FailedUrl

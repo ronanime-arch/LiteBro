@@ -319,6 +319,8 @@ sealed class BrowserForm : Form
         };
         core.SourceChanged += (_, _) =>
         {
+            if (tab.Address.StartsWith(ProgramLog.Url(ProgramLog.Shell)) && !core.Source.StartsWith(ProgramLog.Url(ProgramLog.Shell)))
+                App.Current.ShellMaybeUnused();
             tab.Address = core.Source;
             ShowState(tab);
         };
@@ -707,6 +709,7 @@ sealed class BrowserForm : Form
         }
         tab.Closed = true;
         tabs.RemoveAt(i);
+        App.Current.ShellMaybeUnused();
         var c = tab.Ctl;
         tab.Ctl = null;
         c?.Close();
@@ -772,6 +775,9 @@ sealed class BrowserForm : Form
         c.Close();
         strip.Invalidate();
     }
+
+    /// <summary>True when a tab here is on the address, loaded or not.</summary>
+    public bool HasTabOn(string url) => tabs.Any(t => t.Site.StartsWith(url));
 
     /// <summary>Brings forward a tab on the same site as the address and opens the address there; false if there is none.</summary>
     public bool TryFocusTabOn(string address)

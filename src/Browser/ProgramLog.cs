@@ -131,7 +131,7 @@ static class ProgramLog
         "mode.title=cmd?'Строка выполняется в cmd в папке ниже; cd меняет папку. Нажмите, чтобы писать программе проекта':'Строка уходит на ввод программе проекта. Нажмите, чтобы выполнять команды';" +
         "promptEl.textContent=cmd?dir+'>':'>';promptEl.title=cmd?dir:'';" +
         "line.placeholder=cmd?(command?'Команда выполняется: строка уйдёт ей на ввод':'Команда, например: git status, npm install, dir'):(running?'Строка для программы, Enter — отправить':'Программа не запущена');" +
-        "line.disabled=!cmd&&!running;mode.hidden=shell;if(shell)line.placeholder=command?'Команда выполняется: строка уйдёт ей на ввод':'Команда PowerShell, например: Get-ChildItem, git status, winget list';}" +
+        "line.disabled=!cmd&&!running;mode.hidden=shell;if(shell)line.placeholder=command?'Команда выполняется: следующая встанет в очередь':'Команда PowerShell, например: Get-ChildItem, git status, winget list';}" +
         "mode.addEventListener('click',()=>{cmd=!cmd;modeShow();line.focus();});" +
         "function show(d){running=d.running;command=d.command;dir=d.dir;state.textContent=shell?(command?'● команда выполняется':''):running?'● программа работает':'программа остановлена';state.className=running?'on':'';" +
         "stopBtn.hidden=!running;halt.hidden=!command;modeShow();}" +

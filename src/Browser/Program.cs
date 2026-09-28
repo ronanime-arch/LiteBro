@@ -140,8 +140,11 @@ sealed class App : ApplicationContext
         var args = MemoryArgs + QuietArgs;
         if (!S.Gpu) args += " --disable-gpu";
         if (S.ExtraBrowserArgs.Length > 0) args += " " + S.ExtraBrowserArgs;
-        engineCorsOff = NetGuard.CorsOff;
-        if (engineCorsOff) args += " --disable-web-security";
+        engineKey = EngineKey();
+        if (NetGuard.CorsOff) args += " --disable-web-security";
+        // «Только localhost»: all but local traffic through the gateway, which refuses what the rules forbid
+        if (NetGuard.LocalOnly)
+            args += " --proxy-server=http://127.0.0.1:" + Gateway.Start() + " --proxy-bypass-list=" + Gateway.BypassList();
         var options = new CoreWebView2EnvironmentOptions(args);
         // A new WebView starts with the theme's background, not a white flash before its page paints
         var bg = Theme.PageBackground;
@@ -286,11 +289,15 @@ sealed class App : ApplicationContext
         NetGuard.SetAllowed(allowHosts);
         S.SaveNet(localOnly, journal, NetGuard.AllowText, ignoreCors);
         foreach (var form in forms) form.ApplyNet();
-        if (Env != null && NetGuard.CorsOff != engineCorsOff) restart ??= RestartEngineAsync();
+        Gateway.Enforce();
+        if (Env != null && EngineKey() != engineKey) restart ??= RestartEngineAsync();
     }
 
-    /// <summary>Whether the running engine was started without CORS checks.</summary>
-    bool engineCorsOff;
+    /// <summary>The network flags the running engine was started with.</summary>
+    string engineKey = "";
+
+    /// <summary>The engine flags that follow the network switches: the gateway (local mode) and CORS.</summary>
+    static string EngineKey() => NetGuard.LocalOnly + "|" + NetGuard.CorsOff;
 
     /// <summary>
     /// Flags of the engine apply to its whole browser process: every tab is closed (keeping its address), the process
@@ -313,7 +320,7 @@ sealed class App : ApplicationContext
                 Env = null;
                 envTask = null;
                 await (envTask = CreateEnvironmentAsync());
-            } while (NetGuard.CorsOff != engineCorsOff); // switched again meanwhile
+            } while (EngineKey() != engineKey); // switched again meanwhile
         }
         catch (Exception) { envTask = null; }
         finally { restart = null; }

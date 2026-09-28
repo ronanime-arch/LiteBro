@@ -192,10 +192,13 @@ static class NetLog
             Page = page,
             Stack = stack,
         };
-        if (writer == null)
+        lock (queue)
         {
-            writer = new Thread(Write) { IsBackground = true, Name = "Network journal", Priority = ThreadPriority.BelowNormal };
-            writer.Start();
+            if (writer == null)
+            {
+                writer = new Thread(Write) { IsBackground = true, Name = "Network journal", Priority = ThreadPriority.BelowNormal };
+                writer.Start();
+            }
         }
         queue.TryAdd(e); // a flood beyond the queue is dropped rather than slowing the pages
     }
@@ -242,11 +245,13 @@ static class NetLog
     static string Resolve(string host)
     {
         if (IPAddress.TryParse(host.Trim('[', ']'), out _)) return host.Trim('[', ']');
+        // Through the gateway («только localhost») the address really connected to is known
+        if (Gateway.IpOf(host) is { } real) return real;
         if (ips.TryGetValue(host, out var ip)) return ip;
         try
         {
             var task = Dns.GetHostAddressesAsync(host);
-            ip = task.Wait(2000) ? string.Join(" ", task.Result.Take(2).Select(a => a.ToString())) : "";
+            ip = task.Wait(2000) ? string.Join(" ", task.Result.Take(2).Select(a => a.ToString())) + " (DNS)" : "";
         }
         catch (Exception) { ip = ""; }
         if (ips.Count > 5000) ips.Clear();

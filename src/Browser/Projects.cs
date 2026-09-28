@@ -75,6 +75,19 @@ static class ProjectStore
         if (All.RemoveAll(p => p.Id == id) > 0) Write();
     }
 
+    /// <summary>Puts the projects in the order of the ids; any not among them follow in the order they had.</summary>
+    /// <returns>false if the order stays as it was.</returns>
+    public static bool Reorder(IEnumerable<string> ids)
+    {
+        var order = ids.Distinct().Select(Find).OfType<Project>().ToList();
+        order.AddRange(All.Except(order));
+        if (order.SequenceEqual(All)) return false;
+        All.Clear();
+        All.AddRange(order);
+        Write();
+        return true;
+    }
+
     static void Write()
     {
         var temp = FilePath + ".tmp";

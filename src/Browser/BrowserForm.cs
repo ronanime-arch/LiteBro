@@ -19,7 +19,7 @@ sealed class BrowserForm : Form
     const string GlyphBack = "", GlyphForward = "", GlyphReload = "",
         GlyphStop = "", GlyphHome = "";
     // A tab in the background is paused after a while, and after a long while closed until it is picked again
-    static readonly TimeSpan SuspendAfter = TimeSpan.FromMinutes(5), UnloadAfter = TimeSpan.FromMinutes(30);
+    static readonly TimeSpan SuspendAfter = TimeSpan.FromMinutes(1), UnloadAfter = TimeSpan.FromMinutes(5);
 
     [DllImport("user32.dll", CharSet = CharSet.Unicode)]
     static extern IntPtr SendMessage(IntPtr window, int message, IntPtr wParam, string lParam);
@@ -49,7 +49,8 @@ sealed class BrowserForm : Form
     readonly Timer ramTimer = new() { Interval = 2000 };
     // How long a window may sit in the background before it gives memory back
     readonly Timer backgroundTimer = new() { Interval = 30_000 };
-    readonly Timer freezeTimer = new() { Interval = 30_000 };
+    // Often enough for the minute of SuspendAfter to be kept to within a quarter
+    readonly Timer freezeTimer = new() { Interval = 15_000 };
     readonly List<Tab> tabs = new();
     Tab? active;
     double zoom = 1;
@@ -542,6 +543,12 @@ sealed class BrowserForm : Form
                 break;
             case "save":
                 if (m.TryGetValue("project", out var raw)) SaveProject(raw, Text("iconPath"));
+                break;
+            case "order":
+                // The tiles dragged into a new order
+                if (m.TryGetValue("ids", out var order) && order is System.Collections.IEnumerable ids
+                    && ProjectStore.Reorder(ids.OfType<string>()))
+                    App.Current.ProjectsChanged();
                 break;
             case "browse":
                 var field = Text("field");

@@ -21,7 +21,7 @@ html, body { margin: 0; min-height: 100vh; background: var(--bg); color: var(--f
 main { max-width: 1180px; margin: 0 auto; padding: 84px 56px 48px; }
 
 .grid { display: grid; grid-template-columns: repeat(auto-fill, 168px); gap: 44px 56px; }
-.item { position: relative; width: 168px; }
+.item { position: relative; width: 168px; user-select: none; }
 .tile {
   width: 168px; height: 168px; padding: 0; border: 0; border-radius: 18px; overflow: hidden; cursor: pointer;
   display: grid; place-items: center; background: var(--c, var(--accent)); color: #fff;
@@ -53,6 +53,15 @@ main { max-width: 1180px; margin: 0 auto; padding: 84px 56px 48px; }
 .add .tile:hover { opacity: 1; color: var(--accent); box-shadow: none; }
 .add svg { width: 60px; height: 60px; }
 .add .label { color: var(--muted); font-weight: 400; }
+
+/* A tile being dragged follows the pointer; a dashed frame marks where it will land */
+.sorting .item { pointer-events: none; }
+.item.slot > * { visibility: hidden; }
+.item.slot::before { content: ""; position: absolute; left: 0; top: 0; width: 168px; height: 168px;
+  border: 2px dashed var(--muted); border-radius: 18px; opacity: .5; }
+.item.ghost { position: fixed; left: 0; top: 0; z-index: 10; pointer-events: none; will-change: transform; }
+.ghost .tile { box-shadow: 0 4px 8px rgba(0, 0, 0, .3), 0 22px 40px -16px rgba(0, 0, 0, .75); }
+.grabbing, .grabbing * { cursor: grabbing !important; }
 
 .hint { margin-top: 56px; color: var(--muted); font-size: 12.5px; }
 
@@ -201,6 +210,7 @@ function paint(box, p, src, site) {
   if (src) {
     const img = new Image();
     img.alt = "";
+    img.draggable = false; // the tile is dragged, not its picture
     img.onerror = () => paint(box, p, "");
     img.onload = () => { if (site && img.naturalWidth && img.naturalWidth < 120 && !/\.svg$/i.test(src)) box.classList.add("small"); };
     img.src = src;
@@ -221,18 +231,20 @@ function render() {
   for (const p of projects) grid.append(tile(p));
   grid.append(addTile());
   $("#hint").textContent = projects.length
-    ? "Клик — открыть · Ctrl+клик или средняя кнопка — в новой вкладке · Shift+клик — в новом окне · правый клик — изменить · клик по зелёной точке — остановить программу."
+    ? "Клик — открыть · Ctrl+клик или средняя кнопка — в новой вкладке · Shift+клик — в новом окне · правый клик — изменить · перетащить — поменять порядок · клик по зелёной точке — остановить программу."
     : "Добавьте первый проект: адрес локального сайта и, если нужно, программу, которая его запускает.";
 }
 
 function tile(p) {
   const item = el("div", "item");
+  item.dataset.id = p.Id;
   const b = el("button", "tile");
   b.title = p.Url;
   paint(b, p, iconUrl(p.Icon), p.IconSource !== "file");
   b.addEventListener("click", e => post({ type: "open", id: p.Id, newTab: e.ctrlKey && !e.shiftKey, newWindow: e.shiftKey }));
   b.addEventListener("auxclick", e => { if (e.button === 1) post({ type: "open", id: p.Id, newTab: true }); });
   item.addEventListener("contextmenu", e => { e.preventDefault(); openDialog(p); });
+  item.addEventListener("pointerdown", e => press(item, e));
   item.append(b);
 
   if (running.has(p.Id)) {
@@ -254,6 +266,145 @@ function addTile() {
   item.append(b, el("div", "label", "Добавить"));
   return item;
 }
+
+// ---- dragging tiles into another order
+
+const LIFT = 6; // px the pointer moves with the button held before the tile comes off
+// The tile pressed but not yet moved; the one being dragged; the tiles sent meanwhile, shown once it is down
+let held = null, drag = null, waiting = null, swallowClick = false;
+
+function items() {
+  return [...$("#grid").children].filter(n => n.dataset.id);
+}
+
+function press(item, e) {
+  // Touch scrolls the page; the green dot is a button of its own
+  if (e.button !== 0 || e.pointerType === "touch" || drag || e.target.closest(".run")) return;
+  held = { item, x: e.clientX, y: e.clientY };
+}
+
+// The centre of a tile's square, in page coordinates
+function centre(item) {
+  const r = item.querySelector(".tile").getBoundingClientRect();
+  return [r.left + r.width / 2 + scrollX, r.top + r.height / 2 + scrollY];
+}
+
+function lift() {
+  const { item, x, y } = held;
+  held = null;
+  const list = items(), r = item.getBoundingClientRect(), [cx, cy] = centre(item);
+  const ghost = item.cloneNode(true);
+  ghost.classList.add("ghost");
+  document.body.append(ghost);
+  drag = {
+    item, ghost,
+    // Where the pointer holds the tile: from its corner, and from its centre
+    dx: x - r.left, dy: y - r.top, ox: cx - scrollX - x, oy: cy - scrollY - y,
+    from: list.indexOf(item), ids: list.map(n => n.dataset.id),
+    // The grid keeps its places while the tile moves, only who stands in them changes
+    slots: list.map(centre),
+  };
+  item.classList.add("slot");
+  $("#grid").classList.add("sorting");
+  document.documentElement.classList.add("grabbing");
+}
+
+function follow(x, y) {
+  drag.x = x;
+  drag.y = y;
+  drag.ghost.style.transform = `translate(${x - drag.dx}px, ${y - drag.dy}px) scale(1.04)`;
+  // The frame goes to the place nearest to the tile's centre
+  const cx = x + drag.ox + scrollX, cy = y + drag.oy + scrollY;
+  let to = 0, best = Infinity;
+  drag.slots.forEach(([sx, sy], i) => {
+    const d = (sx - cx) ** 2 + (sy - cy) ** 2;
+    if (d < best) { best = d; to = i; }
+  });
+  moveTo(drag.item, to);
+}
+
+// Puts a tile in another place; the tiles it passes glide over to theirs
+function moveTo(item, to) {
+  const list = items(), from = list.indexOf(item);
+  if (to === from) return;
+  const was = new Map(list.map(n => [n, n.getBoundingClientRect()]));
+  for (const n of list) for (const a of n.getAnimations()) a.cancel();
+  $("#grid").insertBefore(item, to > from ? list[to].nextSibling : list[to]);
+  for (const n of list) {
+    const a = was.get(n), b = n.getBoundingClientRect();
+    if (n !== item && (a.left !== b.left || a.top !== b.top))
+      n.animate([{ transform: `translate(${a.left - b.left}px, ${a.top - b.top}px)` }, { transform: "none" }],
+        { duration: 180, easing: "ease-out" });
+  }
+}
+
+// Puts the tile down in its new place, or back where it was
+function drop(cancel) {
+  const d = drag;
+  drag = null;
+  if (cancel) moveTo(d.item, d.from);
+  const r = d.item.getBoundingClientRect(), x = d.x - d.dx, y = d.y - d.dy;
+  d.ghost.remove();
+  d.item.classList.remove("slot");
+  $("#grid").classList.remove("sorting");
+  document.documentElement.classList.remove("grabbing");
+  d.item.animate([{ transform: `translate(${x - r.left}px, ${y - r.top}px) scale(1.04)` }, { transform: "none" }],
+    { duration: 160, easing: "ease-out" });
+  swallowClick = true; // the release opens nothing
+
+  const ids = items().map(n => n.dataset.id);
+  const moved = ids.join() !== d.ids.join();
+  if (moved) {
+    projects = ids.map(id => projects.find(p => p.Id === id));
+    // The browser answers with these very tiles: no redraw to cut the landing short
+    shown = stateKey(projects, [...running]);
+    post({ type: "order", ids });
+  }
+  if (waiting) {
+    const m = waiting;
+    waiting = null;
+    // Sent before the browser heard of the new order
+    const rank = id => { const i = ids.indexOf(id); return i < 0 ? ids.length : i; };
+    if (moved) m.projects.sort((a, b) => rank(a.Id) - rank(b.Id));
+    show(m);
+  }
+}
+
+window.addEventListener("pointerdown", () => { if (!drag) swallowClick = false; }, true);
+window.addEventListener("pointermove", e => {
+  if (!held && !drag) return;
+  if (!(e.buttons & 1)) {
+    // Let go outside the window
+    held = null;
+    if (drag) drop(false);
+  } else if (drag) follow(e.clientX, e.clientY);
+  else if (Math.hypot(e.clientX - held.x, e.clientY - held.y) > LIFT) {
+    lift();
+    follow(e.clientX, e.clientY);
+  }
+});
+window.addEventListener("pointerup", () => {
+  held = null;
+  if (drag) drop(false);
+  // The click comes right after the release, in the same turn
+  if (swallowClick) setTimeout(() => swallowClick = false);
+});
+window.addEventListener("pointercancel", () => {
+  held = null;
+  if (drag) drop(true);
+});
+window.addEventListener("click", e => {
+  if (!swallowClick) return;
+  e.stopPropagation();
+  e.preventDefault();
+}, true);
+window.addEventListener("keydown", e => {
+  if (drag && e.key === "Escape") {
+    e.preventDefault();
+    drop(true);
+  }
+});
+window.addEventListener("scroll", () => { if (drag) follow(drag.x, drag.y); });
 
 // ---- the dialog
 
@@ -371,12 +522,25 @@ form.addEventListener("submit", e => {
 
 // ---- the browser
 
+// What the tiles show, so that the same tiles sent again are not drawn anew
+let shown = "";
+const stateKey = (list, run) => JSON.stringify([list, run]);
+
+function show(m) {
+  const key = stateKey(m.projects, m.running);
+  if (key === shown) return;
+  shown = key;
+  held = null; // its tile is about to go
+  projects = m.projects;
+  running = new Set(m.running);
+  render();
+}
+
 window.chrome.webview.addEventListener("message", e => {
   const m = e.data;
   if (m.type === "projects") {
-    projects = m.projects;
-    running = new Set(m.running);
-    render();
+    if (drag) waiting = m;
+    else show(m);
   } else if (m.type === "browsed") {
     if (m.field === "Icon") {
       $("#iconError").hidden = !m.error;

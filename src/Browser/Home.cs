@@ -129,11 +129,11 @@ static class Pages
         "<p>Адрес <code>" + H(address) + "</code> пока не отвечает. LiteBro запустил программу проекта и ждёт.</p>" +
         "<p class=muted>Программа: <code>" + H(p.Exe + " " + p.Args) + "</code><br>" +
         "Папка: <code>" + H(launcher.WorkDir) + "</code><br>" +
-        "Лог: <code>" + H(launcher.LogPath) + "</code></p>");
+        "Лог: <code>" + H(launcher.LogPath) + "</code> · <a href=\"" + H(ProgramLog.Url(p)) + "\">вывод программы</a></p>");
 
     public static string Failed(Project p, string error, string logTail) => Page(p.Name + " не запустился", spinner: false,
         "<p>" + H(error) + "</p>" +
-        (logTail.Length > 0 ? "<pre>" + H(logTail) + "</pre>" : "") +
+        (logTail.Length > 0 ? "<pre>" + H(logTail) + "</pre><p><a href=\"" + H(ProgramLog.Url(p)) + "\">Весь вывод программы</a></p>" : "") +
         "<p class=muted>F5 — попробовать ещё раз. Параметры запуска меняются на стартовой странице: правый клик по плитке.</p>");
 
     static string H(string s) => WebUtility.HtmlEncode(s);

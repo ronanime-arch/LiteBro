@@ -760,6 +760,19 @@ sealed class BrowserForm : Form
         var path = new Uri(e.Request.Uri).AbsolutePath;
         if (path == "/")
             e.Response = env.CreateWebResourceResponse(Home.Page(), 200, "OK", Home.Headers);
+        else if (ProgramLog.Parse(path, out bool text) is { } p)
+        {
+            if (!text)
+                e.Response = env.CreateWebResourceResponse(ProgramLog.Bytes(ProgramLog.Page(p)), 200, "OK", ProgramLog.Headers);
+            else
+            {
+                var query = new Uri(e.Request.Uri).Query;
+                var m = Regex.Match(query, @"[?&]from=(-?\d+)");
+                long from = m.Success && long.TryParse(m.Groups[1].Value, out var n) ? n : -1;
+                var json = ProgramLog.Chunk(p, from, App.Current.RunningIds.Contains(p.Id));
+                e.Response = env.CreateWebResourceResponse(ProgramLog.Bytes(json), 200, "OK", ProgramLog.JsonHeaders);
+            }
+        }
         else if (path.StartsWith("/icon/") && Icons.Read(Uri.UnescapeDataString(path.Substring(6))) is { } bytes)
             e.Response = env.CreateWebResourceResponse(new MemoryStream(bytes), 200, "OK",
                 "Content-Type: " + Icons.ContentType(path) + "\r\n" + Icons.Headers);
@@ -796,6 +809,14 @@ sealed class BrowserForm : Form
                 break;
             case "openAll" when project != null:
                 OpenAll(tab, project, Flag("newTab"));
+                break;
+            case "log" when project != null:
+                // The console of the project: its program's output
+                if (Flag("newTab")) OpenNewTab(ProgramLog.Url(project));
+                else tab.Core?.Navigate(ProgramLog.Url(project));
+                break;
+            case "input" when project != null && Text("text") is { } typed:
+                if (App.Current.RunningIds.Contains(project.Id)) App.Current.LauncherFor(project).Send(typed);
                 break;
             case "stop" when project != null:
                 App.Current.StopProject(project.Id);

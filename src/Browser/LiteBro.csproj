@@ -20,6 +20,7 @@
     <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.4191.47" />
     <EmbeddedResource Include="app.ico" LogicalName="app.ico" />
     <EmbeddedResource Include="home.html" LogicalName="home.html" />
+    <EmbeddedResource Include="net.html" LogicalName="net.html" />
     <EmbeddedResource Include="term\index.html" LogicalName="term/index.html" />
     <EmbeddedResource Include="term\term.js" LogicalName="term/term.js" />
     <EmbeddedResource Include="term\xterm.js" LogicalName="term/xterm.js" />

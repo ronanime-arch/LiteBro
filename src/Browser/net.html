@@ -1,0 +1,178 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<title>Сеть</title>
+<style>
+:root {
+  color-scheme: light dark;
+  --bg: #f2f3f6; --fg: #1b1d22; --muted: #6b7080; --card: #ffffff; --line: rgba(0, 0, 0, .12);
+  --accent: #1f9d55; --danger: #d9434b; --text: "Segoe UI Variable Text", "Segoe UI", sans-serif;
+}
+@media (prefers-color-scheme: dark) {
+  :root { --bg: #121212; --fg: #e9eaee; --muted: #9a9fae; --card: #1c1d20; --line: rgba(255, 255, 255, .14); }
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; background: var(--bg); color: var(--fg); font: 14px/1.45 var(--text); }
+body { display: flex; flex-direction: column; }
+header { padding: 16px 22px 12px; display: grid; gap: 12px; border-bottom: 1px solid var(--line); }
+h1 { margin: 0; font-size: 20px; font-weight: 600; }
+.row { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 22px; }
+.muted { color: var(--muted); font-size: 12.5px; }
+label.switch { display: inline-flex; align-items: center; gap: 10px; cursor: pointer; user-select: none; }
+.switch input { position: absolute; opacity: 0; pointer-events: none; }
+.track { width: 38px; height: 22px; border-radius: 11px; background: rgba(127, 127, 127, .45); position: relative; transition: background .15s; flex: none; }
+.track::after { content: ""; position: absolute; top: 3px; left: 3px; width: 16px; height: 16px; border-radius: 50%; background: #fff; transition: left .15s; }
+.switch input:checked + .track { background: var(--accent); }
+.switch input:checked + .track::after { left: 19px; }
+.switch input:focus-visible + .track { outline: 2px solid var(--accent); outline-offset: 2px; }
+details { background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: 8px 12px; }
+summary { cursor: pointer; font-weight: 600; }
+textarea { width: 100%; min-height: 70px; margin: 8px 0 6px; font: 13px Consolas, monospace; padding: 6px 8px; border-radius: 6px;
+  border: 1px solid var(--line); background: var(--bg); color: inherit; resize: vertical; }
+button { font: 13px var(--text); padding: 4px 12px; border: 1px solid var(--line); border-radius: 6px; background: transparent; color: inherit; cursor: pointer; }
+button:hover { background: rgba(127, 127, 127, .15); }
+input[type=search] { font: 13px var(--text); padding: 4px 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--card); color: inherit; min-width: 240px; }
+#wrap { flex: 1; overflow: auto; }
+table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+th, td { text-align: left; padding: 4px 10px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+th { position: sticky; top: 0; background: var(--bg); font-weight: 600; z-index: 1; }
+td.url { max-width: 520px; overflow: hidden; text-overflow: ellipsis; font-family: Consolas, monospace; }
+td.num { text-align: right; font-variant-numeric: tabular-nums; }
+tr.blocked td.res { color: var(--danger); font-weight: 600; }
+tr.entry { cursor: pointer; }
+tr.entry:hover td { background: rgba(127, 127, 127, .08); }
+tr.more td { white-space: pre-wrap; word-break: break-all; font: 12px Consolas, monospace; color: var(--muted); padding: 6px 10px 10px 24px; }
+#empty { padding: 28px 22px; }
+</style>
+</head>
+<body>
+<header>
+  <div class="row">
+    <h1>Сеть</h1>
+    <label class="switch" title="Страницы ходят только на этот компьютер, в локальную сеть и на разрешённые сайты">
+      <input type="checkbox" id="localOnly"><span class="track"></span><span>Только localhost: блокировать запросы в интернет</span></label>
+    <label class="switch" title="В режиме «только localhost» журнал ведётся всегда">
+      <input type="checkbox" id="journal"><span class="track"></span><span>Вести журнал и без режима</span></label>
+  </div>
+  <details id="allowBox">
+    <summary>Разрешённые сайты (<span id="allowCount">0</span>)</summary>
+    <textarea id="allow" spellcheck="false" placeholder="cdn.jsdelivr.net&#10;*.googleapis.com"></textarea>
+    <div class="row"><button id="saveAllow">Сохранить</button>
+      <span class="muted">По одному на строку. *.example.com пропускает сам сайт и все его поддомены. Уже открытые страницы получат список после обновления.</span></div>
+  </details>
+  <div class="row">
+    <input type="search" id="filter" placeholder="Фильтр: домен, адрес, метод">
+    <label class="switch"><input type="checkbox" id="onlyBlocked"><span class="track"></span><span>Только заблокированные</span></label>
+    <button id="clear">Очистить журнал</button>
+    <span class="muted" id="file"></span>
+  </div>
+  <div class="muted">Телеметрии нет: LiteBro ничего не отправляет, у движка выключены фоновые запросы, отчёты о сбоях и проверка адресов SmartScreen. Стек вызова есть только у веб-сокетов: для остальных запросов WebView2 его не отдаёт.</div>
+</header>
+<div id="wrap">
+  <table>
+    <thead><tr><th>Время</th><th>Метод</th><th>Результат</th><th>Размер</th><th>Инициатор</th><th>Домен</th><th>IP</th><th>Адрес</th></tr></thead>
+    <tbody id="rows"></tbody>
+  </table>
+  <p class="muted" id="empty">Запросов в интернет пока нет.</p>
+</div>
+<script>
+const $ = s => document.getElementById(s);
+const post = m => window.chrome.webview.postMessage(m);
+let last = 0, entries = [], busy = false;
+
+function size(n) {
+  if (n < 0) return "";
+  if (n < 1024) return n + " Б";
+  if (n < 1048576) return (n / 1024).toFixed(1) + " КБ";
+  return (n / 1048576).toFixed(1) + " МБ";
+}
+
+function td(text, cls) {
+  const c = document.createElement("td");
+  c.textContent = text;
+  if (cls) c.className = cls;
+  return c;
+}
+
+function matches(e) {
+  if ($("onlyBlocked").checked && !e.Blocked) return false;
+  const f = $("filter").value.trim().toLowerCase();
+  return !f || (e.Url + " " + e.Method + " " + e.Ip + " " + e.Kind).toLowerCase().includes(f);
+}
+
+function row(e) {
+  const tr = document.createElement("tr");
+  tr.className = "entry" + (e.Blocked ? " blocked" : "");
+  tr.append(td(e.Time.slice(11)), td(e.Method), td(e.Result, "res"), td(size(e.Size), "num"), td(e.Kind), td(e.Host), td(e.Ip), td(e.Url, "url"));
+  tr.title = e.Url;
+  tr.addEventListener("click", () => {
+    const next = tr.nextSibling;
+    if (next && next.classList.contains("more")) { next.remove(); return; }
+    const more = document.createElement("tr");
+    more.className = "more";
+    const c = document.createElement("td");
+    c.colSpan = 8;
+    c.textContent = e.Url + (e.Page ? "\nСтраница: " + e.Page : "") + "\nВремя: " + e.Time + (e.Stack ? "\nСтек:\n" + e.Stack : "");
+    more.append(c);
+    tr.after(more);
+  });
+  return tr;
+}
+
+// Newest on top
+function draw() {
+  const rows = $("rows");
+  rows.textContent = "";
+  const shown = entries.filter(matches).slice(-1000).reverse();
+  for (const e of shown) rows.append(row(e));
+  $("empty").hidden = shown.length > 0;
+  $("empty").textContent = entries.length ? "Под фильтр ничего не подходит." : "Запросов в интернет пока нет.";
+}
+
+async function poll() {
+  if (busy) return;
+  busy = true;
+  try {
+    const r = await fetch("/net/log?after=" + last, { cache: "no-store" });
+    const d = await r.json();
+    // The journal was cleared (or the browser restarted): start over
+    if (d.last < last) { entries = []; last = 0; }
+    if (d.entries.length) {
+      entries = entries.concat(d.entries).slice(-2000);
+      last = d.entries[d.entries.length - 1].Seq;
+      draw();
+    } else last = Math.max(last, d.last);
+  } catch (e) {
+  } finally { busy = false; }
+}
+
+$("localOnly").addEventListener("change", e => post({ type: "net", localOnly: e.target.checked }));
+$("journal").addEventListener("change", e => post({ type: "net", journal: e.target.checked }));
+$("saveAllow").addEventListener("click", () => post({ type: "net", allow: $("allow").value }));
+$("clear").addEventListener("click", () => { post({ type: "netClear" }); entries = []; last = 0; draw(); });
+$("filter").addEventListener("input", draw);
+$("onlyBlocked").addEventListener("change", draw);
+
+let allowShown = null;
+window.chrome.webview.addEventListener("message", e => {
+  const m = e.data;
+  if (!m || m.type !== "net") return;
+  $("localOnly").checked = m.localOnly;
+  $("journal").checked = m.journal;
+  $("file").textContent = m.file;
+  $("file").title = m.file;
+  const list = m.allow ? m.allow.split(" ") : [];
+  $("allowCount").textContent = list.length;
+  // Not over what is being typed, unless it was just saved
+  if (allowShown === null || document.activeElement !== $("allow")) $("allow").value = list.join("\n");
+  allowShown = m.allow;
+});
+
+draw();
+poll();
+setInterval(() => { if (!document.hidden) poll(); }, 1000);
+post({ type: "ready" });
+</script>
+</body>
+</html>

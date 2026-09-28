@@ -58,10 +58,16 @@ sealed class Settings
     public string ExtraBrowserArgs = "";
     public string LocalHosts = "";
     public string OtherBrowser = "";
+    /// <summary>«Только localhost»: requests to the internet are blocked (see NetGuard).</summary>
+    public bool LocalOnly;
+    /// <summary>Journal the requests to the internet while LocalOnly is off too.</summary>
+    public bool NetJournal;
+    /// <summary>Hosts let through in LocalOnly mode (CDN, API), through spaces.</summary>
+    public string AllowHosts = "";
 
     static readonly string[] Keys =
     {
-        "searchurl", "searchcountry", "theme", "gpu", "extrabrowserargs", "localhosts", "otherbrowser",
+        "searchurl", "searchcountry", "theme", "gpu", "extrabrowserargs", "localhosts", "otherbrowser", "localonly", "netjournal", "allowhosts",
     };
 
     public static Settings Load()
@@ -94,6 +100,9 @@ sealed class Settings
                 case "extrabrowserargs": s.ExtraBrowserArgs = value; break;
                 case "localhosts": s.LocalHosts = value; break;
                 case "otherbrowser": s.OtherBrowser = value; break;
+                case "localonly": s.LocalOnly = IsTrue(value); break;
+                case "netjournal": s.NetJournal = IsTrue(value); break;
+                case "allowhosts": s.AllowHosts = value; break;
             }
         }
         // A file from an older version lacks the newer keys or has ones since dropped: rewrite it, keeping the values
@@ -111,6 +120,15 @@ sealed class Settings
     public void SaveSearchCountry(string code)
     {
         SearchCountry = code;
+        Save();
+    }
+
+    /// <summary>Remembers the network switches and the allowed hosts (from the start page and /net).</summary>
+    public void SaveNet(bool localOnly, bool journal, string allowHosts)
+    {
+        LocalOnly = localOnly;
+        NetJournal = journal;
+        AllowHosts = allowHosts;
         Save();
     }
 
@@ -153,6 +171,15 @@ sealed class Settings
         "# Куда сразу уходит всё остальное. Пусто = браузер, который открывает файлы .html",
         "# Пример: \"C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe\" --single-argument %1",
         "OtherBrowser = " + OtherBrowser,
+        "",
+        "# --- Сеть ---",
+        "# Режим «только localhost»: страницы не ходят в интернет, только на этот компьютер и в локальную сеть.",
+        "# Переключатель справа на стартовой странице меняет эту строку.",
+        "LocalOnly = " + Bool(LocalOnly),
+        "# Журнал запросов в интернет (logs\\network.log) и при выключенном режиме; при включённом пишется всегда",
+        "NetJournal = " + Bool(NetJournal),
+        "# Что пропускать в режиме «только localhost», через пробел: cdn.jsdelivr.net *.googleapis.com",
+        "AllowHosts = " + AllowHosts,
         "");
 
     public static (Rectangle Bounds, bool Maximized, double Zoom)? LoadWindow()

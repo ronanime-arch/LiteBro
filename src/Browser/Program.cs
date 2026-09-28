@@ -74,6 +74,10 @@ sealed class App : ApplicationContext
         "--disable-features=SpareRendererForSitePerProcess,BackForwardCache " +
         "--enable-features=NetworkServiceInProcess2,NetworkServiceInProcess " +
         "--process-per-site";
+    // No telemetry: none of the engine's own traffic in the background (field trials, component updates,
+    // reliability reports, hyperlink pings, crash uploads); SmartScreen is off per page (Setup)
+    const string QuietArgs =
+        " --disable-background-networking --disable-component-update --disable-domain-reliability --no-pings --disable-breakpad";
 
     public static App Current { get; private set; } = null!;
     public static readonly Icon AppIcon = LoadIcon();
@@ -94,6 +98,7 @@ sealed class App : ApplicationContext
     {
         Current = this;
         S = settings;
+        NetGuard.Init(settings);
         trimTimer.Tick += (_, _) => OnTrimTick();
         hiddenTrimTimer.Tick += (_, _) =>
         {
@@ -125,7 +130,7 @@ sealed class App : ApplicationContext
 
     async Task<CoreWebView2Environment> CreateEnvironmentAsync()
     {
-        var args = MemoryArgs;
+        var args = MemoryArgs + QuietArgs;
         if (!S.Gpu) args += " --disable-gpu";
         if (S.ExtraBrowserArgs.Length > 0) args += " " + S.ExtraBrowserArgs;
         var options = new CoreWebView2EnvironmentOptions(args);
@@ -246,7 +251,7 @@ sealed class App : ApplicationContext
     /// <summary>A site already running gives its icon at once; one behind a login gives it when opened here.</summary>
     public async void FetchSiteIcon(Project p)
     {
-        if (!Uri.TryCreate(p.Url, UriKind.Absolute, out var url) || url.IsFile || !ClaimIcon(p.Id)) return;
+        if (!Uri.TryCreate(p.Url, UriKind.Absolute, out var url) || url.IsFile || NetGuard.ShouldBlock(url) || !ClaimIcon(p.Id)) return;
         SetSiteIcon(p.Id, await Favicons.FetchAsync(url));
     }
 
@@ -263,6 +268,15 @@ sealed class App : ApplicationContext
         Icons.Delete(p.Icon);
         ProjectStore.Delete(p.Id);
         ProjectsChanged();
+    }
+
+    /// <summary>The network switches changed (start page or /net): saved, and every tab and page follows.</summary>
+    public void SetNet(bool localOnly, bool journal, string allowHosts)
+    {
+        NetGuard.Set(localOnly, journal);
+        NetGuard.SetAllowed(allowHosts);
+        S.SaveNet(localOnly, journal, NetGuard.AllowText);
+        foreach (var form in forms) form.ApplyNet();
     }
 
     public void OpenProjectInNewWindow(Project p, string? link = null) => OpenWindow(null, project: p, link: link).Show();

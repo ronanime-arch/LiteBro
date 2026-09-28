@@ -42,6 +42,9 @@ static class Router
         return names;
     });
 
+    /// <summary>The names the hosts file points at this machine.</summary>
+    public static IEnumerable<string> LocalNames() => HostsLoopbackNames.Value;
+
     /// <summary>Local web addresses only: files, mail links and the like belong to the main browser.</summary>
     public static bool IsLocal(Uri url, Settings settings)
     {

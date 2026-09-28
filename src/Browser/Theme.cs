@@ -28,6 +28,8 @@ static class Theme
     public static bool Dark { get; private set; }
 
     public static Color Strip, Face, Field, Text, Dim, Line;
+    /// <summary>The halves of a split: their marks on the tabs and the stripes over the pages.</summary>
+    public static readonly Color LeftPane = Color.FromArgb(0x3b, 0x82, 0xf6), RightPane = Color.FromArgb(0xe8, 0x71, 0x0c);
 
     /// <summary>What a WebView2 shows before its page paints.</summary>
     public static Color PageBackground => Dark ? Color.FromArgb(0x20, 0x20, 0x20) : Color.White;

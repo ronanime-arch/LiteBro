@@ -44,7 +44,7 @@ sealed class TabStrip : Control
     readonly ToolTip tip = new();
     readonly Font small = new(BrowserForm.IconFont, 7.5f), plus = new(BrowserForm.IconFont, 9.5f);
     IReadOnlyList<Tab> tabs = Array.Empty<Tab>();
-    Tab? active, beside;
+    Tab? active, beside, splitLeft, splitRight;
     // Index of the tab under the mouse; tabs.Count is the new tab button
     int hover = -1;
     bool overClose;
@@ -71,12 +71,15 @@ sealed class TabStrip : Control
         Invalidate();
     }
 
-    /// <param name="besideFront">The other tab on screen in a split.</param>
-    public void SetTabs(IReadOnlyList<Tab> list, Tab? front, Tab? besideFront = null)
+    /// <param name="left">In a split, the tab on the left half; null without a split.</param>
+    /// <param name="right">In a split, the tab on the right half.</param>
+    public void SetTabs(IReadOnlyList<Tab> list, Tab? front, Tab? left = null, Tab? right = null)
     {
         tabs = list;
         active = front;
-        beside = besideFront;
+        splitLeft = left;
+        splitRight = right;
+        beside = left == null ? null : front == left ? right : left;
         var p = PointToClient(MousePosition);
         hover = ClientRectangle.Contains(p) ? Hit(p, out overClose) : -1;
         Invalidate();
@@ -165,6 +168,19 @@ sealed class TabStrip : Control
             }
 
             int left = r.Left + Unit * 2 / 3;
+            // Which half of a split the tab is on, in that half's colour
+            if (tab == splitLeft || tab == splitRight)
+            {
+                bool l = tab == splitLeft;
+                int h = Unit + 2, w = Unit + 2;
+                var badge = new Rectangle(left, r.Top + (r.Height - h) / 2, w, h);
+                using var brush = new SolidBrush(l ? Theme.LeftPane : Theme.RightPane);
+                using var path = Rounded(badge, 4, allCorners: true);
+                g.FillPath(brush, path);
+                using var bold = new Font(Font, FontStyle.Bold);
+                TextRenderer.DrawText(g, l ? "L" : "R", bold, badge, Color.White, Center);
+                left += w + Unit / 3;
+            }
             if (tab.Loading)
             {
                 int s = Unit * 2 / 3;

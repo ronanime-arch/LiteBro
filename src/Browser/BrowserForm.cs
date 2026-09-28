@@ -33,6 +33,9 @@ sealed class BrowserForm : Form
     readonly Panel host = new() { Dock = DockStyle.Fill };
     // Between the two tabs of a split, dragged to share the width differently
     readonly Panel divider = new() { Cursor = Cursors.VSplit, Visible = false };
+    // Over each half of a split, in the colour of its L or R mark on the tab
+    readonly Panel stripeLeft = new() { BackColor = Theme.LeftPane, Visible = false },
+        stripeRight = new() { BackColor = Theme.RightPane, Visible = false };
     readonly TextBox address = new()
     {
         Anchor = AnchorStyles.Left | AnchorStyles.Right,
@@ -129,6 +132,8 @@ sealed class BrowserForm : Form
         strip.NewTab += () => OpenNewTab(null);
         strip.Menu += ShowTabMenu;
         host.Controls.Add(divider);
+        host.Controls.Add(stripeLeft);
+        host.Controls.Add(stripeRight);
         divider.MouseDown += (_, e) => { if (e.Button == MouseButtons.Left) dragFrom = e.X; };
         divider.MouseMove += (_, e) =>
         {
@@ -469,8 +474,8 @@ sealed class BrowserForm : Form
         if (Partner is { } old) SendToBackground(old);
         paneLeft = active;
         paneRight = tab;
-        divider.Visible = true;
-        strip.SetTabs(tabs, active, tab);
+        divider.Visible = stripeLeft.Visible = stripeRight.Visible = true;
+        strip.SetTabs(tabs, active, paneLeft, paneRight);
         LayoutPanes();
         await ShowPaneAsync(tab);
     }
@@ -481,7 +486,7 @@ sealed class BrowserForm : Form
         var partner = Partner;
         EndSplit();
         if (partner != null) SendToBackground(partner);
-        strip.SetTabs(tabs, active, Partner);
+        strip.SetTabs(tabs, active, paneLeft, paneRight);
         LayoutPanes();
     }
 
@@ -489,7 +494,7 @@ sealed class BrowserForm : Form
     {
         SetSyncScroll(false);
         paneLeft = paneRight = null;
-        divider.Visible = false;
+        divider.Visible = stripeLeft.Visible = stripeRight.Visible = false;
         dragFrom = null;
     }
 
@@ -567,16 +572,21 @@ sealed class BrowserForm : Form
     {
         var r = host.ClientRectangle;
         if (!IsPane(tab)) return r;
-        int d = DividerWidth, x = (int)(r.Width * splitAt) - d / 2;
-        return tab == paneLeft ? new Rectangle(r.X, r.Y, x, r.Height) : new Rectangle(x + d, r.Y, r.Width - x - d, r.Height);
+        int d = DividerWidth, x = (int)(r.Width * splitAt) - d / 2, s = StripeHeight;
+        return tab == paneLeft ? new Rectangle(r.X, r.Y + s, x, r.Height - s) : new Rectangle(x + d, r.Y + s, r.Width - x - d, r.Height - s);
     }
+
+    int StripeHeight => Math.Max(3, host.DeviceDpi / 32);
 
     void LayoutPanes()
     {
         if (Split)
         {
             var left = BoundsOf(paneLeft!);
+            var right = BoundsOf(paneRight!);
             divider.Bounds = new Rectangle(left.Right, 0, DividerWidth, host.ClientSize.Height);
+            stripeLeft.Bounds = new Rectangle(left.X, 0, left.Width, StripeHeight);
+            stripeRight.Bounds = new Rectangle(right.X, 0, right.Width, StripeHeight);
         }
         foreach (var tab in OnScreen)
             if (tab.Ctl is { } c) c.Bounds = BoundsOf(tab);
@@ -587,7 +597,7 @@ sealed class BrowserForm : Form
     {
         if (tab == active || !IsPane(tab)) return;
         active = tab;
-        strip.SetTabs(tabs, tab, Partner);
+        strip.SetTabs(tabs, tab, paneLeft, paneRight);
         ShowState(tab, switched: true);
     }
 
@@ -616,7 +626,7 @@ sealed class BrowserForm : Form
         else
         {
             SendToBackground(tab);
-            strip.SetTabs(tabs, active, Partner);
+            strip.SetTabs(tabs, active, paneLeft, paneRight);
         }
     }
 
@@ -638,7 +648,7 @@ sealed class BrowserForm : Form
             SendToBackground(active);
         }
         active = tab;
-        strip.SetTabs(tabs, tab, Partner);
+        strip.SetTabs(tabs, tab, paneLeft, paneRight);
         ShowState(tab, switched: true);
         if (!await ShowPaneAsync(tab) || tab != active) return;
         ShowState(tab, switched: true);
@@ -707,7 +717,7 @@ sealed class BrowserForm : Form
         }
         else
         {
-            strip.SetTabs(tabs, active, Partner);
+            strip.SetTabs(tabs, active, paneLeft, paneRight);
             LayoutPanes();
         }
     }

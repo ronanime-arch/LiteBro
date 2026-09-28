@@ -66,10 +66,12 @@ sealed class Settings
     public string AllowHosts = "";
     /// <summary>With LocalOnly: the engine starts with --disable-web-security (no CORS, no same-origin checks).</summary>
     public bool IgnoreCors;
+    /// <summary>Cookies and the HTTP cache are deleted when the last window closes, but for projects with KeepData.</summary>
+    public bool ClearOnExit;
 
     static readonly string[] Keys =
     {
-        "searchurl", "searchcountry", "theme", "gpu", "extrabrowserargs", "localhosts", "otherbrowser", "localonly", "netjournal", "allowhosts", "ignorecors",
+        "searchurl", "searchcountry", "theme", "gpu", "extrabrowserargs", "localhosts", "otherbrowser", "localonly", "netjournal", "allowhosts", "ignorecors", "clearonexit",
     };
 
     public static Settings Load()
@@ -106,6 +108,7 @@ sealed class Settings
                 case "netjournal": s.NetJournal = IsTrue(value); break;
                 case "allowhosts": s.AllowHosts = value; break;
                 case "ignorecors": s.IgnoreCors = IsTrue(value); break;
+                case "clearonexit": s.ClearOnExit = IsTrue(value); break;
             }
         }
         // A file from an older version lacks the newer keys or has ones since dropped: rewrite it, keeping the values
@@ -133,6 +136,13 @@ sealed class Settings
         IgnoreCors = ignoreCors;
         NetJournal = journal;
         AllowHosts = allowHosts;
+        Save();
+    }
+
+    /// <summary>Remembers the switch of clearing cookies and cache on exit (/net).</summary>
+    public void SaveClearOnExit(bool on)
+    {
+        ClearOnExit = on;
         Save();
     }
 
@@ -186,6 +196,8 @@ sealed class Settings
         "AllowHosts = " + AllowHosts,
         "# Только вместе с LocalOnly: браузер не проверяет CORS и same-origin (флаг --disable-web-security)",
         "IgnoreCors = " + Bool(IgnoreCors),
+        "# Удалять cookies и кэш, когда закрывается последнее окно (кроме проектов с «Не удалять при выходе»)",
+        "ClearOnExit = " + Bool(ClearOnExit),
         "");
 
     public static (Rectangle Bounds, bool Maximized, double Zoom)? LoadWindow()

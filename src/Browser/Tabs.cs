@@ -16,6 +16,8 @@ sealed class Tab
     public string Title = "";
     /// <summary>The page address, kept for when the WebView is closed.</summary>
     public string Address = "";
+    /// <summary>The WebView2 profile of the tab's WebView: "" for the shared one, else a project's own (Project.Profile).</summary>
+    public string Profile = "";
     public bool Loading, ShowingInternalPage, TrimmedAfterLoad, Suspended, PlayingAudio, Closed;
     /// <summary>The project whose start page (or failure page) is shown: F5 tries it again.</summary>
     public Project? LastProject;

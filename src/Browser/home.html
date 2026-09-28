@@ -228,6 +228,16 @@ summary { cursor: pointer; font-weight: 500; }
         <p class="muted">Работает без окна и закрывается вместе с LiteBro. В путях можно писать %LOCALAPPDATA% и другие переменные.</p>
       </div>
     </details>
+    <details id="data">
+      <summary>Данные сайта</summary>
+      <div>
+        <label class="check"><input type="checkbox" name="OwnProfile">
+          <span>Отдельный профиль: свои cookies, хранилище и разрешения</span></label>
+        <label class="check"><input type="checkbox" name="KeepData">
+          <span>Не удалять cookies и кэш при выходе</span></label>
+        <p class="muted">В отдельном профиле проект не видит входы и данные других сайтов, а они — его. После включения или выключения на сайт проекта придётся войти заново. Удаление при выходе включается на странице «Сеть».</p>
+      </div>
+    </details>
     <div class="actions">
       <button type="button" class="danger" id="del">Удалить</button>
       <span class="grow"></span>
@@ -593,6 +603,9 @@ function openDialog(p) {
   f.Args.value = p ? p.Args : "";
   f.WorkDir.value = p ? p.WorkDir : "";
   f.OpenPrintedUrl.checked = p ? p.OpenPrintedUrl : false;
+  f.OwnProfile.checked = !!(p && p.OwnProfile);
+  f.KeepData.checked = !!(p && p.KeepData);
+  $("#data").open = !!(p && (p.OwnProfile || p.KeepData));
   $("#launch").open = !!(p && p.Exe);
   $("#linkRows").textContent = "";
   for (const l of p ? p.Links || [] : []) linkRow(l.Name, l.Url);
@@ -718,6 +731,8 @@ form.addEventListener("submit", e => {
       Args: f.Args.value.trim(),
       WorkDir: f.WorkDir.value.trim(),
       OpenPrintedUrl: f.OpenPrintedUrl.checked,
+      OwnProfile: f.OwnProfile.checked,
+      KeepData: f.KeepData.checked,
       IconSource: mode,
       Links: links(),
     },

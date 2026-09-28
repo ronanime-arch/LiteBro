@@ -153,6 +153,64 @@ sealed class App : ApplicationContext
         return Env;
     }
 
+    /// <summary>The profiles pages ran in this session: the ones to clear on exit.</summary>
+    readonly HashSet<string> usedProfiles = new() { "" };
+
+    /// <summary>A WebView in the shared profile ("") or in a project's own.</summary>
+    public async Task<CoreWebView2Controller> CreateControllerAsync(CoreWebView2Environment env, IntPtr window, string profile)
+    {
+        usedProfiles.Add(profile);
+        if (profile.Length == 0) return await env.CreateCoreWebView2ControllerAsync(window);
+        var options = env.CreateCoreWebView2ControllerOptions();
+        options.ProfileName = profile;
+        return await env.CreateCoreWebView2ControllerAsync(window, options);
+    }
+
+    /// <summary>The last window is closing and cookies and cache are to go with it (ClearOnExit).</summary>
+    public bool ClearsOnClose(BrowserForm form) => S.ClearOnExit && Env != null && forms.Count == 1 && forms[0] == form;
+
+    /// <summary>
+    /// Deletes cookies and the HTTP cache of every profile used this session, through a hidden WebView in each.
+    /// A project with KeepData keeps its own profile whole; in the shared profile it keeps the cookies of its sites
+    /// (cookies do not tell ports apart: all of localhost's stay then). Storage (localStorage, IndexedDB) is left alone.
+    /// </summary>
+    public async Task ClearDataAsync(IntPtr window)
+    {
+        if (Env is not { } env) return;
+        var projects = ProjectStore.All;
+        var keptHosts = projects.Where(p => p.KeepData && p.Profile.Length == 0).SelectMany(p => p.Addresses())
+            .Select(a => Uri.TryCreate(a, UriKind.Absolute, out var u) && !u.IsFile ? u.Host : null).OfType<string>().ToList();
+        foreach (var profile in usedProfiles.ToList())
+        {
+            if (profile.Length > 0 && projects.Any(p => p.KeepData && p.Profile == profile)) continue;
+            CoreWebView2Controller? c = null;
+            try
+            {
+                c = await CreateControllerAsync(env, window, profile);
+                c.IsVisible = false;
+                var data = c.CoreWebView2.Profile;
+                if (profile.Length > 0 || keptHosts.Count == 0)
+                {
+                    await data.ClearBrowsingDataAsync(CoreWebView2BrowsingDataKinds.Cookies | CoreWebView2BrowsingDataKinds.DiskCache);
+                    continue;
+                }
+                var cookies = c.CoreWebView2.CookieManager;
+                foreach (var cookie in await cookies.GetCookiesAsync(null))
+                    if (!keptHosts.Any(h => CookieOf(cookie.Domain, h))) cookies.DeleteCookie(cookie);
+                await data.ClearBrowsingDataAsync(CoreWebView2BrowsingDataKinds.DiskCache);
+            }
+            catch (Exception) { } // the engine is gone
+            finally { c?.Close(); }
+        }
+    }
+
+    /// <summary>A cookie of that domain is sent to the host.</summary>
+    static bool CookieOf(string domain, string host)
+    {
+        domain = domain.TrimStart('.');
+        return host.Equals(domain, StringComparison.OrdinalIgnoreCase) || host.EndsWith("." + domain, StringComparison.OrdinalIgnoreCase);
+    }
+
     public BrowserForm OpenWindow(string? url, bool isMain = false, bool home = false, Project? project = null, string? link = null)
     {
         var form = new BrowserForm(url, isMain, home, project, link);
@@ -291,6 +349,12 @@ sealed class App : ApplicationContext
         foreach (var form in forms) form.ApplyNet();
         Gateway.Enforce();
         if (Env != null && EngineKey() != engineKey) restart ??= RestartEngineAsync();
+    }
+
+    /// <summary>Every tab and page follows a changed switch.</summary>
+    public void ApplyNet()
+    {
+        foreach (var form in forms) form.ApplyNet();
     }
 
     /// <summary>The network flags the running engine was started with.</summary>

@@ -73,6 +73,8 @@ th.col.on::after { content: " \25BE\2009\25CF"; color: var(--accent); }
       <input type="checkbox" id="cors"><span class="track"></span><span>Игнорировать CORS</span></label>
     <label class="switch" title="В режиме «только localhost» журнал ведётся всегда">
       <input type="checkbox" id="journal"><span class="track"></span><span>Вести журнал и без режима</span></label>
+    <label class="switch" title="Когда закрывается последнее окно LiteBro. Хранилище сайтов (localStorage, IndexedDB) остаётся. Проекты с галочкой «Не удалять cookies и кэш при выходе» (в настройках плитки) сохраняют свои.">
+      <input type="checkbox" id="clearOnExit"><span class="track"></span><span>Удалять cookies и кэш при выходе</span></label>
   </div>
   <details id="allowBox">
     <summary>Разрешённые сайты (<span id="allowCount">0</span>)</summary>
@@ -268,6 +270,7 @@ $("localOnly").addEventListener("change", e => {
   post({ type: "net", localOnly: e.target.checked });
 });
 $("journal").addEventListener("change", e => post({ type: "net", journal: e.target.checked }));
+$("clearOnExit").addEventListener("change", e => post({ type: "net", clearOnExit: e.target.checked }));
 $("saveAllow").addEventListener("click", () => post({ type: "net", allow: $("allow").value }));
 $("cors").addEventListener("change", e => {
   const question = e.target.checked
@@ -292,6 +295,7 @@ window.chrome.webview.addEventListener("message", e => {
   $("localOnly").checked = m.localOnly;
   $("journal").checked = m.journal;
   $("cors").checked = m.cors;
+  $("clearOnExit").checked = !!m.clearOnExit;
   $("cors").disabled = !m.localOnly;
   $("corsBox").classList.toggle("off", !m.localOnly);
   $("file").textContent = m.file;

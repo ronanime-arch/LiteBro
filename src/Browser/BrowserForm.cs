@@ -2039,7 +2039,7 @@ sealed class BrowserForm : Form
     bool clearing;
 
     /// <summary>Hidden while it clears cookies and cache on exit: it takes no more addresses.</summary>
-    public bool Closing => clearing;
+    public bool ShuttingDown => clearing;
 
     protected override async void OnFormClosing(FormClosingEventArgs e)
     {

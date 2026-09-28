@@ -241,8 +241,8 @@ sealed class App : ApplicationContext
     {
         if (exiting) return false;
         // A window hidden while it clears data on exit is going: a new one opens instead
-        var open = forms.Where(f => !f.Closing).ToList();
-        var last = lastActive is { Closing: false } ? lastActive : open.LastOrDefault();
+        var open = forms.Where(f => !f.ShuttingDown).ToList();
+        var last = lastActive is { ShuttingDown: false } ? lastActive : open.LastOrDefault();
         if (address.Length == 0)
         {
             if (last == null) OpenWindow(null, home: true).Show();

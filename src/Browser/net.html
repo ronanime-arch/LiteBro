@@ -19,6 +19,7 @@ header { padding: 16px 22px 12px; display: grid; gap: 12px; border-bottom: 1px s
 h1 { margin: 0; font-size: 20px; font-weight: 600; }
 .row { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 22px; }
 .muted { color: var(--muted); font-size: 12.5px; }
+label.switch.off { opacity: .45; cursor: default; }
 label.switch { display: inline-flex; align-items: center; gap: 10px; cursor: pointer; user-select: none; }
 .switch input { position: absolute; opacity: 0; pointer-events: none; }
 .track { width: 38px; height: 22px; border-radius: 11px; background: rgba(127, 127, 127, .45); position: relative; transition: background .15s; flex: none; }
@@ -52,18 +53,22 @@ tr.more td { white-space: pre-wrap; word-break: break-all; font: 12px Consolas, 
     <h1>Сеть</h1>
     <label class="switch" title="Страницы ходят только на этот компьютер, в локальную сеть и на разрешённые сайты">
       <input type="checkbox" id="localOnly"><span class="track"></span><span>Только localhost: блокировать запросы в интернет</span></label>
+    <label class="switch" id="corsBox" title="Отключает проверки CORS и same-origin во всех вкладках: любая открытая страница сможет читать другие сайты, в том числе ваши локальные. Работает только в режиме «только localhost». При переключении движок перезапускается: вкладки перезагрузятся, терминалы закроются.">
+      <input type="checkbox" id="cors"><span class="track"></span><span>Игнорировать CORS</span></label>
     <label class="switch" title="В режиме «только localhost» журнал ведётся всегда">
       <input type="checkbox" id="journal"><span class="track"></span><span>Вести журнал и без режима</span></label>
   </div>
   <details id="allowBox">
     <summary>Разрешённые сайты (<span id="allowCount">0</span>)</summary>
-    <textarea id="allow" spellcheck="false" placeholder="cdn.jsdelivr.net&#10;*.googleapis.com"></textarea>
+    <textarea id="allow" spellcheck="false" placeholder="Например:&#10;fonts.googleapis.com&#10;fonts.gstatic.com"></textarea>
     <div class="row"><button id="saveAllow">Сохранить</button>
       <span class="muted">По одному на строку. *.example.com пропускает сам сайт и все его поддомены. Уже открытые страницы получат список после обновления.</span></div>
   </details>
   <div class="row">
-    <input type="search" id="filter" placeholder="Фильтр: домен, адрес, метод">
+    <input type="search" id="filter" placeholder="Фильтр: домен, адрес, метод, статус, инициатор">
     <label class="switch"><input type="checkbox" id="onlyBlocked"><span class="track"></span><span>Только заблокированные</span></label>
+    <button id="json" title="Записи под фильтром в файл JSON">Выгрузить JSON</button>
+    <button id="csv" title="Записи под фильтром в файл CSV (для Excel, через точку с запятой)">Выгрузить CSV</button>
     <button id="clear">Очистить журнал</button>
     <span class="muted" id="file"></span>
   </div>
@@ -98,7 +103,7 @@ function td(text, cls) {
 function matches(e) {
   if ($("onlyBlocked").checked && !e.Blocked) return false;
   const f = $("filter").value.trim().toLowerCase();
-  return !f || (e.Url + " " + e.Method + " " + e.Ip + " " + e.Kind).toLowerCase().includes(f);
+  return !f || [e.Url, e.Method, e.Ip, e.Kind, e.Result, e.Page].join(" ").toLowerCase().includes(f);
 }
 
 function row(e) {
@@ -150,6 +155,16 @@ async function poll() {
 $("localOnly").addEventListener("change", e => post({ type: "net", localOnly: e.target.checked }));
 $("journal").addEventListener("change", e => post({ type: "net", journal: e.target.checked }));
 $("saveAllow").addEventListener("click", () => post({ type: "net", allow: $("allow").value }));
+$("cors").addEventListener("change", e => {
+  if (e.target.checked && !confirm("Отключить CORS и same-origin во всех вкладках? Любая открытая страница сможет читать другие сайты, в том числе ваши локальные. Вкладки перезагрузятся, терминалы закроются.")) {
+    e.target.checked = false;
+    return;
+  }
+  post({ type: "net", cors: e.target.checked });
+});
+const exportAs = format => post({ type: "netExport", format, seqs: entries.filter(matches).map(e => e.Seq) });
+$("json").addEventListener("click", () => exportAs("json"));
+$("csv").addEventListener("click", () => exportAs("csv"));
 $("clear").addEventListener("click", () => { post({ type: "netClear" }); entries = []; last = 0; draw(); });
 $("filter").addEventListener("input", draw);
 $("onlyBlocked").addEventListener("change", draw);
@@ -160,6 +175,9 @@ window.chrome.webview.addEventListener("message", e => {
   if (!m || m.type !== "net") return;
   $("localOnly").checked = m.localOnly;
   $("journal").checked = m.journal;
+  $("cors").checked = m.cors;
+  $("cors").disabled = !m.localOnly;
+  $("corsBox").classList.toggle("off", !m.localOnly);
   $("file").textContent = m.file;
   $("file").title = m.file;
   const list = m.allow ? m.allow.split(" ") : [];

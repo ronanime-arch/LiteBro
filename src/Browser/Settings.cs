@@ -64,10 +64,12 @@ sealed class Settings
     public bool NetJournal;
     /// <summary>Hosts let through in LocalOnly mode (CDN, API), through spaces.</summary>
     public string AllowHosts = "";
+    /// <summary>With LocalOnly: the engine starts with --disable-web-security (no CORS, no same-origin checks).</summary>
+    public bool IgnoreCors;
 
     static readonly string[] Keys =
     {
-        "searchurl", "searchcountry", "theme", "gpu", "extrabrowserargs", "localhosts", "otherbrowser", "localonly", "netjournal", "allowhosts",
+        "searchurl", "searchcountry", "theme", "gpu", "extrabrowserargs", "localhosts", "otherbrowser", "localonly", "netjournal", "allowhosts", "ignorecors",
     };
 
     public static Settings Load()
@@ -103,6 +105,7 @@ sealed class Settings
                 case "localonly": s.LocalOnly = IsTrue(value); break;
                 case "netjournal": s.NetJournal = IsTrue(value); break;
                 case "allowhosts": s.AllowHosts = value; break;
+                case "ignorecors": s.IgnoreCors = IsTrue(value); break;
             }
         }
         // A file from an older version lacks the newer keys or has ones since dropped: rewrite it, keeping the values
@@ -124,9 +127,10 @@ sealed class Settings
     }
 
     /// <summary>Remembers the network switches and the allowed hosts (from the start page and /net).</summary>
-    public void SaveNet(bool localOnly, bool journal, string allowHosts)
+    public void SaveNet(bool localOnly, bool journal, string allowHosts, bool ignoreCors)
     {
         LocalOnly = localOnly;
+        IgnoreCors = ignoreCors;
         NetJournal = journal;
         AllowHosts = allowHosts;
         Save();
@@ -178,8 +182,10 @@ sealed class Settings
         "LocalOnly = " + Bool(LocalOnly),
         "# Журнал запросов в интернет (logs\\network.log) и при выключенном режиме; при включённом пишется всегда",
         "NetJournal = " + Bool(NetJournal),
-        "# Что пропускать в режиме «только localhost», через пробел: cdn.jsdelivr.net *.googleapis.com",
+        "# Что пропускать в режиме «только localhost», через пробел, например: fonts.googleapis.com fonts.gstatic.com",
         "AllowHosts = " + AllowHosts,
+        "# Только вместе с LocalOnly: браузер не проверяет CORS и same-origin (флаг --disable-web-security)",
+        "IgnoreCors = " + Bool(IgnoreCors),
         "");
 
     public static (Rectangle Bounds, bool Maximized, double Zoom)? LoadWindow()

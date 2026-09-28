@@ -751,6 +751,10 @@ window.chrome.webview.addEventListener("message", e => {
     $("#net").title = localOnly
       ? "Режим «только localhost»: включён, запросы в интернет блокируются. Щелчок выключит"
       : "Режим «только localhost»: выключен. Щелчок включит блокировку запросов в интернет";
+    // Switching the mode restarts the engine when CORS is to be ignored in it
+    if (m.cors) $("#net").title += localOnly
+      ? ". CORS не проверяется; выключение перезагрузит вкладки"
+      : ". Включение отключит CORS и перезагрузит вкладки";
   } else if (m.type === "projects") {
     if (drag) waiting = m;
     else show(m);

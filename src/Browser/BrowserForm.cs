@@ -989,8 +989,48 @@ sealed class BrowserForm : Form
                 ["localOnly"] = NetGuard.LocalOnly,
                 ["journal"] = NetGuard.Journal,
                 ["allow"] = NetGuard.AllowText,
+                ["cors"] = NetGuard.IgnoreCors,
                 ["file"] = NetLog.FilePath,
             }));
+    }
+
+    /// <summary>The journal entries the /net page shows, into a file the user picks.</summary>
+    void ExportJournal(List<long> seqs, bool csv)
+    {
+        using var dialog = new SaveFileDialog
+        {
+            Title = "Выгрузить журнал сети",
+            FileName = "network-" + DateTime.Now.ToString("yyyy-MM-dd-HHmm") + (csv ? ".csv" : ".json"),
+            Filter = csv ? "CSV (*.csv)|*.csv" : "JSON (*.json)|*.json",
+        };
+        if (dialog.ShowDialog(this) != DialogResult.OK) return;
+        try
+        {
+            // CSV with a BOM, so Excel reads the Cyrillic right
+            File.WriteAllText(dialog.FileName, NetLog.Export(seqs, csv), new UTF8Encoding(csv));
+        }
+        catch (Exception ex) when (ex is IOException || ex is UnauthorizedAccessException)
+        {
+            MessageBox.Show(this, "Не удалось записать файл.\n\n" + ex.Message, "LiteBro", MessageBoxButtons.OK, MessageBoxIcon.Error);
+        }
+    }
+
+    /// <summary>The engine restarts with other flags: every tab lets go of its WebView and keeps its address.</summary>
+    public void UnloadAll()
+    {
+        foreach (var tab in tabs)
+        {
+            StopTerm(tab);
+            Unload(tab);
+        }
+    }
+
+    /// <summary>After an engine restart: the tabs on screen load again.</summary>
+    public async void ReloadShown()
+    {
+        foreach (var tab in OnScreen.ToList())
+            await ShowPaneAsync(tab);
+        if (active != null) ShowState(active, switched: true);
     }
 
     /// <summary>In «только localhost» mode a request to the internet gets a refusal instead; the journal notes it.</summary>
@@ -1302,7 +1342,13 @@ sealed class BrowserForm : Form
                 // The start page's switch or the /net page: what is not sent stays as it is
                 App.Current.SetNet(m.TryGetValue("localOnly", out var lo) ? lo is true : NetGuard.LocalOnly,
                     m.TryGetValue("journal", out var j) ? j is true : NetGuard.Journal,
-                    Text("allow") ?? NetGuard.AllowText);
+                    Text("allow") ?? NetGuard.AllowText,
+                    m.TryGetValue("cors", out var cors) ? cors is true : NetGuard.IgnoreCors);
+                break;
+            case "netExport" when m.TryGetValue("seqs", out var seqs) && seqs is System.Collections.IEnumerable list:
+                var numbers = list.Cast<object>().Select(o => o is int i ? i : o is long l ? l : -1L).Where(n => n > 0).ToList();
+                bool csv = Text("format") == "csv";
+                BeginInvoke(new Action(() => ExportJournal(numbers, csv)));
                 break;
             case "netClear":
                 NetLog.Clear();

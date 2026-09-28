@@ -18,6 +18,10 @@ namespace LiteBro;
 static class NetGuard
 {
     public static bool LocalOnly { get; private set; }
+    /// <summary>The CORS switch as set; it works only together with LocalOnly (see CorsOff).</summary>
+    public static bool IgnoreCors { get; private set; }
+    /// <summary>The engine is to run without CORS and same-origin checks: never outside «только localhost».</summary>
+    public static bool CorsOff => LocalOnly && IgnoreCors;
     /// <summary>Journal the outside requests while the mode is off too (with it on they are always journaled).</summary>
     public static bool Journal { get; private set; }
     static Regex[] allowed = Array.Empty<Regex>();
@@ -29,13 +33,15 @@ static class NetGuard
     {
         LocalOnly = s.LocalOnly;
         Journal = s.NetJournal;
+        IgnoreCors = s.IgnoreCors;
         SetAllowed(s.AllowHosts);
     }
 
-    public static void Set(bool localOnly, bool journal)
+    public static void Set(bool localOnly, bool journal, bool ignoreCors)
     {
         LocalOnly = localOnly;
         Journal = journal;
+        IgnoreCors = ignoreCors;
     }
 
     /// <summary>Hosts through spaces, commas or lines; *.example.com covers example.com and its subdomains.</summary>
@@ -246,6 +252,37 @@ static class NetLog
             ["entries"] = list,
         });
     }
+
+    /// <summary>The entries with these numbers (those the /net page shows under its filter), as JSON or CSV for Excel.</summary>
+    public static string Export(IEnumerable<long> seqs, bool csv)
+    {
+        var wanted = new HashSet<long>(seqs);
+        List<Entry> list;
+        lock (recent) list = recent.Where(e => wanted.Contains(e.Seq)).ToList();
+        if (!csv)
+            return ProjectStore.Json.Serialize(list.Select(e => new Dictionary<string, object>
+            {
+                ["time"] = e.Time,
+                ["method"] = e.Method,
+                ["url"] = e.Url,
+                ["host"] = e.Host,
+                ["ip"] = e.Ip,
+                ["result"] = e.Result,
+                ["blocked"] = e.Blocked,
+                ["size"] = e.Size < 0 ? null! : e.Size,
+                ["initiator"] = e.Kind,
+                ["page"] = e.Page,
+                ["stack"] = e.Stack,
+            }).ToList());
+        // Excel with Russian settings splits on semicolons
+        var sb = new StringBuilder("время;метод;результат;заблокировано;размер;инициатор;домен;IP;адрес;страница;стек\r\n");
+        foreach (var e in list)
+            sb.Append(string.Join(";", new[] { e.Time, e.Method, e.Result, e.Blocked ? "да" : "нет", e.Size < 0 ? "" : e.Size.ToString(),
+                e.Kind, e.Host, e.Ip, e.Url, e.Page, e.Stack }.Select(Cell))).Append("\r\n");
+        return sb.ToString();
+    }
+
+    static string Cell(string s) => s.IndexOfAny(new[] { ';', '"', '\r', '\n' }) < 0 ? s : "\"" + s.Replace("\"", "\"\"") + "\"";
 
     public static void Clear()
     {

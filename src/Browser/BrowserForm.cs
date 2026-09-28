@@ -60,6 +60,8 @@ sealed class BrowserForm : Form
     // Two tabs side by side: the one in front is one of them, the other stays on screen beside it
     Tab? paneLeft, paneRight;
     float splitAt = .5f;
+    // The two halves of a split scroll together
+    bool syncScroll;
     int? dragFrom;
     double zoom = 1;
     bool minimized, inBackground;
@@ -328,12 +330,30 @@ sealed class BrowserForm : Form
             }
             // Back on the start page nothing is to be tried again on F5
             if (Home.Is(e.Uri)) tab.LastProject = null;
-            if (Home.Is(e.Uri) || !(e.Uri.StartsWith("about:") || e.Uri.StartsWith("data:"))) tab.ShowingInternalPage = false;
+            if (Home.Is(e.Uri) || !(e.Uri.StartsWith("about:") || e.Uri.StartsWith("data:")))
+            {
+                tab.ShowingInternalPage = false;
+                tab.FailedUrl = null;
+            }
             SetLoading(tab, true);
         };
         core.NavigationCompleted += (_, e) =>
         {
             SetLoading(tab, false);
+            // A site that does not answer gets this program's page, not the engine's own one that names Edge
+            if (!e.IsSuccess && IsUnreachable(e.WebErrorStatus) && Uri.TryCreate(core.Source, UriKind.Absolute, out var failed)
+                && !Home.Is(core.Source) && (failed.Scheme == "http" || failed.Scheme == "https"))
+            {
+                var url = failed.AbsoluteUri;
+                BeginInvoke(new Action(() =>
+                {
+                    if (tab.Core != core) return;
+                    ShowInternalPage(tab, Pages.Unreachable(url, ProjectOf(failed)));
+                    tab.FailedUrl = url;
+                    ShowState(tab, switched: true);
+                }));
+            }
+            if (syncScroll && IsPane(tab)) WatchScroll(tab, true);
             if (!tab.TrimmedAfterLoad)
             {
                 tab.TrimmedAfterLoad = true;
@@ -353,6 +373,16 @@ sealed class BrowserForm : Form
             if (e.ProcessFailedKind == CoreWebView2ProcessFailedKind.RenderProcessExited) core.Reload();
         };
     }
+
+    /// <summary>The site is not there: a server that is off, a name that does not resolve, no network.</summary>
+    static bool IsUnreachable(CoreWebView2WebErrorStatus status) => status is CoreWebView2WebErrorStatus.CannotConnect
+        or CoreWebView2WebErrorStatus.HostNameNotResolved or CoreWebView2WebErrorStatus.ConnectionReset
+        or CoreWebView2WebErrorStatus.Disconnected or CoreWebView2WebErrorStatus.Timeout
+        or CoreWebView2WebErrorStatus.ServerUnreachable;
+
+    /// <summary>The project whose site (or one of whose links) an address is on.</summary>
+    static Project? ProjectOf(Uri url) => ProjectStore.All.FirstOrDefault(p => p.Addresses().Any(a =>
+        Uri.TryCreate(a, UriKind.Absolute, out var site) && !site.IsFile && SameSite(site, url)));
 
     static bool IsInternal(string uri) => uri.StartsWith("about:") || uri.StartsWith("data:") || Home.Is(uri);
 
@@ -423,7 +453,10 @@ sealed class BrowserForm : Form
         if (active != null && !IsPane(tab) && tab != active)
             menu.Items.Add(new ToolStripMenuItem("Открыть рядом", null, (_, _) => SplitWith(tab)));
         if (Split)
+        {
+            menu.Items.Add(new ToolStripMenuItem("Синхронная прокрутка", null, (_, _) => SetSyncScroll(!syncScroll)) { Checked = syncScroll });
             menu.Items.Add(new ToolStripMenuItem("Убрать разделение", null, (_, _) => Unsplit()));
+        }
         if (menu.Items.Count > 0) menu.Items.Add(new ToolStripSeparator());
         menu.Items.Add(new ToolStripMenuItem("Закрыть вкладку", null, (_, _) => CloseTab(tab)) { ShortcutKeyDisplayString = tab == active ? "Ctrl+W" : "" });
         menu.Show(strip, at);
@@ -454,9 +487,77 @@ sealed class BrowserForm : Form
 
     void EndSplit()
     {
+        SetSyncScroll(false);
         paneLeft = paneRight = null;
         divider.Visible = false;
         dragFrom = null;
+    }
+
+    // Put into a page of a split while the halves scroll together: it tells where the page is scrolled to,
+    // as a share of the way down, and scrolls there when told. Pages that scroll a box of their own
+    // (chats, editors) are followed by the box scrolled last, or else the tallest one.
+    const string ScrollScript = @"(() => {
+  if (window !== top || !window.chrome || !chrome.webview) return;
+  if (window.__litebroScrollTo) return;
+  let quiet = 0, box = null;
+  const doc = () => document.scrollingElement || document.documentElement;
+  const tallest = () => {
+    let best = null, most = 0;
+    for (const el of document.querySelectorAll('*')) {
+      const room = el.scrollHeight - el.clientHeight;
+      if (room > most && el.clientHeight > innerHeight / 3 && /(auto|scroll)/.test(getComputedStyle(el).overflowY)) { best = el; most = room; }
+    }
+    return best;
+  };
+  addEventListener('scroll', e => {
+    if (!window.__litebroSync || Date.now() < quiet) return;
+    const el = e.target === document ? doc() : e.target;
+    if (!(el instanceof Element) || el.clientHeight < innerHeight / 3) return;
+    if (el !== doc()) box = el;
+    const room = el.scrollHeight - el.clientHeight;
+    chrome.webview.postMessage('litebro-scroll:' + (room > 0 ? el.scrollTop / room : 0));
+  }, { capture: true, passive: true });
+  window.__litebroScrollTo = share => {
+    quiet = Date.now() + 300;
+    const main = doc();
+    const el = box && box.isConnected ? box : main.scrollHeight > main.clientHeight + 1 ? main : tallest() || main;
+    el.scrollTop = share * (el.scrollHeight - el.clientHeight);
+  };
+})();";
+
+    /// <summary>Turns on or off the halves of a split scrolling together.</summary>
+    void SetSyncScroll(bool on)
+    {
+        if (on == syncScroll) return;
+        syncScroll = on;
+        foreach (var tab in new[] { paneLeft, paneRight }.OfType<Tab>()) WatchScroll(tab, on);
+    }
+
+    static async void WatchScroll(Tab tab, bool on)
+    {
+        if (tab.Core is not { } core) return;
+        try
+        {
+            if (on) await core.ExecuteScriptAsync(ScrollScript);
+            await core.ExecuteScriptAsync(on ? "window.__litebroSync = true" : "window.__litebroSync = false");
+        }
+        catch (Exception) { } // the page went away meanwhile
+    }
+
+    /// <summary>A half of a split scrolled: the other one goes to the same share of the way down.</summary>
+    void OnScrolled(Tab tab, CoreWebView2WebMessageReceivedEventArgs e)
+    {
+        string text;
+        try { text = e.TryGetWebMessageAsString(); }
+        catch (ArgumentException) { return; }
+        if (!text.StartsWith("litebro-scroll:") || !double.TryParse(text.Substring(15),
+                System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var share))
+            return;
+        var other = tab == paneLeft ? paneRight : paneLeft;
+        share = Math.Max(0, Math.Min(1, share));
+        try { _ = other?.Core?.ExecuteScriptAsync("window.__litebroScrollTo && __litebroScrollTo(" +
+            share.ToString("0.#####", System.Globalization.CultureInfo.InvariantCulture) + ")"); }
+        catch (Exception) { }
     }
 
     int DividerWidth => Math.Max(4, host.DeviceDpi / 16);
@@ -562,6 +663,7 @@ sealed class BrowserForm : Form
             ? CoreWebView2MemoryUsageTargetLevel.Low : CoreWebView2MemoryUsageTargetLevel.Normal;
         c.IsVisible = !minimized;
         strip.Invalidate();
+        if (syncScroll && IsPane(tab)) WatchScroll(tab, true);
         SendProjects(tab); // a start page paused in the background missed the changes
         return true;
     }
@@ -737,6 +839,7 @@ sealed class BrowserForm : Form
     {
         if (tab.Core == null) return;
         tab.ShowingInternalPage = true;
+        tab.FailedUrl = null;
         tab.Core.NavigateToString(html);
         ShowState(tab, switched: true);
     }
@@ -786,6 +889,8 @@ sealed class BrowserForm : Form
     /// </summary>
     void OnWebMessage(Tab tab, CoreWebView2WebMessageReceivedEventArgs e)
     {
+        // Any page of a split may say where it is scrolled to; that moves nothing but the other half
+        if (syncScroll && IsPane(tab)) OnScrolled(tab, e);
         if (!Home.Is(e.Source)) return;
         Dictionary<string, object>? m;
         try { m = ProjectStore.Json.Deserialize<Dictionary<string, object>>(e.WebMessageAsJson); }
@@ -938,6 +1043,7 @@ sealed class BrowserForm : Form
         var tab = active;
         if (tab?.Core is not { } core) return;
         if (tab.Loading) core.Stop();
+        else if (tab.ShowingInternalPage && tab.FailedUrl != null) core.Navigate(tab.FailedUrl);
         else if (tab.ShowingInternalPage && tab.LastProject != null) OpenProject(tab, tab.LastProject, tab.LastLink);
         else if (tab.ShowingInternalPage) GoHome();
         else core.Reload();

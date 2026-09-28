@@ -37,7 +37,7 @@ sealed class Project
     /// <summary>The project's pages run in a WebView2 profile of their own: own cookies, storage and permissions.</summary>
     public bool OwnProfile { get; set; }
     /// <summary>Its cookies and cache stay when the browser clears them on exit (Settings.ClearOnExit).</summary>
-    public bool KeepData { get; set; }
+    public bool KeepData { get; set; } = true; // tiles saved before the switch existed keep theirs too
 
     /// <summary>The WebView2 profile of the project's pages; "" for the shared one.</summary>
     public string Profile => OwnProfile && Id.Length > 0 ? "project-" + Id : "";

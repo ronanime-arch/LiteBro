@@ -111,7 +111,6 @@ sealed class BrowserForm : Form
         country.Visible = false;
         star = MakeButton(GlyphStar, "", ShowFavoriteMenu);
         countryGlyphFont = country.Font;
-        back.Enabled = forward.Enabled = false;
 
         bar = new TableLayoutPanel
         {
@@ -124,7 +123,10 @@ sealed class BrowserForm : Form
         for (int i = 0; i < 5; i++) bar.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
         bar.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
         for (int i = 0; i < 3; i++) bar.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
-        bar.Controls.AddRange(new Control[] { back, forward, reload, reset, home, address, star, country, ram });
+        var cells = new Control[] { back, forward, reload, reset, home, address, star, country, ram };
+        bar.Controls.AddRange(cells);
+        // Fixed cells: a hidden button (reset, star, country) leaves its column empty instead of shifting the rest along
+        for (int i = 0; i < cells.Length; i++) bar.SetCellPosition(cells[i], new TableLayoutPanelCellPosition(i, 0));
 
         // Docking goes from the last added: the strip on top, the toolbar under it, the page in what is left
         Controls.Add(host);
@@ -160,6 +162,22 @@ sealed class BrowserForm : Form
         host.Resize += (_, _) => LayoutPanes();
         address.HandleCreated += (_, _) => Theme.ApplyEdit(address.Handle);
         ApplyTheme();
+    }
+
+    /// <summary>The toolbar's glyphs differ in width and height: every button gets the box of the largest.</summary>
+    void EvenButtons()
+    {
+        var buttons = new[] { back, forward, reload, reset, home, star, country };
+        foreach (var b in buttons) b.MinimumSize = Size.Empty;
+        var size = new Size(buttons.Max(b => b.PreferredSize.Width), buttons.Max(b => b.PreferredSize.Height));
+        size.Width = size.Height = Math.Max(size.Width, size.Height);
+        foreach (var b in buttons) b.MinimumSize = size;
+    }
+
+    protected override void OnDpiChanged(DpiChangedEventArgs e)
+    {
+        base.OnDpiChanged(e);
+        BeginInvoke(new Action(EvenButtons)); // after the fonts are scaled
     }
 
     protected override void OnHandleCreated(EventArgs e)
@@ -230,6 +248,7 @@ sealed class BrowserForm : Form
     {
         base.OnLoad(e);
         SendMessage(address.Handle, SetCueBanner, (IntPtr)1, "Адрес или поиск");
+        EvenButtons();
         var saved = isMain ? Settings.LoadWindow() : null;
         if (saved is { } w && Screen.AllScreens.Any(s => s.WorkingArea.IntersectsWith(w.Bounds)))
         {
@@ -469,8 +488,6 @@ sealed class BrowserForm : Form
     {
         if (tab != active) return;
         Text = tab.Title.Length == 0 ? "LiteBro" : tab.Title + " — LiteBro";
-        back.Enabled = tab.Core?.CanGoBack ?? false;
-        forward.Enabled = tab.Core?.CanGoForward ?? false;
         reload.Text = tab.Loading ? GlyphStop : GlyphReload;
         tips.SetToolTip(reload, tab.Loading ? "Остановить" : "Обновить (F5)");
         if (switched || !address.Focused) address.Text = AddressOf(tab);

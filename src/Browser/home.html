@@ -604,8 +604,8 @@ function openDialog(p) {
   f.WorkDir.value = p ? p.WorkDir : "";
   f.OpenPrintedUrl.checked = p ? p.OpenPrintedUrl : false;
   f.OwnProfile.checked = !!(p && p.OwnProfile);
-  f.KeepData.checked = !!(p && p.KeepData);
-  $("#data").open = !!(p && (p.OwnProfile || p.KeepData));
+  f.KeepData.checked = p ? p.KeepData !== false : true;
+  $("#data").open = !!(p && (p.OwnProfile || p.KeepData === false));
   $("#launch").open = !!(p && p.Exe);
   $("#linkRows").textContent = "";
   for (const l of p ? p.Links || [] : []) linkRow(l.Name, l.Url);

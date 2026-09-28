@@ -54,6 +54,13 @@ main { max-width: 1180px; margin: 0 auto; padding: 84px 56px 48px; }
 .links:hover, .links.open { background: rgba(0, 0, 0, .62); }
 .links:focus-visible { outline: 2px solid #fff; outline-offset: 1px; }
 .links svg { width: 14px; height: 14px; }
+/* The console of a project with a program: its output, shown on pointing at the tile */
+.log { position: absolute; top: 134px; right: 8px; height: 26px; padding: 0 8px; border: 0; border-radius: 13px;
+  background: rgba(0, 0, 0, .38); color: #fff; font: 600 12.5px Consolas, monospace; cursor: pointer;
+  opacity: 0; transition: opacity .12s, background .12s; }
+.item:hover .log, .log:focus-visible { opacity: 1; }
+.log:hover { background: rgba(0, 0, 0, .62); }
+.log:focus-visible { outline: 2px solid #fff; outline-offset: 1px; }
 
 .menu { position: fixed; z-index: 20; width: max-content; min-width: 220px; max-width: min(380px, calc(100vw - 16px));
   padding: 6px; border: 1px solid var(--line); border-radius: 12px; background: var(--card); color: var(--fg);
@@ -266,7 +273,7 @@ function render() {
   for (const p of projects) grid.append(tile(p));
   grid.append(addTile());
   $("#hint").textContent = projects.length
-    ? "Клик — открыть · Ctrl+клик или средняя кнопка — в новой вкладке · Shift+клик — в новом окне · правый клик — изменить · перетащить — поменять порядок · клик по зелёной точке — остановить программу."
+    ? "Клик — открыть · Ctrl+клик или средняя кнопка — в новой вкладке · Shift+клик — в новом окне · правый клик — изменить · перетащить — поменять порядок · клик по зелёной точке — остановить программу · >_ — вывод программы."
     : "Добавьте первый проект: адрес локального сайта и, если нужно, программу, которая его запускает.";
 }
 
@@ -300,6 +307,12 @@ function tile(p) {
       else openMenu(p, more);
     });
     item.append(more);
+  }
+  if (p.Exe) {
+    const log = el("button", "log", ">_");
+    log.title = "Вывод программы (Ctrl+клик — в новой вкладке)";
+    log.addEventListener("click", e => { e.stopPropagation(); post({ type: "log", id: p.Id, newTab: e.ctrlKey }); });
+    item.append(log);
   }
   item.append(el("div", "label", p.Name || host(p.Url)));
   return item;
@@ -409,7 +422,7 @@ function items() {
 
 function press(item, e) {
   // Touch scrolls the page; the green dot and the links chip are buttons of their own
-  if (e.button !== 0 || e.pointerType === "touch" || drag || e.target.closest(".run, .links")) return;
+  if (e.button !== 0 || e.pointerType === "touch" || drag || e.target.closest(".run, .links, .log")) return;
   held = { item, x: e.clientX, y: e.clientY };
 }
 

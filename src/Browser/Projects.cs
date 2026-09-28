@@ -304,6 +304,20 @@ sealed class Launcher
         }
     }
 
+    /// <summary>A line typed in the project's console, to the program's input; it shows in the log too.</summary>
+    public void Send(string text)
+    {
+        var p = process;
+        if (p == null || p.HasExited) return;
+        Write("> " + text);
+        try
+        {
+            p.StandardInput.WriteLine(text);
+            p.StandardInput.Flush();
+        }
+        catch (Exception e) when (e is IOException || e is InvalidOperationException || e is ObjectDisposedException) { }
+    }
+
     public string LogTail(int lines = 25)
     {
         try

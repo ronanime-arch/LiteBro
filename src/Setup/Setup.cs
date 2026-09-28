@@ -95,8 +95,10 @@ static class Program
         // right after the install.
         bool desktop = true, links = false, launch = false;
         bool hasLinks = HandlesLinks();
-        // Windows keeps the user's choice for links with LiteBrowser's ProgId, which goes with it
-        bool relink = !hasLinks && (Associations.OldNameHandles("http") || Associations.OldNameHandles("https"));
+        // Windows keeps the user's choice for links with LiteBrowser's ProgId, which goes with it. The choice
+        // itself stays even once the ProgId is gone, as after an earlier run that stopped halfway.
+        bool relink = !hasLinks && new[] { "http", "https" }.Any(protocol =>
+            Associations.OldNameHandles(protocol) || UserChoice(protocol) == Associations.OldProgId);
         if (!silent)
         {
             var desktopBox = new CheckBox { Text = "Ярлык на рабочем столе", Checked = true, AutoSize = true };
@@ -206,6 +208,13 @@ static class Program
     /// <summary>True when Windows gives LiteBro both kinds of web links.</summary>
     public static bool HandlesLinks() => Associations.Handles("http") && Associations.Handles("https");
 
+    /// <summary>The ProgId the user chose for a protocol in Settings, read fresh each time.</summary>
+    public static string? UserChoice(string protocol)
+    {
+        using var key = Registry.CurrentUser.OpenSubKey($@"Software\Microsoft\Windows\Shell\Associations\UrlAssociations\{protocol}\UserChoice");
+        return key?.GetValue("ProgId") as string;
+    }
+
     /// <summary>
     /// Takes away LiteBrowser, as this browser was called up to 1.9.6: its program, shortcuts and registration.
     /// Its data stays for LiteBro to move over on its first start (Settings.MoveOldData). Windows keeps the user's
@@ -228,8 +237,13 @@ static class Program
         {
             foreach (var link in Directory.GetFiles(pins, "*.lnk"))
             {
-                if (Shortcut.Target(link) is { } target && IsInside(target, LiteBrowserDir))
-                    Shortcut.Create(link, exe, LinkDescription, Associations.AppUserModelId);
+                // A pin it cannot change is left to the user: never a reason to stop the install
+                try
+                {
+                    if (Shortcut.Target(link) is { } target && IsInside(target, LiteBrowserDir))
+                        Shortcut.Create(link, exe, LinkDescription, Associations.AppUserModelId);
+                }
+                catch (Exception e) when (e is COMException || e is IOException || e is UnauthorizedAccessException) { }
             }
         }
         for (int i = 0; i < 10 && Directory.Exists(LiteBrowserDir); i++)
@@ -522,8 +536,12 @@ static class Program
         return false;
     }
 
-    static bool IsInside(string path, string dir) =>
-        Path.GetFullPath(path).StartsWith(Path.GetFullPath(dir).TrimEnd('\\') + "\\", StringComparison.OrdinalIgnoreCase);
+    /// <summary>False as well for what is no path at all: an empty registry value, say.</summary>
+    static bool IsInside(string path, string dir)
+    {
+        try { return Path.GetFullPath(path).StartsWith(Path.GetFullPath(dir).TrimEnd('\\') + "\\", StringComparison.OrdinalIgnoreCase); }
+        catch (Exception e) when (e is ArgumentException || e is NotSupportedException || e is PathTooLongException) { return false; }
+    }
 
     /// <summary>In Program Files\LiteBro, or in the LiteBrowser folder of the versions up to 1.9.6.</summary>
     static bool InOurFolders(string path) => IsInside(path, InstallDir) || IsInside(path, LiteBrowserDir);
@@ -703,8 +721,7 @@ sealed class LinksStep : Form
     /// <summary>The user's choice as Settings writes it, read fresh each time; the shell's answer as a fallback.</summary>
     static bool Chosen(string protocol)
     {
-        using (var key = Registry.CurrentUser.OpenSubKey($@"Software\Microsoft\Windows\Shell\Associations\UrlAssociations\{protocol}\UserChoice"))
-            if (key?.GetValue("ProgId") as string == Associations.ProgId) return true;
+        if (Program.UserChoice(protocol) == Associations.ProgId) return true;
         return Associations.Handles(protocol);
     }
 
@@ -832,7 +849,8 @@ static class Shortcut
             ((IPersistFile)shell).Load(link, 0);
             var path = new StringBuilder(260);
             shell.GetPath(path, path.Capacity, IntPtr.Zero, 0);
-            return path.ToString();
+            // A shortcut to a shell item, such as the File Explorer pin on the taskbar, has no file
+            return path.Length > 0 ? path.ToString() : null;
         }
         catch (COMException) { return null; }
         finally { Marshal.ReleaseComObject(shell); }

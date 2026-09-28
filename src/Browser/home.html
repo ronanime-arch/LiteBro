@@ -141,9 +141,20 @@ summary { cursor: pointer; font-weight: 500; }
 .check { display: flex; gap: 8px; align-items: flex-start; font-weight: 400; }
 .check input { margin: 3px 0 0; }
 .muted { color: var(--muted); font-size: 12.5px; margin: 0; }
+/* PowerShell of no project: a tab at the left edge */
+#shell { position: fixed; top: 36px; left: 0; width: 64px; height: 38px; padding: 0 0 0 6px; border: 0;
+  border-radius: 0 10px 10px 0; background: #6a2a91; cursor: pointer; display: grid; place-items: center;
+  transition: width .12s, background .12s; }
+#shell:hover, #shell:focus-visible { width: 72px; background: #7d35aa; outline: none; }
+#shell svg { width: 26px; height: 22px; }
 </style>
 </head>
 <body>
+<button id="shell" title="PowerShell: команды в папке пользователя, в новой вкладке" aria-label="PowerShell">
+  <svg viewBox="0 0 26 22" aria-hidden="true"><path d="M4 1h21l-3 20H1z" fill="#2671be"/>
+  <path d="M7 6l6 5-8 5" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M12 16h6" stroke="#fff" stroke-width="2.2" stroke-linecap="round"/></svg>
+</button>
 <main>
   <div class="grid" id="grid"></div>
   <p class="hint" id="hint"></p>
@@ -731,6 +742,7 @@ window.chrome.webview.addEventListener("message", e => {
 });
 
 render();
+$("#shell").addEventListener("click", () => post({ type: "log", id: "shell" }));
 post({ type: "ready" });
 </script>
 </body>

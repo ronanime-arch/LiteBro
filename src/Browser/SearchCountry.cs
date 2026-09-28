@@ -41,6 +41,7 @@ static class SearchCountry
         new("ES", "Испания", "es"),
         new("IT", "Италия", "it"),
         new("PL", "Польша", "pl"),
+        new("LT", "Литва", "lt"),
         new("CZ", "Чехия", "cs"),
         new("NL", "Нидерланды", "nl"),
         new("SE", "Швеция", "sv"),

@@ -61,6 +61,17 @@ th.col.on::after { content: " \25BE\2009\25CF"; color: var(--accent); }
 #popList .n { color: var(--muted); font-variant-numeric: tabular-nums; }
 #pop .row { gap: 8px; }
 #resetFilters[hidden] { display: none; }
+#keys { width: min(760px, calc(100vw - 32px)); max-height: calc(100vh - 48px); padding: 0; border: 1px solid var(--line); border-radius: 10px;
+  background: var(--card); color: var(--fg); box-shadow: 0 10px 40px rgba(0, 0, 0, .35); }
+#keys::backdrop { background: rgba(0, 0, 0, .4); }
+#keys .head { position: sticky; top: 0; display: flex; align-items: center; gap: 12px; padding: 14px 18px 10px; background: var(--card); border-bottom: 1px solid var(--line); }
+#keys h2 { margin: 0; font-size: 17px; font-weight: 600; flex: 1; }
+#keys .body { padding: 4px 18px 16px; }
+#keys h3 { margin: 16px 0 6px; font-size: 13px; color: var(--muted); font-weight: 600; text-transform: uppercase; letter-spacing: .04em; }
+#keys td { white-space: normal; border: none; padding: 5px 10px 5px 0; vertical-align: top; font-size: 13.5px; }
+#keys table { table-layout: fixed; }
+#keys td:first-child { width: 40%; padding-right: 18px; line-height: 1.9; }
+kbd { font: 12px Consolas, monospace; padding: 1px 6px; border: 1px solid var(--line); border-bottom-width: 2px; border-radius: 4px; background: var(--bg); }
 </style>
 </head>
 <body>
@@ -86,6 +97,7 @@ th.col.on::after { content: " \25BE\2009\25CF"; color: var(--accent); }
     <span class="muted">Фильтр: нажмите на заголовок колонки.</span>
     <button id="resetFilters" hidden>Сбросить фильтры</button>
     <label class="switch"><input type="checkbox" id="onlyBlocked"><span class="track"></span><span>Только заблокированные</span></label>
+    <button id="keysOpen" title="Все горячие клавиши и приёмы браузера с описанием">Быстрые команды</button>
     <button id="json" title="Записи под фильтром в файл JSON">Выгрузить JSON</button>
     <button id="csv" title="Записи под фильтром в файл CSV (для Excel, через точку с запятой)">Выгрузить CSV</button>
     <button id="clear">Очистить журнал</button>
@@ -100,6 +112,10 @@ th.col.on::after { content: " \25BE\2009\25CF"; color: var(--accent); }
   </table>
   <p class="muted" id="empty">Запросов в интернет пока нет.</p>
 </div>
+<dialog id="keys">
+  <div class="head"><h2>Быстрые команды</h2><button id="keysClose">Закрыть</button></div>
+  <div class="body" id="keysBody"></div>
+</dialog>
 <div id="pop" hidden>
   <input type="search" id="popFind" placeholder="Найти значение">
   <div class="row"><button id="popAll">Все</button><button id="popNone">Ни одного</button><button id="popOnly" hidden>Только найденные</button></div>
@@ -259,6 +275,80 @@ async function poll() {
   } catch (e) {
   } finally { busy = false; }
 }
+
+// Every shortcut of the browser: keep in step with BrowserForm.Shortcut, TermKeys and the pages
+const KEYS = [
+  ["Вкладки и окна", [
+    ["Ctrl+T", "Новая вкладка со стартовой страницей"],
+    ["Ctrl+W, Ctrl+F4", "Закрыть вкладку (последняя закрывает окно)"],
+    ["Ctrl+Tab, Ctrl+Shift+Tab", "Следующая и предыдущая вкладка"],
+    ["Ctrl+N", "Новое окно"],
+    ["Средний клик по вкладке", "Закрыть вкладку"],
+    ["Правый клик по вкладке", "Открыть рядом, убрать разделение, синхронная прокрутка"],
+  ]],
+  ["Страница", [
+    ["F5, Ctrl+R", "Обновить; во время загрузки — остановить"],
+    ["Ctrl+Shift+R, Ctrl+F5", "Сбросить Service Worker и кэш сайта и загрузить заново (cookies остаются)"],
+    ["Alt+←, Alt+→", "Назад и вперёд"],
+    ["Alt+Home", "Стартовая страница с плитками"],
+    ["Ctrl+F", "Найти на странице"],
+    ["Ctrl+P", "Печать"],
+    ["Ctrl+Плюс, Ctrl+Минус, Ctrl+0", "Масштаб: крупнее, мельче, как было"],
+    ["F12", "Инструменты разработчика (DevTools)"],
+    ["Shift+Esc", "Диспетчер процессов браузера (также клик по памяти справа)"],
+  ]],
+  ["Адресная строка", [
+    ["Ctrl+L, Alt+D, F6", "Перейти в адресную строку"],
+    ["Enter", "Открыть адрес или искать текст"],
+    ["Esc", "Вернуть адрес страницы и уйти из строки"],
+  ]],
+  ["Стартовая страница", [
+    ["Клик по плитке", "Открыть проект (и запустить его программу, если адрес не отвечает)"],
+    ["Ctrl+клик, средний клик", "Открыть в новой вкладке"],
+    ["Shift+клик", "Открыть в новом окне"],
+    ["Зажать и тащить плитку", "Поменять порядок плиток (Esc — отменить)"],
+    ["↑, ↓, Esc в меню плитки", "Выбрать пункт меню ссылок, закрыть меню"],
+  ]],
+  ["Терминал", [
+    ["Ctrl+C с выделением", "Копировать (без выделения — прервать команду)"],
+    ["Ctrl+V, правый клик", "Вставить"],
+    ["Ctrl+L, Ctrl+R, F5, Alt+D, Alt+←/→, Ctrl+Shift+R", "Уходят оболочке, а не браузеру"],
+  ]],
+  ["Консоль проекта", [
+    ["↑, ↓ в строке команды", "Предыдущие введённые команды"],
+  ]],
+  ["Журнал сети", [
+    ["Клик по заголовку колонки", "Фильтр по значениям колонки"],
+    ["Клик по строке", "Подробности: полный адрес, страница, стек вызова"],
+    ["Esc", "Закрыть фильтр или это окно"],
+  ]],
+];
+
+function drawKeys() {
+  const body = $("keysBody");
+  if (body.childElementCount) return;
+  for (const [title, rows] of KEYS) {
+    const h = document.createElement("h3");
+    h.textContent = title;
+    const table = document.createElement("table");
+    for (const [keys, what] of rows) {
+      const tr = document.createElement("tr");
+      const k = document.createElement("td");
+      keys.split(", ").forEach((key, i) => {
+        if (i) k.append(" ");
+        const kbd = document.createElement("kbd");
+        kbd.textContent = key;
+        k.append(kbd);
+      });
+      tr.append(k, td(what));
+      table.append(tr);
+    }
+    body.append(h, table);
+  }
+}
+$("keysOpen").addEventListener("click", ev => { ev.stopPropagation(); drawKeys(); $("keys").showModal(); });
+$("keysClose").addEventListener("click", () => $("keys").close());
+$("keys").addEventListener("click", ev => { if (ev.target === $("keys")) $("keys").close(); });
 
 const restart = "Движок браузера перезапустится: все вкладки перезагрузятся, открытые терминалы закроются. Программы проектов продолжат работать.";
 // The mode's gateway and CORS are flags of the engine: asked first, since the restart reloads every tab

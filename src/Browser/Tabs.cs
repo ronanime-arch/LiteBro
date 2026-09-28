@@ -25,6 +25,10 @@ sealed class Tab
     public string? FailedUrl;
     /// <summary>When the tab left the front; null while it is the tab in front.</summary>
     public DateTime? InactiveSince;
+    /// <summary>The shell of a terminal tab, while it runs.</summary>
+    public Terminal? Term;
+    /// <summary>The folder a terminal tab starts its shell in; set only by the browser when it opens the tab.</summary>
+    public string? TermDir;
 
     /// <summary>The address the tab stands for: the project's (or its link's) while its start or failure page is shown.</summary>
     public string Site => ShowingInternalPage && FailedUrl != null ? FailedUrl

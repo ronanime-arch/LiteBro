@@ -150,7 +150,7 @@ summary { cursor: pointer; font-weight: 500; }
 </style>
 </head>
 <body>
-<button id="shell" title="PowerShell: команды в папке пользователя, в новой вкладке" aria-label="PowerShell">
+<button id="shell" title="Терминал PowerShell в новой вкладке (claude, git, npm...)" aria-label="PowerShell">
   <svg viewBox="0 0 26 22" aria-hidden="true"><path d="M4 1h21l-3 20H1z" fill="#2671be"/>
   <path d="M7 6l6 5-8 5" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
   <path d="M12 16h6" stroke="#fff" stroke-width="2.2" stroke-linecap="round"/></svg>
@@ -742,7 +742,7 @@ window.chrome.webview.addEventListener("message", e => {
 });
 
 render();
-$("#shell").addEventListener("click", () => post({ type: "log", id: "shell" }));
+$("#shell").addEventListener("click", () => post({ type: "terminal" }));
 post({ type: "ready" });
 </script>
 </body>

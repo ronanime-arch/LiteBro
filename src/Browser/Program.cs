@@ -144,6 +144,7 @@ sealed class App : ApplicationContext
         {
             forms.Remove(form);
             if (lastActive == form) lastActive = null;
+            ShellMaybeUnused();
             if (forms.Count == 0) ExitThread();
             else BackgroundChanged();
         };
@@ -185,6 +186,14 @@ sealed class App : ApplicationContext
     }
 
     public void NoteActive(BrowserForm form) => lastActive = form;
+
+    /// <summary>A tab left the PowerShell console: once no tab shows it, its PowerShell goes, and its memory with it.</summary>
+    public void ShellMaybeUnused() => ui.Post(_ =>
+    {
+        var url = ProgramLog.Url(ProgramLog.Shell);
+        if (!forms.Any(f => f.HasTabOn(url)) && launchers.TryGetValue(ProgramLog.Shell.Id, out var launcher))
+            launcher.StopShell(quiet: false);
+    }, null);
 
     /// <summary>The launcher of a project's program, kept for as long as the browser runs.</summary>
     public Launcher LauncherFor(Project p)

@@ -335,7 +335,7 @@ sealed class Launcher
         }
     }
 
-    public bool CommandRunning => command is { HasExited: false };
+    public bool CommandRunning => ProgramLog.IsShell(Project) ? pending > 0 && shell is { HasExited: false } : command is { HasExited: false };
 
     /// <summary>
     /// Runs a command line in the console's folder, its output going to the log with the program's.
@@ -345,6 +345,11 @@ sealed class Launcher
     {
         line = line.Trim();
         if (line.Length == 0) return;
+        if (ProgramLog.IsShell(Project))
+        {
+            RunInShell(line);
+            return;
+        }
         if (CommandRunning)
         {
             Write("> " + line);
@@ -390,14 +395,8 @@ sealed class Launcher
             StandardOutputEncoding = Encoding.UTF8,
             StandardErrorEncoding = Encoding.UTF8,
         };
-        // UTF-8 first: cmd's own commands (dir, type) print in the console's code page otherwise.
-        // The console of no project runs PowerShell; the line goes encoded, so no quote of it can break out.
-        if (ProgramLog.IsShell(Project))
-            info.FileName = "powershell.exe";
-        info.Arguments = ProgramLog.IsShell(Project)
-            ? "-NoLogo -NoProfile -ExecutionPolicy Bypass -EncodedCommand " + Convert.ToBase64String(Encoding.Unicode.GetBytes(
-                "[Console]::OutputEncoding = [Text.Encoding]::UTF8; $OutputEncoding = [Text.Encoding]::UTF8; " + line))
-            : "/d /s /c \"chcp 65001>nul & " + line + "\"";
+        // UTF-8 first: cmd's own commands (dir, type) print in the console's code page otherwise
+        info.Arguments = "/d /s /c \"chcp 65001>nul & " + line + "\"";
         info.Environment["NO_COLOR"] = "1";
         info.Environment["PYTHONUNBUFFERED"] = "1";
         info.Environment["PYTHONIOENCODING"] = "utf-8";
@@ -429,8 +428,120 @@ sealed class Launcher
     }
 
     /// <summary>Stops the console's command with everything it started.</summary>
+    // The console of no project keeps one PowerShell: its variables, modules and folder stay from command to command.
+    // It reads commands from its input; after each one it prints this line with the folder it is in.
+    const string DoneMarker = "##litebro-done##";
+    Process? shell;
+    KillOnCloseJob? shellJob;
+    int pending;
+
+    void RunInShell(string line)
+    {
+        OpenLog();
+        Write(CommandDir + ">" + line);
+        if (shell is not { HasExited: false } && !StartShell()) return;
+        // Only ASCII goes through the input, whatever its code page: the command as base64 of UTF-8.
+        // In the shell's own scope, so what it defines stays; an error still ends with the marker.
+        var code = Convert.ToBase64String(Encoding.UTF8.GetBytes(line));
+        System.Threading.Interlocked.Increment(ref pending);
+        try
+        {
+            shell!.StandardInput.WriteLine("try { . ([ScriptBlock]::Create([Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('" + code +
+                "')))) | Out-Default } catch { Write-Error $_ }; [Console]::Out.WriteLine('" + DoneMarker + "' + $PWD.ProviderPath)");
+            shell.StandardInput.Flush();
+        }
+        catch (Exception e) when (e is IOException || e is InvalidOperationException || e is ObjectDisposedException)
+        {
+            pending = 0;
+            Write("PowerShell не отвечает: следующая команда запустит его заново.");
+        }
+        changed();
+    }
+
+    bool StartShell()
+    {
+        var info = new ProcessStartInfo("powershell.exe", "-NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command -")
+        {
+            WorkingDirectory = CommandDir,
+            UseShellExecute = false,
+            CreateNoWindow = true,
+            RedirectStandardInput = true,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            StandardOutputEncoding = Encoding.UTF8,
+            StandardErrorEncoding = Encoding.UTF8,
+        };
+        info.Environment["NO_COLOR"] = "1";
+        info.Environment["PYTHONUNBUFFERED"] = "1";
+        info.Environment["PYTHONIOENCODING"] = "utf-8";
+        var p = new Process { StartInfo = info, EnableRaisingEvents = true };
+        p.OutputDataReceived += (_, e) =>
+        {
+            if (e.Data != null && e.Data.StartsWith(DoneMarker))
+            {
+                commandDir = e.Data.Substring(DoneMarker.Length);
+                if (System.Threading.Interlocked.Decrement(ref pending) < 0) pending = 0;
+                changed();
+            }
+            else Write(e.Data);
+        };
+        p.ErrorDataReceived += (_, e) => Write(e.Data);
+        p.Exited += (_, _) =>
+        {
+            if (shell != p) return; // stopped here
+            shell = null;
+            pending = 0;
+            Write("[PowerShell завершился: переменные сброшены, следующая команда запустит его заново]");
+            changed();
+        };
+        try { p.Start(); }
+        catch (Exception ex)
+        {
+            Write("Не удалось запустить PowerShell: " + ex.Message);
+            return false;
+        }
+        shellJob?.Dispose();
+        shellJob = KillOnCloseJob.For(p);
+        p.BeginOutputReadLine();
+        p.BeginErrorReadLine();
+        shell = p;
+        try
+        {
+            p.StandardInput.WriteLine("[Console]::OutputEncoding = [Text.Encoding]::UTF8; $OutputEncoding = [Text.Encoding]::UTF8");
+            p.StandardInput.Flush();
+        }
+        catch (Exception) { }
+        return true;
+    }
+
+    /// <summary>Closes the console's PowerShell, with what it started; the next command starts a new one.</summary>
+    public void StopShell(bool quiet)
+    {
+        var p = shell;
+        shell = null;
+        bool busy = pending > 0;
+        pending = 0;
+        if (shellJob != null)
+        {
+            shellJob.Dispose();
+            shellJob = null;
+        }
+        else if (p is { HasExited: false })
+        {
+            try { p.Kill(); } catch (Exception) { }
+        }
+        if (p != null && !quiet)
+            Write(busy ? "[прервано: PowerShell перезапустится со следующей командой, переменные сброшены]" : "[PowerShell закрыт]");
+        changed();
+    }
+
     public void StopCommand()
     {
+        if (ProgramLog.IsShell(Project))
+        {
+            StopShell(quiet: false);
+            return;
+        }
         var p = command;
         command = null;
         bool wasRunning = p is { HasExited: false };

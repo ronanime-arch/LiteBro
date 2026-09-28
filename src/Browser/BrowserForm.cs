@@ -52,7 +52,8 @@ sealed class BrowserForm : Form
     };
     readonly ToolTip tips = new();
     readonly TableLayoutPanel bar;
-    readonly ToolButton back, forward, reload, home, country;
+    readonly ToolButton back, forward, reload, home, country, star;
+    const string GlyphStar = "\uE734", GlyphStarFilled = "\uE735";
     readonly Font countryGlyphFont, countryCodeFont = new("Segoe UI", 9f, FontStyle.Bold);
     readonly Timer ramTimer = new() { Interval = 2000 };
     // How long a window may sit in the background before it gives memory back
@@ -106,6 +107,7 @@ sealed class BrowserForm : Form
         home = MakeButton(GlyphHome, "Проекты (Alt+Home)", GoHome);
         country = MakeButton(GlyphGlobe, "Страна поиска", ShowCountryMenu);
         country.Visible = false;
+        star = MakeButton(GlyphStar, "", ShowFavoriteMenu);
         countryGlyphFont = country.Font;
         back.Enabled = forward.Enabled = false;
 
@@ -113,15 +115,14 @@ sealed class BrowserForm : Form
         {
             Dock = DockStyle.Top,
             AutoSize = true,
-            ColumnCount = 7,
+            ColumnCount = 8,
             RowCount = 1,
             Padding = new Padding(4, 3, 0, 3),
         };
         for (int i = 0; i < 4; i++) bar.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
         bar.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
-        bar.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
-        bar.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
-        bar.Controls.AddRange(new Control[] { back, forward, reload, home, address, country, ram });
+        for (int i = 0; i < 3; i++) bar.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+        bar.Controls.AddRange(new Control[] { back, forward, reload, home, address, star, country, ram });
 
         // Docking goes from the last added: the strip on top, the toolbar under it, the page in what is left
         Controls.Add(host);
@@ -171,13 +172,14 @@ sealed class BrowserForm : Form
         BackColor = host.BackColor = Theme.PageBackground;
         divider.BackColor = Theme.Strip;
         bar.BackColor = Theme.Face;
-        foreach (var b in new[] { back, forward, reload, home, country })
+        foreach (var b in new[] { back, forward, reload, home, star, country })
         {
             b.BackColor = Theme.Face;
             b.ForeColor = Theme.Text;
             b.FlatAppearance.MouseOverBackColor = Theme.Mix(Theme.Face, Theme.Text, .12f);
             b.FlatAppearance.MouseDownBackColor = Theme.Mix(Theme.Face, Theme.Text, .2f);
         }
+        if (active != null) ShowStar(active); // gold stays gold
         address.BackColor = Theme.Field;
         address.ForeColor = Theme.Text;
         ram.ForeColor = Theme.Dim;
@@ -417,6 +419,124 @@ sealed class BrowserForm : Form
         tips.SetToolTip(reload, tab.Loading ? "Остановить" : "Обновить (F5)");
         if (switched || !address.Focused) address.Text = AddressOf(tab);
         ShowCountry(tab);
+        ShowStar(tab);
+    }
+
+    /// <summary>The address a tab could be saved under: a site or a file, not a page of this program.</summary>
+    static string? Savable(Tab tab) =>
+        !tab.ShowingInternalPage && !IsInternal(tab.Site) && Openable(tab.Site) is { } u ? u.AbsoluteUri : null;
+
+    /// <summary>The tile an address is saved in, as its own address or as one of its links.</summary>
+    static (Project Project, ProjectLink? Link)? SavedIn(string url)
+    {
+        foreach (var p in ProjectStore.All)
+        {
+            if (SameAddress(p.Url, url)) return (p, null);
+            if (p.Links.FirstOrDefault(l => SameAddress(l.Url, url)) is { } link) return (p, link);
+        }
+        return null;
+    }
+
+    static bool SameAddress(string a, string b) =>
+        Uri.TryCreate(a.Trim(), UriKind.Absolute, out var x) && Uri.TryCreate(b, UriKind.Absolute, out var y) && x == y;
+
+    /// <summary>The project a tab belongs to: the tile it was opened from, else the one on the same site.</summary>
+    static Project? OwnerOf(Tab tab)
+    {
+        if (tab.LastProject != null && ProjectStore.Find(tab.LastProject.Id) is { } opened) return opened;
+        if (!Uri.TryCreate(tab.Site, UriKind.Absolute, out var here) || here.IsFile) return null;
+        return ProjectStore.All.FirstOrDefault(p => p.Addresses().Any(a =>
+            Uri.TryCreate(a, UriKind.Absolute, out var site) && SameSite(site, here)));
+    }
+
+    /// <summary>The star: on sites and files, filled when the address is already on a tile.</summary>
+    void ShowStar(Tab tab)
+    {
+        var url = Savable(tab);
+        star.Visible = url != null;
+        if (url == null) return;
+        var saved = SavedIn(url);
+        var text = saved == null ? GlyphStar : GlyphStarFilled;
+        if (star.Text != text) star.Text = text;
+        star.ForeColor = saved == null ? Theme.Text : Color.FromArgb(0xf5, 0xb3, 0x01);
+        tips.SetToolTip(star, saved is { } s
+            ? "В избранном: " + (s.Link == null ? "плитка «" + s.Project.Name + "»" : "ссылка проекта «" + s.Project.Name + "»")
+            : "Добавить в избранное: плиткой или ссылкой проекта");
+    }
+
+    /// <summary>
+    /// The star's menu: the page as a tile of its own, with the launch settings of the project it belongs to,
+    /// or as a link of a project (its backend, say).
+    /// </summary>
+    void ShowFavoriteMenu()
+    {
+        if (active is not { } tab || Savable(tab) is not { } url) return;
+        var name = tab.Title.Length > 0 ? tab.Title : NameOf(new Uri(url));
+        if (name.Length > 80) name = name.Substring(0, 80).TrimEnd() + "…";
+        var owner = OwnerOf(tab);
+        var menu = NewMenu();
+        if (SavedIn(url) is { } saved)
+        {
+            menu.Items.Add(new ToolStripMenuItem(saved.Link == null
+                ? "Это адрес плитки «" + saved.Project.Name + "»"
+                : "Ссылка «" + saved.Link.Name + "» проекта «" + saved.Project.Name + "»") { Enabled = false });
+            if (saved.Link is { } link)
+                menu.Items.Add(new ToolStripMenuItem("Убрать ссылку из проекта", null, (_, _) => RemoveLink(saved.Project, link)));
+            menu.Items.Add(new ToolStripSeparator());
+        }
+        menu.Items.Add(new ToolStripMenuItem(owner != null && owner.Exe.Length > 0
+                ? "Сохранить плиткой (с запуском «" + owner.Name + "»)" : "Сохранить плиткой",
+            null, (_, _) => SaveAsTile(url, name, owner)));
+        var links = new ToolStripMenuItem("Добавить ссылкой в проект");
+        // The project the page belongs to comes first
+        foreach (var p in ProjectStore.All.OrderBy(p => p == owner ? 0 : 1))
+        {
+            var item = new ToolStripMenuItem(p.Name, null, (_, _) => AddLink(p, url, name)) { Checked = p == owner };
+            if (SameAddress(p.Url, url) || p.Links.Any(l => SameAddress(l.Url, url))) item.Enabled = false;
+            else if (p.Links.Count >= MaxLinks) { item.Enabled = false; item.Text += " (уже " + MaxLinks + " ссылок)"; }
+            links.DropDownItems.Add(item);
+        }
+        if (links.DropDownItems.Count == 0) links.Enabled = false;
+        else if (Theme.Dark)
+        {
+            links.DropDown.Renderer = menu.Renderer;
+            links.DropDown.ForeColor = Theme.Text;
+        }
+        menu.Items.Add(links);
+        menu.Show(star, new Point(0, star.Height));
+    }
+
+    /// <summary>A new tile for the address; a project's page takes the project's program, arguments and colour.</summary>
+    void SaveAsTile(string url, string name, Project? owner)
+    {
+        var p = new Project { Name = name, Url = url };
+        if (owner != null)
+        {
+            p.Color = owner.Color;
+            p.Exe = owner.Exe;
+            p.Args = owner.Args;
+            p.WorkDir = owner.WorkDir;
+            // The address is saved as it is, so the program's printed one is not put in its place
+            p.OpenPrintedUrl = false;
+        }
+        ProjectStore.Save(p);
+        App.Current.ProjectSaved(p);
+        App.Current.FetchSiteIcon(p);
+    }
+
+    void AddLink(Project p, string url, string name)
+    {
+        if (p.Links.Count >= MaxLinks || p.Links.Any(l => SameAddress(l.Url, url))) return;
+        p.Links.Add(new ProjectLink { Name = name, Url = url });
+        ProjectStore.Save(p);
+        App.Current.ProjectSaved(p);
+    }
+
+    void RemoveLink(Project p, ProjectLink link)
+    {
+        if (!p.Links.Remove(link)) return;
+        ProjectStore.Save(p);
+        App.Current.ProjectSaved(p);
     }
 
     /// <summary>The country button: on Google search only, with the code of the picked country or a globe.</summary>
@@ -944,6 +1064,7 @@ sealed class BrowserForm : Form
     public void SendProjects()
     {
         foreach (var tab in tabs) SendProjects(tab);
+        if (active != null) ShowStar(active); // a tile saved or changed: the star follows
     }
 
     void SendProjects(Tab tab)

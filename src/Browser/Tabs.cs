@@ -35,7 +35,8 @@ sealed class Tab
 sealed class TabStrip : Control
 {
     const string GlyphClose = "", GlyphAdd = "", GlyphSound = "";
-    static readonly Color Face = SystemColors.Control; // the toolbar's colour: the tab in front merges with it
+    // The tab in front has the toolbar's colour and merges with it
+    static Color Face => Theme.Face;
 
     readonly ToolTip tip = new();
     readonly Font small = new(BrowserForm.IconFont, 7.5f), plus = new(BrowserForm.IconFont, 9.5f);
@@ -55,8 +56,14 @@ sealed class TabStrip : Control
             | ControlStyles.ResizeRedraw, true);
         SetStyle(ControlStyles.Selectable, false);
         Dock = DockStyle.Top;
-        BackColor = Mix(Face, SystemColors.ControlDark, .3f);
+        BackColor = Theme.Strip;
         Font = new Font("Segoe UI", 9f);
+    }
+
+    public void ApplyTheme()
+    {
+        BackColor = Theme.Strip;
+        Invalidate();
     }
 
     public void SetTabs(IReadOnlyList<Tab> list, Tab? front)
@@ -139,7 +146,7 @@ sealed class TabStrip : Control
             }
             else if (i + 1 < tabs.Count && tabs[i + 1] != active && i + 1 != hover)
             {
-                using var pen = new Pen(Mix(BackColor, SystemColors.ControlText, .25f));
+                using var pen = new Pen(Mix(BackColor, Theme.Text, .25f));
                 g.DrawLine(pen, r.Right - 1, r.Top + r.Height / 4, r.Right - 1, r.Bottom - r.Height / 3);
             }
 
@@ -154,7 +161,7 @@ sealed class TabStrip : Control
             else if (tab.PlayingAudio)
             {
                 var box = new Rectangle(left, r.Top, Unit, r.Height);
-                TextRenderer.DrawText(g, GlyphSound, small, box, SystemColors.ControlText, Center);
+                TextRenderer.DrawText(g, GlyphSound, small, box, Theme.Text, Center);
                 left += Unit + Unit / 4;
             }
 
@@ -162,16 +169,16 @@ sealed class TabStrip : Control
             var close = CloseRect(r);
             int right = withClose ? close.Left - 2 : r.Right - Unit / 3;
             TextRenderer.DrawText(g, tab.Label, Font, Rectangle.FromLTRB(left, r.Top, right, r.Bottom),
-                tab.Ctl == null ? SystemColors.GrayText : SystemColors.ControlText,
+                tab.Ctl == null ? Theme.Dim : Theme.Text,
                 TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis
                 | TextFormatFlags.SingleLine | TextFormatFlags.NoPrefix);
             if (!withClose) continue;
             if (i == hover && overClose)
             {
-                using var brush = new SolidBrush(Mix(front ? Face : BackColor, SystemColors.ControlText, .15f));
+                using var brush = new SolidBrush(Mix(front ? Face : BackColor, Theme.Text, .15f));
                 g.FillEllipse(brush, close);
             }
-            TextRenderer.DrawText(g, GlyphClose, small, close, SystemColors.ControlText, Center);
+            TextRenderer.DrawText(g, GlyphClose, small, close, Theme.Text, Center);
         }
 
         var add = AddRect;
@@ -180,7 +187,7 @@ sealed class TabStrip : Control
             using var brush = new SolidBrush(Mix(BackColor, Face, .6f));
             g.FillEllipse(brush, add);
         }
-        TextRenderer.DrawText(g, GlyphAdd, plus, add, SystemColors.ControlText, Center);
+        TextRenderer.DrawText(g, GlyphAdd, plus, add, Theme.Text, Center);
     }
 
     static GraphicsPath Rounded(Rectangle r, int radius, bool allCorners)
@@ -202,8 +209,7 @@ sealed class TabStrip : Control
         return p;
     }
 
-    static Color Mix(Color a, Color b, float t) => Color.FromArgb(
-        (int)(a.R + (b.R - a.R) * t), (int)(a.G + (b.G - a.G) * t), (int)(a.B + (b.B - a.B) * t));
+    static Color Mix(Color a, Color b, float t) => Theme.Mix(a, b, t);
 
     protected override void OnMouseMove(MouseEventArgs e)
     {

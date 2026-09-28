@@ -53,6 +53,7 @@ sealed class Settings
 
     public string SearchUrl = "https://www.google.com/search?q=";
     public string SearchCountry = "";
+    public string Theme = "auto";
     public bool Gpu = true;
     public string ExtraBrowserArgs = "";
     public string LocalHosts = "";
@@ -60,7 +61,7 @@ sealed class Settings
 
     static readonly string[] Keys =
     {
-        "searchurl", "searchcountry", "gpu", "extrabrowserargs", "localhosts", "otherbrowser",
+        "searchurl", "searchcountry", "theme", "gpu", "extrabrowserargs", "localhosts", "otherbrowser",
     };
 
     public static Settings Load()
@@ -85,6 +86,10 @@ sealed class Settings
             {
                 case "searchurl": s.SearchUrl = value; break;
                 case "searchcountry": s.SearchCountry = value.ToUpperInvariant(); break;
+                case "theme":
+                    var t = value.ToLowerInvariant();
+                    s.Theme = t is "dark" or "light" ? t : "auto";
+                    break;
                 case "gpu": s.Gpu = IsTrue(value); break;
                 case "extrabrowserargs": s.ExtraBrowserArgs = value; break;
                 case "localhosts": s.LocalHosts = value; break;
@@ -130,6 +135,9 @@ sealed class Settings
         "# Страна поиска Google: код из кнопки справа в адресной строке (DE, US…), добавляет к поиску gl и hl.",
         "# Пусто = как обычно. Кнопка сама меняет эту строку.",
         "SearchCountry = " + SearchCountry,
+        "",
+        "# Оформление: auto = как «Режим приложения» в Windows, dark = тёмное, light = светлое",
+        "Theme = " + Theme,
         "",
         "# --- Движок (Edge WebView2) ---",
         "# false = рисовать без видеокарты; нужно только при проблемах с драйвером",

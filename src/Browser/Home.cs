@@ -136,6 +136,14 @@ static class Pages
         (logTail.Length > 0 ? "<pre>" + H(logTail) + "</pre><p><a href=\"" + H(ProgramLog.Url(p)) + "\">Весь вывод программы</a></p>" : "") +
         "<p class=muted>F5 — попробовать ещё раз. Параметры запуска меняются на стартовой странице: правый клик по плитке.</p>");
 
+    /// <summary>A site that does not answer; for a project's site, how to start its program.</summary>
+    public static string Unreachable(string url, Project? p) => Page("Сайт не отвечает", spinner: false,
+        "<p>Адрес <code>" + H(url) + "</code> не отвечает: сервер выключен, адрес неверный или нет сети.</p>" +
+        (p != null && p.Exe.Trim().Length > 0
+            ? "<p>Это сайт проекта «" + H(p.Name) + "». Чтобы запустить его программу, откройте плитку проекта на стартовой странице (Alt+Home).</p>"
+            : "") +
+        "<p><a href=\"" + H(url) + "\">Попробовать ещё раз</a> <span class=muted>(F5)</span></p>");
+
     static string H(string s) => WebUtility.HtmlEncode(s);
 
     static string Page(string title, bool spinner, string body) =>

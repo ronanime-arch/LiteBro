@@ -330,12 +330,29 @@ sealed class BrowserForm : Form
             }
             // Back on the start page nothing is to be tried again on F5
             if (Home.Is(e.Uri)) tab.LastProject = null;
-            if (Home.Is(e.Uri) || !(e.Uri.StartsWith("about:") || e.Uri.StartsWith("data:"))) tab.ShowingInternalPage = false;
+            if (Home.Is(e.Uri) || !(e.Uri.StartsWith("about:") || e.Uri.StartsWith("data:")))
+            {
+                tab.ShowingInternalPage = false;
+                tab.FailedUrl = null;
+            }
             SetLoading(tab, true);
         };
         core.NavigationCompleted += (_, e) =>
         {
             SetLoading(tab, false);
+            // A site that does not answer gets this program's page, not the engine's own one that names Edge
+            if (!e.IsSuccess && IsUnreachable(e.WebErrorStatus) && Uri.TryCreate(core.Source, UriKind.Absolute, out var failed)
+                && !Home.Is(core.Source) && (failed.Scheme == "http" || failed.Scheme == "https"))
+            {
+                var url = failed.AbsoluteUri;
+                BeginInvoke(new Action(() =>
+                {
+                    if (tab.Core != core) return;
+                    ShowInternalPage(tab, Pages.Unreachable(url, ProjectOf(failed)));
+                    tab.FailedUrl = url;
+                    ShowState(tab, switched: true);
+                }));
+            }
             if (syncScroll && IsPane(tab)) WatchScroll(tab, true);
             if (!tab.TrimmedAfterLoad)
             {
@@ -356,6 +373,16 @@ sealed class BrowserForm : Form
             if (e.ProcessFailedKind == CoreWebView2ProcessFailedKind.RenderProcessExited) core.Reload();
         };
     }
+
+    /// <summary>The site is not there: a server that is off, a name that does not resolve, no network.</summary>
+    static bool IsUnreachable(CoreWebView2WebErrorStatus status) => status is CoreWebView2WebErrorStatus.CannotConnect
+        or CoreWebView2WebErrorStatus.HostNameNotResolved or CoreWebView2WebErrorStatus.ConnectionReset
+        or CoreWebView2WebErrorStatus.Disconnected or CoreWebView2WebErrorStatus.Timeout
+        or CoreWebView2WebErrorStatus.ServerUnreachable;
+
+    /// <summary>The project whose site (or one of whose links) an address is on.</summary>
+    static Project? ProjectOf(Uri url) => ProjectStore.All.FirstOrDefault(p => p.Addresses().Any(a =>
+        Uri.TryCreate(a, UriKind.Absolute, out var site) && !site.IsFile && SameSite(site, url)));
 
     static bool IsInternal(string uri) => uri.StartsWith("about:") || uri.StartsWith("data:") || Home.Is(uri);
 
@@ -812,6 +839,7 @@ sealed class BrowserForm : Form
     {
         if (tab.Core == null) return;
         tab.ShowingInternalPage = true;
+        tab.FailedUrl = null;
         tab.Core.NavigateToString(html);
         ShowState(tab, switched: true);
     }
@@ -1015,6 +1043,7 @@ sealed class BrowserForm : Form
         var tab = active;
         if (tab?.Core is not { } core) return;
         if (tab.Loading) core.Stop();
+        else if (tab.ShowingInternalPage && tab.FailedUrl != null) core.Navigate(tab.FailedUrl);
         else if (tab.ShowingInternalPage && tab.LastProject != null) OpenProject(tab, tab.LastProject, tab.LastLink);
         else if (tab.ShowingInternalPage) GoHome();
         else core.Reload();

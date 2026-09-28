@@ -8,9 +8,10 @@ $build = Join-Path $root 'build'
 $since = git -C $root rev-list --count --first-parent 4f0130c5c25c846cabc49732a3e3dfcc758ca087..HEAD
 if ($LASTEXITCODE) { throw 'the version comes from git: build from a clone of the repository' }
 $version = "1.9.$(7 + [int]$since)"
+# FileVersion too: else the file's version text gets a fourth number, 1.9.x.0
 
 Remove-Item $build -Recurse -Force -ErrorAction SilentlyContinue
-dotnet build "$root\src\Browser\LiteBro.csproj" -c Release -o "$build\app" --nologo -v q -p:Version=$version
+dotnet build "$root\src\Browser\LiteBro.csproj" -c Release -o "$build\app" --nologo -v q -p:Version=$version -p:FileVersion=$version
 if ($LASTEXITCODE) { throw 'browser build failed' }
 
 # Forward slashes in entry names, which the installer's ZipArchive expects
@@ -24,7 +25,7 @@ try {
 }
 finally { $zip.Dispose() }
 
-dotnet build "$root\src\Setup\Setup.csproj" -c Release -o "$build\setup" --nologo -v q -p:Version=$version
+dotnet build "$root\src\Setup\Setup.csproj" -c Release -o "$build\setup" --nologo -v q -p:Version=$version -p:FileVersion=$version
 if ($LASTEXITCODE) { throw 'installer build failed' }
 "LiteBro $version"
 New-Item -ItemType Directory -Force "$root\dist" | Out-Null

@@ -288,17 +288,22 @@ function row(e) {
   tr.append(td(e.Time.slice(11)), td(e.Method), td(e.Result, "res"), td(size(e.Size), "num"), td(e.Kind), td(e.Host), td(e.Ip), td(e.Url, "url"));
   tr.title = e.Url;
   tr.addEventListener("click", () => {
-    const next = tr.nextSibling;
-    if (next && next.classList.contains("more")) { next.remove(); return; }
-    const more = document.createElement("tr");
-    more.className = "more";
-    const c = document.createElement("td");
-    c.colSpan = 8;
-    c.textContent = e.Url + (e.Page ? "\nСтраница: " + e.Page : "") + "\nВремя: " + e.Time + (e.Stack ? "\nСтек:\n" + e.Stack : "");
-    more.append(c);
-    tr.after(more);
+    if (expanded.delete(e.Seq)) tr.nextSibling.remove();
+    else { expanded.add(e.Seq); tr.after(details(e)); }
   });
   return tr;
+}
+
+// Rows opened for their details stay open when new entries redraw the table
+const expanded = new Set();
+function details(e) {
+  const more = document.createElement("tr");
+  more.className = "more";
+  const c = document.createElement("td");
+  c.colSpan = 8;
+  c.textContent = e.Url + (e.Page ? "\nСтраница: " + e.Page : "") + "\nВремя: " + e.Time + (e.Stack ? "\nСтек:\n" + e.Stack : "");
+  more.append(c);
+  return more;
 }
 
 // Newest on top
@@ -306,7 +311,10 @@ function draw() {
   const rows = $("rows");
   rows.textContent = "";
   const shown = entries.filter(matches).sort(compare).slice(0, 1000);
-  for (const e of shown) rows.append(row(e));
+  for (const e of shown) {
+    rows.append(row(e));
+    if (expanded.has(e.Seq)) rows.append(details(e));
+  }
   $("empty").hidden = shown.length > 0;
   $("empty").textContent = entries.length ? "Под фильтр ничего не подходит." : "Запросов в интернет пока нет.";
 }
@@ -318,7 +326,7 @@ async function poll() {
     const r = await fetch("/net/log?after=" + last, { cache: "no-store" });
     const d = await r.json();
     // The journal was cleared (or the browser restarted): start over
-    if (d.last < last) { entries = []; last = 0; }
+    if (d.last < last) { entries = []; last = 0; expanded.clear(); }
     if (d.entries.length) {
       entries = entries.concat(d.entries).slice(-2000);
       last = d.entries[d.entries.length - 1].Seq;
@@ -332,7 +340,7 @@ async function poll() {
 const KEYS = [
   ["Вкладки и окна", [
     ["Ctrl+T", "Новая вкладка со стартовой страницей"],
-    ["Ctrl+W, Ctrl+F4", "Закрыть вкладку (последняя закрывает окно)"],
+    ["Ctrl+W, Ctrl+F4", "Закрыть вкладку (вместо последней откроется стартовая страница)"],
     ["Ctrl+Tab, Ctrl+Shift+Tab", "Следующая и предыдущая вкладка"],
     ["Ctrl+N", "Новое окно"],
     ["Средний клик по вкладке", "Закрыть вкладку"],
@@ -428,7 +436,7 @@ $("cors").addEventListener("change", e => {
 const exportAs = format => post({ type: "netExport", format, seqs: entries.filter(matches).map(e => e.Seq) });
 $("json").addEventListener("click", () => exportAs("json"));
 $("csv").addEventListener("click", () => exportAs("csv"));
-$("clear").addEventListener("click", () => { post({ type: "netClear" }); entries = []; last = 0; draw(); });
+$("clear").addEventListener("click", () => { post({ type: "netClear" }); entries = []; last = 0; expanded.clear(); draw(); });
 $("onlyBlocked").addEventListener("change", draw);
 
 let allowShown = null;

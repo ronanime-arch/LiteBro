@@ -129,11 +129,18 @@ sealed class App : ApplicationContext
     public async Task<CoreWebView2Environment> GetEnvironmentAsync()
     {
         // While the engine restarts with other flags, new tabs wait for the new one
-        while (restart != null) await restart;
+        while (restart is { IsCompleted: false } r) await r;
         return await (envTask ??= CreateEnvironmentAsync());
     }
 
     Task? restart;
+
+    /// <summary>The engine is being restarted: a WebView made now belongs to the old one.</summary>
+    public bool Restarting => restart is { IsCompleted: false };
+
+    /// <summary>The engine to answer a request with: the current one, or during a restart the one going away.</summary>
+    public CoreWebView2Environment? ResponseEnv => Env ?? oldEnv;
+    CoreWebView2Environment? oldEnv;
 
     async Task<CoreWebView2Environment> CreateEnvironmentAsync()
     {
@@ -233,15 +240,19 @@ sealed class App : ApplicationContext
     bool Open(string address)
     {
         if (exiting) return false;
+        // A window hidden while it clears data on exit is going: a new one opens instead
+        var open = forms.Where(f => !f.Closing).ToList();
+        var last = lastActive is { Closing: false } ? lastActive : open.LastOrDefault();
         if (address.Length == 0)
         {
-            Show(lastActive ?? forms.LastOrDefault());
+            if (last == null) OpenWindow(null, home: true).Show();
+            else Show(last);
             return true;
         }
-        var window = forms.OrderByDescending(f => f == lastActive).FirstOrDefault(f => f.TryFocusTabOn(address));
+        var window = open.OrderByDescending(f => f == lastActive).FirstOrDefault(f => f.TryFocusTabOn(address));
         if (window == null)
         {
-            window = lastActive ?? forms.LastOrDefault();
+            window = last;
             if (window == null)
             {
                 OpenWindow(address).Show();
@@ -369,6 +380,8 @@ sealed class App : ApplicationContext
     /// </summary>
     async Task RestartEngineAsync()
     {
+        // Out of the caller first: it may be a WebView's own event, and restart must hold this task before it ends
+        await Task.Yield();
         try
         {
             do
@@ -381,6 +394,7 @@ sealed class App : ApplicationContext
                     foreach (var form in forms.ToList()) form.UnloadAll();
                     await Task.WhenAny(exited.Task, Task.Delay(15000));
                 }
+                oldEnv = env ?? oldEnv;
                 Env = null;
                 envTask = null;
                 await (envTask = CreateEnvironmentAsync());

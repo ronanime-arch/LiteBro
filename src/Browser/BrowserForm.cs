@@ -101,8 +101,8 @@ sealed class BrowserForm : Form
         Size = new Size(1100, 800);
         MinimumSize = new Size(480, 320);
 
-        back = MakeButton(GlyphBack, "Назад (Alt+←)", () => Core?.GoBack());
-        forward = MakeButton(GlyphForward, "Вперёд (Alt+→)", () => Core?.GoForward());
+        back = MakeButton(GlyphBack, "Назад (Alt+←)", () => Step(-1));
+        forward = MakeButton(GlyphForward, "Вперёд (Alt+→)", () => Step(1));
         reload = MakeButton(GlyphReload, "Обновить (F5)", ReloadOrStop);
         reset = MakeButton(GlyphReset, "Сбросить Service Worker и кэш сайта, загрузить заново (Ctrl+Shift+R)", ResetSite);
         reset.Visible = false;
@@ -289,12 +289,19 @@ sealed class BrowserForm : Form
     /// <summary>Gives a tab its WebView: a new tab, or one closed after a long time in the background.</summary>
     async Task<bool> LoadAsync(Tab tab, string? url)
     {
+        if (url != null) tab.Address = url; // the strip and the title know the page before the WebView does
         CoreWebView2Controller c;
         try
         {
-            var env = await App.Current.GetEnvironmentAsync();
-            if (IsDisposed) return false;
-            c = await App.Current.CreateControllerAsync(env, host.Handle, tab.Profile);
+            while (true)
+            {
+                var env = await App.Current.GetEnvironmentAsync();
+                if (IsDisposed) return false;
+                c = await App.Current.CreateControllerAsync(env, host.Handle, tab.Profile);
+                // The engine restarted meanwhile: this WebView belongs to the old one, which is to go
+                if (env == App.Current.Env && !App.Current.Restarting) break;
+                c.Close();
+            }
         }
         catch (Exception ex)
         {
@@ -308,6 +315,12 @@ sealed class BrowserForm : Form
         {
             c.Close();
             return false;
+        }
+        // Loaded twice at once (picked again while loading, or after an engine restart): the first one stays
+        if (tab.Ctl != null)
+        {
+            c.Close();
+            return true;
         }
         c.IsVisible = false; // shown once it is the tab in front
         tab.Ctl = c;
@@ -358,7 +371,12 @@ sealed class BrowserForm : Form
             tab.Address = core.Source;
             ShowState(tab);
         };
-        core.HistoryChanged += (_, _) => ShowState(tab);
+        core.HistoryChanged += async (_, _) =>
+        {
+            ShowState(tab);
+            // Read now: when the WebView is replaced there is no time to ask it
+            if (await HistoryOf(core) is { } h && tab.Core == core) Remember(tab, h);
+        };
         core.NavigationStarting += (_, e) =>
         {
             // A search typed on Google's own page keeps the picked country; history is left as it was
@@ -382,6 +400,10 @@ sealed class BrowserForm : Form
                 }));
                 return;
             }
+            // A new page drops what was ahead, as the engine drops its own forward entries; this program's pages do not
+            if (e.NavigationKind == CoreWebView2NavigationKind.NewDocument && !e.IsRedirected && !tab.Stepping && !e.Uri.StartsWith("data:"))
+                tab.Ahead.Clear();
+            tab.Stepping = false;
             // Back on the start page nothing is to be tried again on F5
             if (Home.Is(e.Uri)) tab.LastProject = null;
             if (Home.Is(e.Uri) || !(e.Uri.StartsWith("about:") || e.Uri.StartsWith("data:")))
@@ -447,7 +469,10 @@ sealed class BrowserForm : Form
         if (tab.Profile == profile) return tab.Ctl == null || tab.Core != null;
         tab.Profile = profile;
         if (tab.Ctl is not { } old) return true;
+        await Task.Yield(); // maybe called from the old WebView's own event: closed after it returns
+        if (tab.Ctl != old || tab.Profile != profile) return false;
         StopTerm(tab);
+        KeepHistory(tab, current: true, ahead: false);
         tab.Ctl = null;
         tab.Suspended = tab.Loading = tab.PlayingAudio = false;
         old.Close();
@@ -467,7 +492,9 @@ sealed class BrowserForm : Form
     {
         if (url.IsFile) return null;
         bool On(Project p) => p.Addresses().Any(a => Uri.TryCreate(a, UriKind.Absolute, out var site) && !site.IsFile && SameSite(site, url));
-        return tab.LastProject is { } last && ProjectStore.Find(last.Id) is { } p && On(p) ? p : ProjectOf(url);
+        if (tab.LastProject is { } last && ProjectStore.Find(last.Id) is { } p && On(p)) return p;
+        // Of the tiles on that site, one in the tab's own profile keeps the tab where it is
+        return ProjectStore.All.FirstOrDefault(x => x.Profile == tab.Profile && On(x)) ?? ProjectOf(url);
     }
 
     static bool IsInternal(string uri) => uri.StartsWith("about:") || uri.StartsWith("data:") || Home.Is(uri);
@@ -1000,6 +1027,8 @@ sealed class BrowserForm : Form
         if (tab.Ctl is not { } c) return;
         // A project's start or failure page comes back as the project's own address, never as a new start
         tab.Address = tab.Site;
+        KeepHistory(tab, current: false, ahead: true);
+        tab.Stepping = true; // loaded again when picked: what was ahead stays
         tab.Ctl = null;
         tab.Suspended = tab.Loading = tab.PlayingAudio = false;
         c.Close();
@@ -1074,8 +1103,10 @@ sealed class BrowserForm : Form
             var script = NetGuard.PageScript();
             _ = core.ExecuteScriptAsync(script);
             if (!NetGuard.Watching) return;
+            // Two quick changes overlap here: only the latest one's script stays
+            int generation = ++tab.NetGeneration;
             var id = await core.AddScriptToExecuteOnDocumentCreatedAsync(script);
-            if (tab.Core == core && NetGuard.Watching && tab.NetScript == null) tab.NetScript = id;
+            if (tab.Core == core && NetGuard.Watching && tab.NetScript == null && generation == tab.NetGeneration) tab.NetScript = id;
             else core.RemoveScriptToExecuteOnDocumentCreated(id);
         }
         catch (Exception) { } // the WebView closed meanwhile
@@ -1138,7 +1169,7 @@ sealed class BrowserForm : Form
     /// <summary>In «только localhost» mode a request to the internet gets a refusal instead; the journal notes it.</summary>
     void OnNetRequest(Tab tab, CoreWebView2WebResourceRequestedEventArgs e)
     {
-        var env = App.Current.Env;
+        var env = App.Current.ResponseEnv;
         if (env == null || !NetGuard.LocalOnly || !Uri.TryCreate(e.Request.Uri, UriKind.Absolute, out var url) || !NetGuard.ShouldBlock(url))
             return;
         bool page = e.ResourceContext == CoreWebView2WebResourceContext.Document;
@@ -1340,6 +1371,116 @@ sealed class BrowserForm : Form
         foreach (var link in p.Links.ToList()) await OpenProjectInNewTabAsync(p, front: false, link.Url);
     }
 
+    /// <summary>
+    /// Back (-1) or forward (1) in the tab in front. This program's own pages (a project's start or failure page)
+    /// and the address they stood for are passed over, else back from a project would land on its start page again.
+    /// Past the engine's history come the pages of the WebViews the tab had before; a tab with nothing behind it
+    /// goes back to the tiles.
+    /// </summary>
+    async void Step(int dir)
+    {
+        if (active is not { } tab || tab.Core is not { } core) return;
+        var h = await HistoryOf(core);
+        if (tab.Core != core) return;
+        if (h == null)
+        {
+            try { if (dir < 0) core.GoBack(); else core.GoForward(); }
+            catch (Exception) { }
+            return;
+        }
+        Remember(tab, h.Value);
+        var (urls, ids, at) = h.Value;
+        if (at < tab.Floor) // went below it by the mouse's own back button: the rest no longer lines up
+        {
+            tab.Floor = 0;
+            tab.Before.Clear();
+            tab.Ahead.Clear();
+        }
+        var here = tab.Site;
+        for (var i = at + dir; i >= tab.Floor && i < urls.Length; i += dir)
+        {
+            if (!IsPage(urls[i]) || urls[i] == here) continue;
+            try { await core.CallDevToolsProtocolMethodAsync("Page.navigateToHistoryEntry", $"{{\"entryId\":{ids[i]}}}"); }
+            catch (Exception) { }
+            return;
+        }
+        var from = dir < 0 ? tab.Before : tab.Ahead;
+        string? target = null;
+        while (target == null && from.Count > 0)
+        {
+            target = from[from.Count - 1];
+            from.RemoveAt(from.Count - 1);
+            if (target == here) target = null;
+        }
+        if (target == null && dir < 0 && !Home.IsTiles(here)) target = Home.Url;
+        if (target == null) return;
+        // The engine's entries on the other side, and this page, move over: the new page cuts them off
+        if (dir < 0)
+        {
+            for (var i = urls.Length - 1; i > at; i--) if (IsPage(urls[i])) tab.Ahead.Add(urls[i]);
+            if (IsPage(here)) tab.Ahead.Add(here);
+        }
+        else
+        {
+            for (var i = tab.Floor; i < at; i++) if (IsPage(urls[i])) tab.Before.Add(urls[i]);
+            if (IsPage(here)) tab.Before.Add(here);
+        }
+        tab.Floor = at + 1;
+        tab.Stepping = true;
+        if (Home.Is(target)) tab.LastProject = null;
+        core.Navigate(target);
+    }
+
+    /// <summary>An address worth going back to: not about:blank nor this program's start or failure page.</summary>
+    static bool IsPage(string url) => url.Length > 0 && !url.StartsWith("about:") && !url.StartsWith("data:");
+
+    /// <summary>The engine's history of a WebView: addresses, their entry ids, and the entry it is on.</summary>
+    static async Task<(string[] urls, int[] ids, int at)?> HistoryOf(CoreWebView2 core)
+    {
+        try
+        {
+            var h = ProjectStore.Json.Deserialize<NavHistory>(await core.CallDevToolsProtocolMethodAsync("Page.getNavigationHistory", "{}"));
+            if (h?.entries == null || h.entries.Count == 0) return null;
+            return (h.entries.Select(x => x.url ?? "").ToArray(), h.entries.Select(x => x.id).ToArray(), h.currentIndex);
+        }
+        catch (Exception) { return null; }
+    }
+
+    internal sealed class NavHistory
+    {
+        public int currentIndex { get; set; }
+        public List<NavEntry>? entries { get; set; }
+    }
+
+    internal sealed class NavEntry
+    {
+        public int id { get; set; }
+        public string? url { get; set; }
+    }
+
+    static void Remember(Tab tab, (string[] urls, int[] ids, int at) h)
+    {
+        tab.Trail = h.urls;
+        tab.TrailAt = h.at;
+    }
+
+    /// <summary>The tab's WebView is about to be replaced: its history goes on in Before (and Ahead).</summary>
+    static void KeepHistory(Tab tab, bool current, bool ahead)
+    {
+        // A step already moved it over
+        if (!tab.Stepping)
+        {
+            var t = tab.Trail;
+            for (var i = tab.Floor; i < tab.TrailAt && i < t.Length; i++) if (IsPage(t[i])) tab.Before.Add(t[i]);
+            if (current && IsPage(tab.Site)) tab.Before.Add(tab.Site);
+            if (ahead) for (var i = t.Length - 1; i > tab.TrailAt; i--) if (IsPage(t[i])) tab.Ahead.Add(t[i]);
+        }
+        // Consecutive repeats come from a page and its own start page, say
+        for (var i = tab.Before.Count - 1; i > 0; i--) if (tab.Before[i] == tab.Before[i - 1]) tab.Before.RemoveAt(i);
+        tab.Trail = Array.Empty<string>();
+        tab.Floor = 0;
+    }
+
     /// <summary>The start page with the project tiles.</summary>
     void GoHome()
     {
@@ -1362,6 +1503,8 @@ sealed class BrowserForm : Form
             ShowInternalPage(tab, Pages.Starting(p, url.AbsoluteUri, launcher));
             // The address the program prints stands for the project's own, never for a link
             var error = await launcher.StartAndWaitAsync(url, printed: link == null);
+            // Left while it started (back to the tiles, say): the tab stays where it went
+            if (tab.LastProject != p || !tab.ShowingInternalPage) return;
             if (error != null)
             {
                 ShowInternalPage(tab, Pages.Failed(p, error, launcher.LogTail()));
@@ -1396,8 +1539,15 @@ sealed class BrowserForm : Form
 
     void OnHomeRequest(object? sender, CoreWebView2WebResourceRequestedEventArgs e)
     {
-        var env = App.Current.Env;
+        var env = App.Current.ResponseEnv;
         if (env == null || !Home.Is(e.Request.Uri)) return;
+        // Consoles, the journal and the rest are read only by the browser's own pages: with CORS off
+        // any site could fetch them otherwise (a console's output, tokens included)
+        if (e.ResourceContext != CoreWebView2WebResourceContext.Document && !(sender is CoreWebView2 asker && Home.Is(asker.Source)))
+        {
+            e.Response = env.CreateWebResourceResponse(null, 403, "Forbidden", "");
+            return;
+        }
         var path = new Uri(e.Request.Uri).AbsolutePath;
         if (path == "/")
             e.Response = env.CreateWebResourceResponse(Home.Page(), 200, "OK", Home.Headers);
@@ -1463,10 +1613,12 @@ sealed class BrowserForm : Form
                 break;
             case "net":
                 // The start page's switch or the /net page: what is not sent stays as it is
-                App.Current.SetNet(m.TryGetValue("localOnly", out var lo) ? lo is true : NetGuard.LocalOnly,
-                    m.TryGetValue("journal", out var j) ? j is true : NetGuard.Journal,
-                    Text("allow") ?? NetGuard.AllowText,
-                    m.TryGetValue("cors", out var cors) ? cors is true : NetGuard.IgnoreCors);
+                bool localOnly = m.TryGetValue("localOnly", out var lo) ? lo is true : NetGuard.LocalOnly,
+                    journal = m.TryGetValue("journal", out var j) ? j is true : NetGuard.Journal,
+                    ignoreCors = m.TryGetValue("cors", out var cors) ? cors is true : NetGuard.IgnoreCors;
+                var allow = Text("allow") ?? NetGuard.AllowText;
+                // Not from inside the WebView's own event: an engine restart closes this WebView too
+                BeginInvoke(new Action(() => App.Current.SetNet(localOnly, journal, allow, ignoreCors)));
                 break;
             case "netExport" when m.TryGetValue("seqs", out var seqs) && seqs is System.Collections.IEnumerable list:
                 var numbers = list.Cast<object>().Select(o => o is int i ? i : o is long l ? l : -1L).Where(n => n > 0).ToList();
@@ -1737,9 +1889,9 @@ sealed class BrowserForm : Form
             case Keys.Alt | Keys.Home:
                 return GoHome;
             case Keys.Alt | Keys.Left:
-                return () => Core?.GoBack();
+                return () => Step(-1);
             case Keys.Alt | Keys.Right:
-                return () => Core?.GoForward();
+                return () => Step(1);
             case Keys.F5:
             case Keys.Control | Keys.R:
                 return ReloadOrStop;
@@ -1791,14 +1943,26 @@ sealed class BrowserForm : Form
         var deferral = e.GetDeferral();
         try
         {
-            // A new window shares its opener's profile: the engine wants it so, and a login popup needs its cookies
-            var tab = await CreateTabAsync(null, tabs.FirstOrDefault(t => t.Core == sender)?.Profile ?? "");
-            if (tab?.Core is { } core)
+            // A new window shares its opener's profile (the engine wants it so, and a login popup needs its cookies)
+            // and its project, so that the site does not move it into another tile's profile
+            var opener = tabs.FirstOrDefault(t => t.Core == sender);
+            var tab = await CreateTabAsync(null, opener?.Profile ?? "");
+            if (tab?.Core is not { } core) return;
+            tab.LastProject = opener?.LastProject;
+            try
             {
                 e.NewWindow = core;
                 e.Handled = true;
-                Add(tab, front);
             }
+            catch (Exception)
+            {
+                // The opener went meanwhile (closed, unloaded, the engine restarted)
+                tab.Closed = true;
+                tab.Ctl?.Close();
+                tab.Ctl = null;
+                return;
+            }
+            Add(tab, front);
         }
         finally
         {
@@ -1874,12 +2038,16 @@ sealed class BrowserForm : Form
 
     bool clearing;
 
+    /// <summary>Hidden while it clears cookies and cache on exit: it takes no more addresses.</summary>
+    public bool Closing => clearing;
+
     protected override async void OnFormClosing(FormClosingEventArgs e)
     {
         base.OnFormClosing(e);
         if (e.Cancel) return;
         // The last window: cookies and cache go first, while the engine still runs (a few seconds at most)
-        if (!clearing && App.Current.ClearsOnClose(this))
+        if (!clearing && e.CloseReason != CloseReason.WindowsShutDown && e.CloseReason != CloseReason.TaskManagerClosing
+            && App.Current.ClearsOnClose(this))
         {
             clearing = true;
             e.Cancel = true;

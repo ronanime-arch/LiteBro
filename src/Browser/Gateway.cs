@@ -82,7 +82,8 @@ static class Gateway
 
     static async Task ServeAsync(TcpClient client)
     {
-        var tunnel = new Tunnel { Client = client, Server = new TcpClient() };
+        // Dual mode: the plain TcpClient of .NET Framework reaches IPv4 only
+        var tunnel = new Tunnel { Client = client, Server = new TcpClient(AddressFamily.InterNetworkV6) { Client = { DualMode = true } } };
         try
         {
             client.NoDelay = true;

@@ -350,6 +350,13 @@ sealed class Launcher
         path = path.Trim().Trim('"');
         if (path.Length == 0) return;
         OpenLog();
+        // A running command would read the change as its own input
+        if (CommandRunning)
+        {
+            Write("Папку можно сменить, когда команда закончится.");
+            changed();
+            return;
+        }
         string full;
         try { full = Path.GetFullPath(Path.Combine(CommandDir, Environment.ExpandEnvironmentVariables(path))); }
         catch (Exception e) when (e is ArgumentException || e is NotSupportedException || e is IOException)
@@ -360,7 +367,8 @@ sealed class Launcher
         }
         if (!Directory.Exists(full)) Write("Нет такой папки: " + full);
         // A running PowerShell keeps its own folder: it goes there itself
-        else if (ProgramLog.IsShell(Project) && shell is { HasExited: false }) RunInShell("Set-Location -LiteralPath '" + full.Replace("'", "''") + "'");
+        else if (ProgramLog.IsShell(Project) && shell is { HasExited: false }) RunInShell("Set-Location -LiteralPath ([Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('" +
+            Convert.ToBase64String(Encoding.UTF8.GetBytes(full)) + "')))"); // no quoting: PowerShell has curly quotes too
         else
         {
             Write(CommandDir + ">cd /d \"" + full + "\"");

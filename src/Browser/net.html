@@ -16,6 +16,10 @@
 html, body { margin: 0; height: 100%; background: var(--bg); color: var(--fg); font: 14px/1.45 var(--text); }
 body { display: flex; flex-direction: column; }
 header { padding: 16px 22px 12px; display: grid; gap: 12px; border-bottom: 1px solid var(--line); }
+/* Out of the way, in the top right corner */
+header { position: relative; }
+header > .row:first-child { padding-right: 150px; }
+#keysOpen { position: absolute; top: 14px; right: 22px; }
 h1 { margin: 0; font-size: 20px; font-weight: 600; }
 .row { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 22px; }
 .muted { color: var(--muted); font-size: 12.5px; }
@@ -86,6 +90,7 @@ kbd { font: 12px Consolas, monospace; padding: 1px 6px; border: 1px solid var(--
       <input type="checkbox" id="journal"><span class="track"></span><span>Вести журнал и без режима</span></label>
     <label class="switch" title="Когда закрывается последнее окно LiteBro. Хранилище сайтов (localStorage, IndexedDB) остаётся. Проекты с галочкой «Не удалять cookies и кэш при выходе» (в настройках плитки) сохраняют свои.">
       <input type="checkbox" id="clearOnExit"><span class="track"></span><span>Удалять cookies и кэш при выходе</span></label>
+    <button id="keysOpen" title="Все горячие клавиши и приёмы браузера с описанием">Быстрые команды</button>
   </div>
   <details id="allowBox">
     <summary>Разрешённые сайты (<span id="allowCount">0</span>)</summary>
@@ -97,7 +102,6 @@ kbd { font: 12px Consolas, monospace; padding: 1px 6px; border: 1px solid var(--
     <span class="muted">Фильтр: нажмите на заголовок колонки.</span>
     <button id="resetFilters" hidden>Сбросить фильтры</button>
     <label class="switch"><input type="checkbox" id="onlyBlocked"><span class="track"></span><span>Только заблокированные</span></label>
-    <button id="keysOpen" title="Все горячие клавиши и приёмы браузера с описанием">Быстрые команды</button>
     <button id="json" title="Записи под фильтром в файл JSON">Выгрузить JSON</button>
     <button id="csv" title="Записи под фильтром в файл CSV (для Excel, через точку с запятой)">Выгрузить CSV</button>
     <button id="clear">Очистить журнал</button>

@@ -45,6 +45,22 @@ tr.entry { cursor: pointer; }
 tr.entry:hover td { background: rgba(127, 127, 127, .08); }
 tr.more td { white-space: pre-wrap; word-break: break-all; font: 12px Consolas, monospace; color: var(--muted); padding: 6px 10px 10px 24px; }
 #empty { padding: 28px 22px; }
+th.col { cursor: pointer; user-select: none; }
+th.col:hover { background: rgba(127, 127, 127, .15); }
+th.col::after { content: " \25BE"; color: var(--muted); }
+th.col.on { color: var(--accent); }
+th.col.on::after { content: " \25BE\2009\25CF"; color: var(--accent); }
+#pop { position: fixed; z-index: 5; width: 320px; max-height: 60vh; display: flex; flex-direction: column; gap: 6px; padding: 8px;
+  background: var(--card); border: 1px solid var(--line); border-radius: 8px; box-shadow: 0 6px 24px rgba(0, 0, 0, .25); }
+#pop[hidden] { display: none; }
+#pop input[type=search] { min-width: 0; width: 100%; }
+#popList { overflow: auto; flex: 1; }
+#popList label { display: flex; gap: 8px; align-items: center; padding: 2px 4px; border-radius: 4px; cursor: pointer; font-size: 12.5px; }
+#popList label:hover { background: rgba(127, 127, 127, .12); }
+#popList .v { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#popList .n { color: var(--muted); font-variant-numeric: tabular-nums; }
+#pop .row { gap: 8px; }
+#resetFilters[hidden] { display: none; }
 </style>
 </head>
 <body>
@@ -65,7 +81,8 @@ tr.more td { white-space: pre-wrap; word-break: break-all; font: 12px Consolas, 
       <span class="muted">По одному на строку. *.example.com пропускает сам сайт и все его поддомены. Уже открытые страницы получат список после обновления.</span></div>
   </details>
   <div class="row">
-    <input type="search" id="filter" placeholder="Фильтр: домен, адрес, метод, статус, инициатор">
+    <span class="muted">Фильтр: нажмите на заголовок колонки.</span>
+    <button id="resetFilters" hidden>Сбросить фильтры</button>
     <label class="switch"><input type="checkbox" id="onlyBlocked"><span class="track"></span><span>Только заблокированные</span></label>
     <button id="json" title="Записи под фильтром в файл JSON">Выгрузить JSON</button>
     <button id="csv" title="Записи под фильтром в файл CSV (для Excel, через точку с запятой)">Выгрузить CSV</button>
@@ -76,10 +93,15 @@ tr.more td { white-space: pre-wrap; word-break: break-all; font: 12px Consolas, 
 </header>
 <div id="wrap">
   <table>
-    <thead><tr><th>Время</th><th>Метод</th><th>Результат</th><th>Размер</th><th>Инициатор</th><th>Домен</th><th>IP</th><th>Адрес</th></tr></thead>
+    <thead><tr><th>Время</th><th class="col" data-col="Method">Метод</th><th class="col" data-col="Result">Результат</th><th>Размер</th><th class="col" data-col="Kind">Инициатор</th><th class="col" data-col="Host">Домен</th><th class="col" data-col="Ip">IP</th><th class="col" data-col="Url">Адрес</th></tr></thead>
     <tbody id="rows"></tbody>
   </table>
   <p class="muted" id="empty">Запросов в интернет пока нет.</p>
+</div>
+<div id="pop" hidden>
+  <input type="search" id="popFind" placeholder="Найти значение">
+  <div class="row"><button id="popAll">Все</button><button id="popNone">Ни одного</button><button id="popOnly" hidden>Только найденные</button></div>
+  <div id="popList"></div>
 </div>
 <script>
 const $ = s => document.getElementById(s);
@@ -100,11 +122,95 @@ function td(text, cls) {
   return c;
 }
 
-function matches(e) {
+// Column filters: the values let through, per column; a column without one lets everything through
+const filters = {};
+const value = (e, col) => e[col] || "";
+
+function matches(e, except) {
   if ($("onlyBlocked").checked && !e.Blocked) return false;
-  const f = $("filter").value.trim().toLowerCase();
-  return !f || [e.Url, e.Method, e.Ip, e.Kind, e.Result, e.Page].join(" ").toLowerCase().includes(f);
+  for (const col in filters) if (col !== except && !filters[col].has(value(e, col))) return false;
+  return true;
 }
+
+function showFilters() {
+  const n = Object.keys(filters).length;
+  for (const th of document.querySelectorAll("th.col")) th.classList.toggle("on", th.dataset.col in filters);
+  $("resetFilters").hidden = !n;
+  $("resetFilters").textContent = "Сбросить фильтры (" + n + ")";
+}
+
+let popCol = null;
+// Values of the column among the entries the other filters let through, most frequent first
+function popValues() {
+  const counts = new Map();
+  for (const e of entries) if (matches(e, popCol)) { const v = value(e, popCol); counts.set(v, (counts.get(v) || 0) + 1); }
+  return [...counts].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
+}
+
+function popDraw() {
+  const find = $("popFind").value.trim().toLowerCase();
+  const list = $("popList");
+  list.textContent = "";
+  const all = popValues().filter(([v]) => !find || v.toLowerCase().includes(find));
+  const on = filters[popCol];
+  for (const [v, n] of all.slice(0, 500)) {
+    const l = document.createElement("label");
+    const box = document.createElement("input");
+    box.type = "checkbox";
+    box.checked = !on || on.has(v);
+    box.addEventListener("change", () => toggle(v, box.checked));
+    const name = document.createElement("span");
+    name.className = "v";
+    name.textContent = v || "(пусто)";
+    name.title = v;
+    const count = document.createElement("span");
+    count.className = "n";
+    count.textContent = n;
+    l.append(box, name, count);
+    list.append(l);
+  }
+  if (!all.length) list.textContent = "Нет значений.";
+  $("popOnly").hidden = !find;
+}
+
+function setFilter(col, set) {
+  if (set) filters[col] = set; else delete filters[col];
+  showFilters();
+  draw();
+}
+
+function toggle(v, keep) {
+  const set = new Set(filters[popCol] || popValues().map(([x]) => x));
+  if (keep) set.add(v); else set.delete(v);
+  // Every value ticked again: no filter, so new values show up too
+  setFilter(popCol, popValues().every(([x]) => set.has(x)) ? null : set);
+}
+
+function openPop(th) {
+  popCol = th.dataset.col;
+  $("popFind").value = "";
+  popDraw();
+  const pop = $("pop"), r = th.getBoundingClientRect();
+  pop.hidden = false;
+  pop.style.top = r.bottom + 2 + "px";
+  pop.style.left = Math.max(8, Math.min(r.left, innerWidth - pop.offsetWidth - 8)) + "px";
+  $("popFind").focus();
+}
+
+for (const th of document.querySelectorAll("th.col"))
+  th.addEventListener("click", ev => { ev.stopPropagation(); if (!$("pop").hidden && popCol === th.dataset.col) $("pop").hidden = true; else openPop(th); });
+$("pop").addEventListener("click", ev => ev.stopPropagation());
+document.addEventListener("click", () => { $("pop").hidden = true; });
+document.addEventListener("keydown", ev => { if (ev.key === "Escape") $("pop").hidden = true; });
+$("popFind").addEventListener("input", popDraw);
+$("popAll").addEventListener("click", () => { setFilter(popCol, null); popDraw(); });
+$("popNone").addEventListener("click", () => { setFilter(popCol, new Set()); popDraw(); });
+$("popOnly").addEventListener("click", () => {
+  const find = $("popFind").value.trim().toLowerCase();
+  setFilter(popCol, new Set(popValues().map(([v]) => v).filter(v => v.toLowerCase().includes(find))));
+  popDraw();
+});
+$("resetFilters").addEventListener("click", () => { for (const col in filters) delete filters[col]; showFilters(); draw(); });
 
 function row(e) {
   const tr = document.createElement("tr");
@@ -177,7 +283,6 @@ const exportAs = format => post({ type: "netExport", format, seqs: entries.filte
 $("json").addEventListener("click", () => exportAs("json"));
 $("csv").addEventListener("click", () => exportAs("csv"));
 $("clear").addEventListener("click", () => { post({ type: "netClear" }); entries = []; last = 0; draw(); });
-$("filter").addEventListener("input", draw);
 $("onlyBlocked").addEventListener("change", draw);
 
 let allowShown = null;

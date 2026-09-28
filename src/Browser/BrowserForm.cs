@@ -4,6 +4,7 @@ using System.Drawing;
 using System.IO;
 using System.Linq;
 using System.Runtime.InteropServices;
+using System.Text;
 using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using System.Windows.Forms;
@@ -321,6 +322,7 @@ sealed class BrowserForm : Form
         {
             if (tab.Address.StartsWith(ProgramLog.Url(ProgramLog.Shell)) && !core.Source.StartsWith(ProgramLog.Url(ProgramLog.Shell)))
                 App.Current.ShellMaybeUnused();
+            if (tab.Term != null && !TermPage.Is(core.Source)) StopTerm(tab);
             tab.Address = core.Source;
             ShowState(tab);
         };
@@ -708,6 +710,7 @@ sealed class BrowserForm : Form
             EndSplit();
         }
         tab.Closed = true;
+        StopTerm(tab);
         tabs.RemoveAt(i);
         App.Current.ShellMaybeUnused();
         var c = tab.Ctl;
@@ -742,7 +745,8 @@ sealed class BrowserForm : Form
         foreach (var tab in tabs)
         {
             if (tab.InactiveSince is not { } since || tab.Core is not { } core) continue;
-            if (core.IsDocumentPlayingAudio || App.Current.IsRunningSite(tab.Site)) continue;
+            // Nor a terminal: what runs in it goes on printing
+            if (core.IsDocumentPlayingAudio || tab.Term != null || App.Current.IsRunningSite(tab.Site)) continue;
             // A page Chromium refused to pause is busy with something (a call, say): it is not closed either
             if (tab.Suspended && now - since >= UnloadAfter) Unload(tab);
             else if (!tab.Suspended && now - since >= SuspendAfter) Suspend(tab, core);
@@ -797,6 +801,82 @@ sealed class BrowserForm : Form
     {
         var tab = await CreateTabAsync(url ?? Home.Url);
         if (tab != null) Add(tab, front: true);
+    }
+
+    /// <summary>A terminal tab in front with PowerShell in the folder.</summary>
+    async void OpenTerminal(string dir)
+    {
+        var tab = await CreateTabAsync(null);
+        if (tab?.Core is not { } core) return;
+        tab.TermDir = dir;
+        Add(tab, front: true);
+        core.Navigate(TermPage.Url);
+    }
+
+    // What a shell prints is gathered and posted to its page at most once per turn of the window's thread
+    const int MaxTermPost = 1 << 20;
+
+    /// <summary>Starts (or starts anew) the shell of a terminal tab, sized as its page.</summary>
+    void StartTerm(Tab tab, int columns, int rows)
+    {
+        // A page on /term that this browser did not open as a terminal starts nothing
+        if (tab.TermDir == null || tab.Core is not { } core) return;
+        StopTerm(tab);
+        var dir = Directory.Exists(tab.TermDir) ? tab.TermDir : Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+        var term = Terminal.Start("powershell.exe -NoLogo", dir, columns > 0 ? columns : 120, rows > 0 ? rows : 30, out var error);
+        if (term == null)
+        {
+            core.PostWebMessageAsJson(ProjectStore.Json.Serialize(new Dictionary<string, object> { ["type"] = "termError", ["text"] = error ?? "" }));
+            return;
+        }
+        tab.Term = term;
+        var pending = new StringBuilder();
+        term.Output += text =>
+        {
+            bool first;
+            lock (pending)
+            {
+                first = pending.Length == 0;
+                pending.Append(text);
+            }
+            if (first) Post(Flush);
+        };
+        term.Exited += () => Post(() =>
+        {
+            if (tab.Term != term) return;
+            Flush();
+            StopTerm(tab);
+            Send(new Dictionary<string, object> { ["type"] = "termExit" });
+        });
+        term.Begin();
+
+        void Flush()
+        {
+            string text;
+            lock (pending)
+            {
+                text = pending.ToString(0, Math.Min(pending.Length, MaxTermPost));
+                pending.Remove(0, text.Length);
+                if (pending.Length > 0) Post(Flush);
+            }
+            if (tab.Term == term && text.Length > 0) Send(new Dictionary<string, object> { ["type"] = "termOut", ["data"] = text });
+        }
+        void Send(Dictionary<string, object> message)
+        {
+            if (tab.Core is { } c && TermPage.Is(c.Source)) c.PostWebMessageAsJson(ProjectStore.Json.Serialize(message));
+        }
+        void Post(Action action)
+        {
+            try { BeginInvoke(action); }
+            catch (InvalidOperationException) { } // the window is gone
+        }
+    }
+
+    static void StopTerm(Tab tab)
+    {
+        var term = tab.Term;
+        tab.Term = null;
+        term?.Dispose();
     }
 
     /// <param name="link">One of the project's links; null for its own address.</param>
@@ -892,6 +972,8 @@ sealed class BrowserForm : Form
                 e.Response = env.CreateWebResourceResponse(ProgramLog.Bytes(json), 200, "OK", ProgramLog.JsonHeaders);
             }
         }
+        else if (TermPage.File(path, out var headers) is { } file)
+            e.Response = env.CreateWebResourceResponse(file, 200, "OK", headers);
         else if (path.StartsWith("/icon/") && Icons.Read(Uri.UnescapeDataString(path.Substring(6))) is { } bytes)
             e.Response = env.CreateWebResourceResponse(new MemoryStream(bytes), 200, "OK",
                 "Content-Type: " + Icons.ContentType(path) + "\r\n" + Icons.Headers);
@@ -914,6 +996,7 @@ sealed class BrowserForm : Form
         if (m == null) return;
         string? Text(string key) => m.TryGetValue(key, out var v) ? v as string : null;
         bool Flag(string key) => m.TryGetValue(key, out var v) && v is true;
+        int Number(string key) => m.TryGetValue(key, out var v) && v is int n ? n : 0;
         var project = ProjectStore.Find(Text("id"));
         // A project's console, or PowerShell's of no project
         var console = ProgramLog.Find(Text("id"));
@@ -937,6 +1020,20 @@ sealed class BrowserForm : Form
                 // The console of the project (its program's output), or PowerShell's: always a tab of its own
                 if (Flag("newTab") || ProgramLog.IsShell(console)) OpenNewTab(ProgramLog.Url(console));
                 else tab.Core?.Navigate(ProgramLog.Url(console));
+                break;
+            case "terminal":
+                // PowerShell in a terminal tab: in the console's folder, or the user's from the start page
+                OpenTerminal(console != null ? App.Current.LauncherFor(console).CommandDir
+                    : Environment.GetFolderPath(Environment.SpecialFolder.UserProfile));
+                break;
+            case "termStart" when TermPage.Is(e.Source):
+                StartTerm(tab, Number("cols"), Number("rows"));
+                break;
+            case "termIn" when Text("data") is { } keys:
+                tab.Term?.Write(keys);
+                break;
+            case "termSize":
+                tab.Term?.Resize(Number("cols"), Number("rows"));
                 break;
             case "input" when project != null && Text("text") is { } typed:
                 if (App.Current.RunningIds.Contains(project.Id)) App.Current.LauncherFor(project).Send(typed);
@@ -1145,12 +1242,24 @@ sealed class BrowserForm : Form
         return null;
     }
 
+    static readonly HashSet<Keys> TermKeys = new()
+    {
+        Keys.Control | Keys.L, Keys.Control | Keys.R, Keys.F5, Keys.Alt | Keys.D, Keys.Alt | Keys.Left, Keys.Alt | Keys.Right,
+    };
+
     // Keys pressed while the page has focus arrive here instead of ProcessCmdKey
     void OnAcceleratorKeyPressed(object? sender, CoreWebView2AcceleratorKeyPressedEventArgs e)
     {
         if (e.KeyEventKind != CoreWebView2KeyEventKind.KeyDown && e.KeyEventKind != CoreWebView2KeyEventKind.SystemKeyDown)
             return;
-        var action = Shortcut((Keys)e.VirtualKey | ModifierKeys);
+        var keys = (Keys)e.VirtualKey | ModifierKeys;
+        // In a terminal these belong to the shell: clear screen, search typed commands, words
+        if (TermKeys.Contains(keys) && tabs.FirstOrDefault(t => t.Ctl == sender) is { Term: not null })
+        {
+            e.IsBrowserAcceleratorKeyEnabled = false;
+            return;
+        }
+        var action = Shortcut(keys);
         if (action == null) return;
         e.Handled = true;
         BeginInvoke(action); // not from inside the WebView's own event
@@ -1266,6 +1375,7 @@ sealed class BrowserForm : Form
         foreach (var tab in tabs)
         {
             tab.Closed = true;
+            StopTerm(tab);
             var c = tab.Ctl;
             tab.Ctl = null;
             c?.Close();

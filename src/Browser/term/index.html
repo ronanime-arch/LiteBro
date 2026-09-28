@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<title>Терминал</title>
+<link rel="stylesheet" href="/term/xterm.css">
+<style>
+:root { color-scheme: light dark; }
+html, body { margin: 0; height: 100%; background: #1e1e1e; overflow: hidden; }
+@media (prefers-color-scheme: light) { html, body { background: #ffffff; } }
+#term { position: absolute; inset: 6px 0 0 10px; }
+#note { position: fixed; left: 50%; bottom: 16px; transform: translateX(-50%); padding: 6px 14px; border-radius: 6px;
+  font: 13px "Segoe UI", sans-serif; background: #4d6bfe; color: #fff; }
+</style>
+</head>
+<body>
+<div id="term"></div>
+<div id="note" hidden></div>
+<script src="/term/xterm.js"></script>
+<script src="/term/addon-fit.js"></script>
+<script src="/term/term.js"></script>
+</body>
+</html>

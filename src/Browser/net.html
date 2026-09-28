@@ -152,12 +152,23 @@ async function poll() {
   } finally { busy = false; }
 }
 
-$("localOnly").addEventListener("change", e => post({ type: "net", localOnly: e.target.checked }));
+const restart = "Движок браузера перезапустится: все вкладки перезагрузятся, открытые терминалы закроются. Программы проектов продолжат работать.";
+// The mode's gateway and CORS are flags of the engine: asked first, since the restart reloads every tab
+$("localOnly").addEventListener("change", e => {
+  if (!confirm((e.target.checked ? "Включить" : "Выключить") + " режим «только localhost»?\n\n" + restart)) {
+    e.target.checked = !e.target.checked;
+    return;
+  }
+  post({ type: "net", localOnly: e.target.checked });
+});
 $("journal").addEventListener("change", e => post({ type: "net", journal: e.target.checked }));
 $("saveAllow").addEventListener("click", () => post({ type: "net", allow: $("allow").value }));
 $("cors").addEventListener("change", e => {
-  if (e.target.checked && !confirm("Отключить CORS и same-origin во всех вкладках? Любая открытая страница сможет читать другие сайты, в том числе ваши локальные. Вкладки перезагрузятся, терминалы закроются.")) {
-    e.target.checked = false;
+  const question = e.target.checked
+    ? "Отключить CORS и same-origin во всех вкладках? Любая открытая страница сможет читать другие сайты, в том числе ваши локальные.\n\n" + restart
+    : "Снова проверять CORS?\n\n" + restart;
+  if (!confirm(question)) {
+    e.target.checked = !e.target.checked;
     return;
   }
   post({ type: "net", cors: e.target.checked });

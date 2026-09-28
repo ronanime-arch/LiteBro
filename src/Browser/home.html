@@ -30,6 +30,7 @@ main { max-width: 1180px; margin: 0 auto; padding: 84px 56px 48px; }
   transition: transform .15s ease, box-shadow .15s ease;
 }
 .tile.pic { background: var(--card); }
+.tile.three { font-size: 44px; letter-spacing: 0; }
 .tile img { width: 100%; height: 100%; object-fit: cover; display: block; }
 .tile.small img, .preview.small img { width: 50%; height: 50%; object-fit: contain; }
 .tile:hover { transform: translateY(-3px); box-shadow: 0 2px 4px rgba(0, 0, 0, .25), 0 16px 30px -14px rgba(0, 0, 0, .7); }
@@ -115,6 +116,7 @@ button.plain:hover, .actions button:hover { border-color: var(--muted); }
 .preview { width: 72px; height: 72px; flex: none; border-radius: 12px; overflow: hidden; display: grid; place-items: center;
   background: var(--c, var(--accent)); color: #fff; font: 600 30px var(--display); }
 .preview.pic { background: var(--field); border: 1px solid var(--line); }
+.preview.three { font-size: 22px; }
 .preview img { width: 100%; height: 100%; object-fit: cover; }
 .look .side { display: grid; gap: 8px; }
 .seg { display: inline-flex; justify-self: start; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
@@ -271,10 +273,12 @@ function host(url) {
   try { return new URL(url).host; } catch { return url; }
 }
 
+// Up to three letters: the first of each of three words, or the start of a single word ("dsh" → DSH)
 function initials(name) {
   const words = name.trim().split(/[\s_\-.:/]+/).filter(Boolean);
   if (!words.length) return "?";
-  return (words.length > 1 ? words[0][0] + words[1][0] : words[0][0]).toUpperCase();
+  const letters = words.length > 1 ? words.slice(0, 3).map(w => [...w][0]).join("") : [...words[0]].slice(0, 3).join("");
+  return letters.toUpperCase();
 }
 
 function colorOf(p) {
@@ -288,7 +292,7 @@ function colorOf(p) {
 // A site's small favicon sits in the middle, a big icon (apple-touch-icon, svg) or the user's picture fills the tile.
 function paint(box, p, src, site) {
   box.textContent = "";
-  box.classList.remove("pic", "small");
+  box.classList.remove("pic", "small", "three");
   box.style.setProperty("--c", colorOf(p));
   if (src) {
     const img = new Image();
@@ -301,6 +305,8 @@ function paint(box, p, src, site) {
     box.append(img);
   } else {
     box.textContent = initials(p.Name || host(p.Url));
+    // Three wide letters fit the tile only a size smaller
+    box.classList.toggle("three", [...box.textContent].length > 2);
   }
 }
 

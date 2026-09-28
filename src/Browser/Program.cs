@@ -129,9 +129,9 @@ sealed class App : ApplicationContext
         return Env;
     }
 
-    public BrowserForm OpenWindow(string? url, bool isMain = false, bool home = false, Project? project = null)
+    public BrowserForm OpenWindow(string? url, bool isMain = false, bool home = false, Project? project = null, string? link = null)
     {
-        var form = new BrowserForm(url, isMain, home, project);
+        var form = new BrowserForm(url, isMain, home, project, link);
         forms.Add(form);
         form.FormClosed += (_, _) =>
         {
@@ -190,11 +190,11 @@ sealed class App : ApplicationContext
 
     public IEnumerable<string> RunningIds => launchers.Where(l => l.Value.Running).Select(l => l.Key);
 
-    /// <summary>True when the address is on the site of a project whose program runs.</summary>
+    /// <summary>True when the address is on the site of a project whose program runs, or of one of its links.</summary>
     public bool IsRunningSite(string address) =>
         Uri.TryCreate(address, UriKind.Absolute, out var here) && !here.IsFile
-        && launchers.Values.Any(l => l.Running
-            && Uri.TryCreate(l.Project.Url, UriKind.Absolute, out var site) && BrowserForm.SameSite(site, here));
+        && launchers.Values.Any(l => l.Running && l.Project.Addresses().Any(a =>
+            Uri.TryCreate(a, UriKind.Absolute, out var site) && BrowserForm.SameSite(site, here)));
 
     /// <summary>Every start page redraws its tiles.</summary>
     public void ProjectsChanged()
@@ -248,7 +248,7 @@ sealed class App : ApplicationContext
         ProjectsChanged();
     }
 
-    public void OpenProjectInNewWindow(Project p) => OpenWindow(null, project: p).Show();
+    public void OpenProjectInNewWindow(Project p, string? link = null) => OpenWindow(null, project: p, link: link).Show();
 
     /// <summary>Startup touches a lot of host code the rest of the session never needs.</summary>
     public void TrimHostSoon()

@@ -31,6 +31,18 @@ sealed class Project
     public string WorkDir { get; set; } = "";
     /// <summary>Open the address the program prints (one with a login token, say) instead of Url.</summary>
     public bool OpenPrintedUrl { get; set; }
+    /// <summary>More addresses of the project (its backend, say), opened from the tile's menu or all at once.</summary>
+    public List<ProjectLink> Links { get => links; set => links = value ?? new(); } // never null, even from "Links": null
+    List<ProjectLink> links = new();
+
+    /// <summary>Url and the links' addresses.</summary>
+    public IEnumerable<string> Addresses() => new[] { Url }.Concat(Links.Select(l => l.Url));
+}
+
+sealed class ProjectLink
+{
+    public string Name { get; set; } = "";
+    public string Url { get; set; } = "";
 }
 
 /// <summary>projects.json next to settings.ini: the start page's tiles, in order.</summary>
@@ -113,7 +125,8 @@ sealed class Launcher
     Process? process;
     KillOnCloseJob? job;
     StreamWriter? log;
-    Task<string?>? starting;
+    // Tabs waiting for an address of the program share the wait
+    readonly Dictionary<string, Task<string?>> waits = new();
 
     /// <param name="changed">Called from any thread when the program starts or stops.</param>
     public Launcher(Project project, Action changed)
@@ -145,11 +158,17 @@ sealed class Launcher
         return false;
     }
 
+    /// <summary>Starts the program unless it runs, then waits for one of its addresses (the project's or a link's).</summary>
+    /// <param name="printed">Also wait for the line with the address to open, when the project asks for that.</param>
     /// <returns>null once the address answers, otherwise the reason it did not.</returns>
-    public Task<string?> StartAndWaitAsync(Uri url) =>
-        starting is { IsCompleted: false } ? starting : (starting = RunAsync(url));
+    public Task<string?> StartAndWaitAsync(Uri url, bool printed = true)
+    {
+        var key = url.AbsoluteUri;
+        if (waits.TryGetValue(key, out var wait) && !wait.IsCompleted) return wait;
+        return waits[key] = RunAsync(url, printed);
+    }
 
-    async Task<string?> RunAsync(Uri url)
+    async Task<string?> RunAsync(Uri url, bool printed)
     {
         if (!Running)
         {
@@ -162,7 +181,7 @@ sealed class Launcher
             if (await IsUpAsync(url))
             {
                 // The line with the address and the open port come within moments of each other
-                for (int i = 0; i < 25 && Project.OpenPrintedUrl && PrintedUrl(url) == null && Running; i++)
+                for (int i = 0; i < 25 && printed && Project.OpenPrintedUrl && PrintedUrl(url) == null && Running; i++)
                     await Task.Delay(200);
                 return null;
             }

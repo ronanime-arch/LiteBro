@@ -28,6 +28,7 @@ sealed class BrowserForm : Form
     readonly string? startUrl;
     readonly bool isMain, goHome;
     readonly Project? startProject;
+    readonly string? startLink;
     readonly TabStrip strip = new();
     readonly Panel host = new() { Dock = DockStyle.Fill };
     readonly TextBox address = new()
@@ -65,12 +66,14 @@ sealed class BrowserForm : Form
     /// <param name="url">What to open in the first tab.</param>
     /// <param name="openHome">Open the start page with the project tiles.</param>
     /// <param name="project">A project to open (and start, if need be) in the first tab.</param>
-    public BrowserForm(string? url, bool isMain, bool openHome, Project? project = null)
+    /// <param name="link">One of the project's links to open instead of its own address.</param>
+    public BrowserForm(string? url, bool isMain, bool openHome, Project? project = null, string? link = null)
     {
         startUrl = url;
         this.isMain = isMain;
         goHome = openHome;
         startProject = project;
+        startLink = link;
         Text = "LiteBro";
         Icon = App.AppIcon;
         Size = new Size(1100, 800);
@@ -160,7 +163,7 @@ sealed class BrowserForm : Form
             return;
         }
         Add(tab, front: true);
-        if (startProject != null) OpenProject(tab, startProject);
+        if (startProject != null) OpenProject(tab, startProject, startLink);
         ramTimer.Start();
         UpdateRam();
         freezeTimer.Start();
@@ -440,13 +443,25 @@ sealed class BrowserForm : Form
         if (tab != null) Add(tab, front: true);
     }
 
-    async void OpenProjectInNewTab(Project p, bool front)
+    /// <param name="link">One of the project's links; null for its own address.</param>
+    async Task OpenProjectInNewTabAsync(Project p, bool front, string? link = null)
     {
         var tab = await CreateTabAsync(null);
         if (tab == null) return;
-        tab.Title = p.Name;
+        tab.Title = link == null ? p.Name : p.Links.FirstOrDefault(l => l.Url == link)?.Name ?? p.Name;
         Add(tab, front);
-        OpenProject(tab, p);
+        OpenProject(tab, p, link);
+    }
+
+    /// <summary>
+    /// «Открыть всё»: the project in this tab (or in a new one), each of its links in a tab of its own behind it.
+    /// The tabs wait for the program together, each for its own address.
+    /// </summary>
+    async void OpenAll(Tab tab, Project p, bool newTab)
+    {
+        if (newTab) await OpenProjectInNewTabAsync(p, front: false);
+        else OpenProject(tab, p);
+        foreach (var link in p.Links.ToList()) await OpenProjectInNewTabAsync(p, front: false, link.Url);
     }
 
     /// <summary>The start page with the project tiles.</summary>
@@ -457,23 +472,26 @@ sealed class BrowserForm : Form
         core.Navigate(Home.Url);
     }
 
-    /// <summary>Opens a project: at once when its address answers, else after starting its program.</summary>
-    async void OpenProject(Tab tab, Project p)
+    /// <summary>Opens a project's address, or one of its links: at once when it answers, else after starting its program.</summary>
+    /// <param name="link">One of the project's links; null for its own address.</param>
+    async void OpenProject(Tab tab, Project p, string? link = null)
     {
-        if (tab.Core == null || !Uri.TryCreate(p.Url, UriKind.Absolute, out var url)) return;
+        if (tab.Core == null || !Uri.TryCreate(link ?? p.Url, UriKind.Absolute, out var url)) return;
         tab.LastProject = p;
+        tab.LastLink = link;
         var launcher = App.Current.LauncherFor(p);
         if (p.Exe.Trim().Length > 0 && !url.IsFile && !await Launcher.IsUpAsync(url))
         {
-            ShowInternalPage(tab, Pages.Starting(p, launcher));
-            var error = await launcher.StartAndWaitAsync(url);
+            ShowInternalPage(tab, Pages.Starting(p, url.AbsoluteUri, launcher));
+            // The address the program prints stands for the project's own, never for a link
+            var error = await launcher.StartAndWaitAsync(url, printed: link == null);
             if (error != null)
             {
                 ShowInternalPage(tab, Pages.Failed(p, error, launcher.LogTail()));
                 return;
             }
         }
-        tab.Core?.Navigate(launcher.AddressToOpen(url));
+        tab.Core?.Navigate(link == null ? launcher.AddressToOpen(url) : url.AbsoluteUri);
     }
 
     /// <summary>A page of this program; the address bar shows the project's address meanwhile.</summary>
@@ -531,9 +549,15 @@ sealed class BrowserForm : Form
                 SendProjects(tab);
                 break;
             case "open" when project != null:
-                if (Flag("newWindow")) App.Current.OpenProjectInNewWindow(project);
-                else if (Flag("newTab")) OpenProjectInNewTab(project, front: false);
-                else OpenProject(tab, project);
+                // One of the project's own links, never an address the page makes up
+                var link = Text("link");
+                if (link != null && !project.Links.Any(l => l.Url == link)) break;
+                if (Flag("newWindow")) App.Current.OpenProjectInNewWindow(project, link);
+                else if (Flag("newTab")) _ = OpenProjectInNewTabAsync(project, front: false, link);
+                else OpenProject(tab, project, link);
+                break;
+            case "openAll" when project != null:
+                OpenAll(tab, project, Flag("newTab"));
                 break;
             case "stop" when project != null:
                 App.Current.StopProject(project.Id);
@@ -560,6 +584,14 @@ sealed class BrowserForm : Form
     }
 
     static readonly Regex ColorPattern = new("^#[0-9a-fA-F]{6}$");
+    const int MaxLinks = 20;
+
+    /// <summary>An address a tile may open: http, https or a file.</summary>
+    static Uri? Openable(string? address) =>
+        Uri.TryCreate((address ?? "").Trim(), UriKind.Absolute, out var u) && (u.Scheme is "http" or "https" or "file") ? u : null;
+
+    /// <summary>A name for an address given none: the site, or the file's name.</summary>
+    static string NameOf(Uri url) => url.IsFile ? Path.GetFileName(url.LocalPath) : url.Authority;
 
     void SaveProject(object raw, string? iconPath)
     {
@@ -567,9 +599,18 @@ sealed class BrowserForm : Form
         try { p = ProjectStore.Json.ConvertToType<Project>(raw); }
         catch (Exception) { return; }
         p.Url = (p.Url ?? "").Trim();
-        if (!Uri.TryCreate(p.Url, UriKind.Absolute, out var url) || !(url.Scheme is "http" or "https" or "file")) return;
+        if (Openable(p.Url) is not { } url) return;
         p.Name = (p.Name ?? "").Trim();
-        if (p.Name.Length == 0) p.Name = url.IsFile ? Path.GetFileName(url.LocalPath) : url.Authority;
+        if (p.Name.Length == 0) p.Name = NameOf(url);
+        // Links open like the project's own address; one left without a name is named after its site
+        var links = new List<ProjectLink>();
+        foreach (var l in p.Links)
+        {
+            if (l == null || Openable(l.Url) is not { } u || links.Count == MaxLinks) continue;
+            var name = (l.Name ?? "").Trim();
+            links.Add(new ProjectLink { Url = l.Url.Trim(), Name = name.Length > 0 ? name : NameOf(u) });
+        }
+        p.Links = links;
         p.Color = ColorPattern.IsMatch(p.Color ?? "") ? p.Color! : "";
         p.Exe = (p.Exe ?? "").Trim();
         p.Args = (p.Args ?? "").Trim();
@@ -638,7 +679,7 @@ sealed class BrowserForm : Form
         var tab = active;
         if (tab?.Core is not { } core) return;
         if (tab.Loading) core.Stop();
-        else if (tab.ShowingInternalPage && tab.LastProject != null) OpenProject(tab, tab.LastProject);
+        else if (tab.ShowingInternalPage && tab.LastProject != null) OpenProject(tab, tab.LastProject, tab.LastLink);
         else if (tab.ShowingInternalPage) GoHome();
         else core.Reload();
     }

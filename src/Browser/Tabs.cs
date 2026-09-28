@@ -19,11 +19,13 @@ sealed class Tab
     public bool Loading, ShowingInternalPage, TrimmedAfterLoad, Suspended, PlayingAudio, Closed;
     /// <summary>The project whose start page (or failure page) is shown: F5 tries it again.</summary>
     public Project? LastProject;
+    /// <summary>The link of LastProject being opened; null for the project's own address.</summary>
+    public string? LastLink;
     /// <summary>When the tab left the front; null while it is the tab in front.</summary>
     public DateTime? InactiveSince;
 
-    /// <summary>The address the tab stands for: the project's own while its start or failure page is shown.</summary>
-    public string Site => ShowingInternalPage && LastProject != null ? LastProject.Url : Core?.Source ?? Address;
+    /// <summary>The address the tab stands for: the project's (or its link's) while its start or failure page is shown.</summary>
+    public string Site => ShowingInternalPage && LastProject != null ? LastLink ?? LastProject.Url : Core?.Source ?? Address;
 
     public string Label => Title.Length > 0 ? Title
         : Site.Length > 0 && !Site.StartsWith("about:") ? Site : "Новая вкладка";

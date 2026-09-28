@@ -47,6 +47,24 @@ main { max-width: 1180px; margin: 0 auto; padding: 84px 56px 48px; }
   white-space: nowrap; opacity: 0; pointer-events: none; transition: opacity .12s; }
 .run:hover::after, .run:focus-visible::after { opacity: 1; }
 .run:focus-visible { outline: none; }
+/* More addresses of the project: a chip in the corner opens them in a menu, with «Открыть всё» */
+.links { position: absolute; top: 8px; right: 8px; height: 26px; padding: 0 9px 0 7px; border: 0; border-radius: 13px;
+  display: flex; align-items: center; gap: 4px; background: rgba(0, 0, 0, .38); color: #fff; font: 600 12.5px var(--text);
+  cursor: pointer; transition: background .12s; }
+.links:hover, .links.open { background: rgba(0, 0, 0, .62); }
+.links:focus-visible { outline: 2px solid #fff; outline-offset: 1px; }
+.links svg { width: 14px; height: 14px; }
+
+.menu { position: fixed; z-index: 20; width: max-content; min-width: 220px; max-width: min(380px, calc(100vw - 16px));
+  padding: 6px; border: 1px solid var(--line); border-radius: 12px; background: var(--card); color: var(--fg);
+  box-shadow: 0 16px 40px rgba(0, 0, 0, .35); }
+.menu button { display: flex; gap: 18px; align-items: baseline; width: 100%; padding: 7px 10px; border: 0; border-radius: 8px;
+  background: transparent; color: inherit; font: 14px var(--text); text-align: left; cursor: pointer; }
+.menu button:hover, .menu button:focus-visible { background: rgba(127, 127, 127, .16); outline: none; }
+.menu .name, .menu .addr { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.menu .addr { margin-left: auto; color: var(--muted); font-size: 12.5px; max-width: 190px; }
+.menu hr { border: 0; border-top: 1px solid var(--line); margin: 5px 4px; }
+.menu .all { font-weight: 600; color: var(--accent); }
 
 .add .tile { background: transparent; color: var(--add); border: 2.5px solid currentColor; border-radius: 30px;
   box-shadow: none; opacity: .85; }
@@ -106,6 +124,13 @@ details { border: 1px solid var(--line); border-radius: 10px; padding: 10px 14px
 details[open] { padding-bottom: 12px; }
 details > div { display: grid; gap: 8px; margin-top: 10px; }
 summary { cursor: pointer; font-weight: 500; }
+#linkRows { display: grid; gap: 8px; }
+#linkRows:empty { display: none; }
+.linkrow { display: flex; gap: 8px; }
+.linkrow .lname { flex: 0 0 34%; }
+.linkrow .lurl { flex: 1; }
+.linkrow button { padding: 6px 10px; }
+#addLink { justify-self: start; }
 .check { display: flex; gap: 8px; align-items: flex-start; font-weight: 400; }
 .check input { margin: 3px 0 0; }
 .muted { color: var(--muted); font-size: 12.5px; margin: 0; }
@@ -139,6 +164,14 @@ summary { cursor: pointer; font-weight: 500; }
     <label>Адрес
       <input type="text" name="Url" placeholder="http://127.0.0.1:4999/" required>
     </label>
+    <details id="more">
+      <summary>Ещё ссылки проекта</summary>
+      <div>
+        <div id="linkRows"></div>
+        <button type="button" class="plain" id="addLink">+ Добавить ссылку</button>
+        <p class="muted">Например, бэкенд или документация API. Они в меню плитки, а «Открыть всё» откроет их вместе с проектом.</p>
+      </div>
+    </details>
     <details id="launch">
       <summary>Запуск программы, если адрес не отвечает</summary>
       <div>
@@ -169,6 +202,7 @@ summary { cursor: pointer; font-weight: 500; }
 "use strict";
 const COLORS = ["#4d6bfe", "#7c4dff", "#d9437a", "#ef6a35", "#e2a232", "#2f9e62", "#1f96b3", "#5c6a82"];
 const STAR = '<svg viewBox="0 0 48 48" aria-hidden="true"><path d="M24 5C25.6 17.2 30.8 22.4 43 24C30.8 25.6 25.6 30.8 24 43C22.4 30.8 17.2 25.6 5 24C17.2 22.4 22.4 17.2 24 5Z" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linejoin="round"/></svg>';
+const CHAIN = '<svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.5.5l3-3a5 5 0 0 0-7.1-7.1l-1.7 1.7"/><path d="M14 11a5 5 0 0 0-7.5-.5l-3 3a5 5 0 0 0 7.1 7.1l1.7-1.7"/></svg>';
 const $ = s => document.querySelector(s);
 const form = $("#form"), dlg = $("#dlg");
 const post = m => window.chrome.webview.postMessage(m);
@@ -226,6 +260,7 @@ function iconUrl(name) {
 }
 
 function render() {
+  closeMenu(); // its chip is about to go
   const grid = $("#grid");
   grid.textContent = "";
   for (const p of projects) grid.append(tile(p));
@@ -253,9 +288,104 @@ function tile(p) {
     run.addEventListener("click", e => { e.stopPropagation(); post({ type: "stop", id: p.Id }); });
     item.append(run);
   }
+  if (p.Links && p.Links.length) {
+    const more = el("button", "links");
+    more.title = "Ещё ссылки проекта и «Открыть всё»";
+    more.setAttribute("aria-haspopup", "menu");
+    more.innerHTML = CHAIN; // a constant of this page, no data in it
+    more.append(String(p.Links.length));
+    more.addEventListener("click", e => {
+      e.stopPropagation();
+      if (menu && menu.anchor === more) closeMenu();
+      else openMenu(p, more);
+    });
+    item.append(more);
+  }
   item.append(el("div", "label", p.Name || host(p.Url)));
   return item;
 }
+
+// ---- the menu of a project's addresses
+
+let menu = null; // { box, anchor }
+
+// Host and path, as short as will tell the addresses apart
+function short(url) {
+  try {
+    const u = new URL(url);
+    return (u.host + u.pathname + u.search).replace(/\/$/, "");
+  } catch { return url; }
+}
+
+function openMenu(p, anchor) {
+  closeMenu();
+  const box = el("div", "menu");
+  box.setAttribute("role", "menu");
+  // The project's own address first, then its links; the browser takes a link only if it is one of the project's
+  const entries = [{ name: p.Name || host(p.Url), url: p.Url, link: null }]
+    .concat(p.Links.map(l => ({ name: l.Name || host(l.Url), url: l.Url, link: l.Url })));
+  for (const x of entries) {
+    const b = el("button");
+    b.setAttribute("role", "menuitem");
+    b.title = x.url;
+    b.append(el("span", "name", x.name), el("span", "addr", short(x.url)));
+    b.addEventListener("click", e => {
+      closeMenu();
+      post({ type: "open", id: p.Id, link: x.link, newTab: e.ctrlKey && !e.shiftKey, newWindow: e.shiftKey });
+    });
+    b.addEventListener("auxclick", e => {
+      if (e.button !== 1) return;
+      closeMenu();
+      post({ type: "open", id: p.Id, link: x.link, newTab: true });
+    });
+    box.append(b);
+  }
+  box.append(el("hr"));
+  const all = el("button", "all", "Открыть всё");
+  all.setAttribute("role", "menuitem");
+  all.title = "Проект в этой вкладке, остальные ссылки — в новых вкладках за ней. Ctrl+клик — всё в новых вкладках";
+  all.addEventListener("click", e => {
+    closeMenu();
+    post({ type: "openAll", id: p.Id, newTab: e.ctrlKey });
+  });
+  box.append(all);
+  box.addEventListener("keydown", e => {
+    const items = [...box.querySelectorAll("button")], i = items.indexOf(document.activeElement);
+    if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+      e.preventDefault();
+      items[(i + (e.key === "ArrowDown" ? 1 : items.length - 1)) % items.length].focus();
+    } else if (e.key === "Escape") {
+      e.preventDefault();
+      closeMenu();
+      anchor.focus();
+    }
+  });
+  document.body.append(box);
+
+  // Under the chip and flush with its right edge; above it when there is no room below
+  const a = anchor.getBoundingClientRect(), m = box.getBoundingClientRect();
+  const top = a.bottom + 6 + m.height <= innerHeight - 8 ? a.bottom + 6 : Math.max(8, a.top - 6 - m.height);
+  box.style.left = Math.max(8, Math.min(a.right - m.width, innerWidth - 8 - m.width)) + "px";
+  box.style.top = top + "px";
+  anchor.classList.add("open");
+  menu = { box, anchor };
+  box.querySelector("button").focus();
+}
+
+function closeMenu() {
+  if (!menu) return;
+  menu.box.remove();
+  menu.anchor.classList.remove("open");
+  menu = null;
+}
+
+// A press anywhere else, a scroll or leaving the window closes it; its chip toggles it by itself
+window.addEventListener("pointerdown", e => {
+  if (menu && !menu.box.contains(e.target) && !menu.anchor.contains(e.target)) closeMenu();
+}, true);
+window.addEventListener("scroll", closeMenu);
+window.addEventListener("resize", closeMenu);
+window.addEventListener("blur", closeMenu);
 
 function addTile() {
   const item = el("div", "item add");
@@ -278,8 +408,8 @@ function items() {
 }
 
 function press(item, e) {
-  // Touch scrolls the page; the green dot is a button of its own
-  if (e.button !== 0 || e.pointerType === "touch" || drag || e.target.closest(".run")) return;
+  // Touch scrolls the page; the green dot and the links chip are buttons of their own
+  if (e.button !== 0 || e.pointerType === "touch" || drag || e.target.closest(".run, .links")) return;
   held = { item, x: e.clientX, y: e.clientY };
 }
 
@@ -419,6 +549,9 @@ function openDialog(p) {
   f.WorkDir.value = p ? p.WorkDir : "";
   f.OpenPrintedUrl.checked = p ? p.OpenPrintedUrl : false;
   $("#launch").open = !!(p && p.Exe);
+  $("#linkRows").textContent = "";
+  for (const l of p ? p.Links || [] : []) linkRow(l.Name, l.Url);
+  $("#more").open = $("#linkRows").children.length > 0;
   color = p && p.Color ? p.Color : "";
   mode = p ? p.IconSource || "site" : "site";
   iconPath = iconPreview = "";
@@ -497,6 +630,33 @@ $("#del").addEventListener("click", () => {
   dlg.close();
 });
 
+// A row of the links: name, address, and a cross to take it away
+function linkRow(name, url) {
+  const row = el("div", "linkrow");
+  const n = el("input", "lname"), u = el("input", "lurl"), x = el("button", "plain", "✕");
+  n.type = u.type = "text";
+  n.value = name || "";
+  u.value = url || "";
+  n.placeholder = "Название";
+  u.placeholder = "http://127.0.0.1:8000/docs";
+  x.type = "button";
+  x.title = "Убрать ссылку";
+  x.addEventListener("click", () => row.remove());
+  row.append(n, u, x);
+  $("#linkRows").append(row);
+  return row;
+}
+
+$("#addLink").addEventListener("click", () => linkRow().querySelector(".lurl").focus());
+
+// The rows with an address, in their order; a row without a name is named after its site
+function links() {
+  return [...document.querySelectorAll("#linkRows .linkrow")]
+    .map(row => ({ name: row.querySelector(".lname").value.trim(), url: normalize(row.querySelector(".lurl").value) }))
+    .filter(l => l.url)
+    .map(l => ({ Name: l.name || host(l.url), Url: l.url }));
+}
+
 form.addEventListener("submit", e => {
   e.preventDefault();
   const f = form.elements;
@@ -514,6 +674,7 @@ form.addEventListener("submit", e => {
       WorkDir: f.WorkDir.value.trim(),
       OpenPrintedUrl: f.OpenPrintedUrl.checked,
       IconSource: mode,
+      Links: links(),
     },
     iconPath: mode === "file" ? iconPath : "",
   });

@@ -319,7 +319,7 @@ sealed class Launcher
     }
 
     // A command typed in the project's console: one at a time, run by cmd in the console's folder
-    static readonly Regex CdPattern = new(@"^(?:cd|chdir)(?:\s+/d)?(?:\s+(.*))?$", RegexOptions.IgnoreCase);
+    static readonly Regex CdPattern = new(@"^(?:cd|chdir|sl|set-location)(?:\s+/d)?(?:\s+(.*))?$", RegexOptions.IgnoreCase);
     Process? command;
     KillOnCloseJob? commandJob;
     string? commandDir;
@@ -379,8 +379,7 @@ sealed class Launcher
             changed();
             return;
         }
-        // UTF-8 code page first: cmd's own commands (dir, type) print in the console's one otherwise
-        var info = new ProcessStartInfo(Environment.GetEnvironmentVariable("ComSpec") ?? "cmd.exe", "/d /s /c \"chcp 65001>nul & " + line + "\"")
+        var info = new ProcessStartInfo(Environment.GetEnvironmentVariable("ComSpec") ?? "cmd.exe")
         {
             WorkingDirectory = dir,
             UseShellExecute = false,
@@ -391,6 +390,14 @@ sealed class Launcher
             StandardOutputEncoding = Encoding.UTF8,
             StandardErrorEncoding = Encoding.UTF8,
         };
+        // UTF-8 first: cmd's own commands (dir, type) print in the console's code page otherwise.
+        // The console of no project runs PowerShell; the line goes encoded, so no quote of it can break out.
+        if (ProgramLog.IsShell(Project))
+            info.FileName = "powershell.exe";
+        info.Arguments = ProgramLog.IsShell(Project)
+            ? "-NoLogo -NoProfile -ExecutionPolicy Bypass -EncodedCommand " + Convert.ToBase64String(Encoding.Unicode.GetBytes(
+                "[Console]::OutputEncoding = [Text.Encoding]::UTF8; $OutputEncoding = [Text.Encoding]::UTF8; " + line))
+            : "/d /s /c \"chcp 65001>nul & " + line + "\"";
         info.Environment["NO_COLOR"] = "1";
         info.Environment["PYTHONUNBUFFERED"] = "1";
         info.Environment["PYTHONIOENCODING"] = "utf-8";

@@ -23,6 +23,13 @@ static class ProgramLog
 
     public static string Url(Project p) => Home.Url + "log/" + p.Id;
 
+    /// <summary>The console of no project: PowerShell in the user's folder, opened from the start page's button.</summary>
+    public static readonly Project Shell = new() { Id = "shell", Name = "PowerShell" };
+    public static bool IsShell(Project p) => p.Id == Shell.Id;
+
+    /// <summary>A project's console, or the one of no project.</summary>
+    public static Project? Find(string? id) => id == Shell.Id ? Shell : ProjectStore.Find(id);
+
     static string LogPath(string id) => Path.Combine(Settings.Dir, "logs", id + ".log");
 
     /// <summary>The project of a /log/ address and whether the address is for the text rather than the page.</summary>
@@ -36,7 +43,7 @@ static class ProgramLog
             text = true;
             rest = rest.Substring(0, rest.Length - 5);
         }
-        return ProjectStore.Find(rest);
+        return Find(rest);
     }
 
     /// <summary>
@@ -116,7 +123,7 @@ static class ProgramLog
         "<form id=send><button type=button id=mode></button><span id=prompt></span>" +
         "<input id=line autocomplete=off spellcheck=false></form>" +
         "<script>" +
-        "const id=" + Js(p.Id) + ",$=s=>document.getElementById(s),out=$('out'),line=$('line'),state=$('state'),stopBtn=$('stop'),halt=$('halt'),mode=$('mode'),promptEl=$('prompt');" +
+        "const id=" + Js(p.Id) + ",shell=" + (IsShell(p) ? "true" : "false") + ",$=s=>document.getElementById(s),out=$('out'),line=$('line'),state=$('state'),stopBtn=$('stop'),halt=$('halt'),mode=$('mode'),promptEl=$('prompt');" +
         "let from=-1,running=false,busy=false,cmd=true,command=false,dir='',typed=[],back=0;" +
         "const post=m=>window.chrome.webview.postMessage(m);" +
         // Two ways to type: a command for cmd in the console's folder, or a line to the running program
@@ -124,9 +131,9 @@ static class ProgramLog
         "mode.title=cmd?'Строка выполняется в cmd в папке ниже; cd меняет папку. Нажмите, чтобы писать программе проекта':'Строка уходит на ввод программе проекта. Нажмите, чтобы выполнять команды';" +
         "promptEl.textContent=cmd?dir+'>':'>';promptEl.title=cmd?dir:'';" +
         "line.placeholder=cmd?(command?'Команда выполняется: строка уйдёт ей на ввод':'Команда, например: git status, npm install, dir'):(running?'Строка для программы, Enter — отправить':'Программа не запущена');" +
-        "line.disabled=!cmd&&!running;}" +
+        "line.disabled=!cmd&&!running;mode.hidden=shell;if(shell)line.placeholder=command?'Команда выполняется: строка уйдёт ей на ввод':'Команда PowerShell, например: Get-ChildItem, git status, winget list';}" +
         "mode.addEventListener('click',()=>{cmd=!cmd;modeShow();line.focus();});" +
-        "function show(d){running=d.running;command=d.command;dir=d.dir;state.textContent=running?'● программа работает':'программа остановлена';state.className=running?'on':'';" +
+        "function show(d){running=d.running;command=d.command;dir=d.dir;state.textContent=shell?(command?'● команда выполняется':''):running?'● программа работает':'программа остановлена';state.className=running?'on':'';" +
         "stopBtn.hidden=!running;halt.hidden=!command;modeShow();}" +
         "async function poll(){if(busy)return;busy=true;try{" +
         "const r=await fetch(location.pathname+'/text?from='+from,{cache:'no-store'});const d=await r.json();" +

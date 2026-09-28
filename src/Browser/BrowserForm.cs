@@ -909,6 +909,8 @@ sealed class BrowserForm : Form
         string? Text(string key) => m.TryGetValue(key, out var v) ? v as string : null;
         bool Flag(string key) => m.TryGetValue(key, out var v) && v is true;
         var project = ProjectStore.Find(Text("id"));
+        // A project's console, or PowerShell's of no project
+        var console = ProgramLog.Find(Text("id"));
         switch (Text("type"))
         {
             case "ready":
@@ -925,19 +927,19 @@ sealed class BrowserForm : Form
             case "openAll" when project != null:
                 OpenAll(tab, project, Flag("newTab"));
                 break;
-            case "log" when project != null:
-                // The console of the project: its program's output
-                if (Flag("newTab")) OpenNewTab(ProgramLog.Url(project));
-                else tab.Core?.Navigate(ProgramLog.Url(project));
+            case "log" when console != null:
+                // The console of the project (its program's output), or PowerShell's: always a tab of its own
+                if (Flag("newTab") || ProgramLog.IsShell(console)) OpenNewTab(ProgramLog.Url(console));
+                else tab.Core?.Navigate(ProgramLog.Url(console));
                 break;
             case "input" when project != null && Text("text") is { } typed:
                 if (App.Current.RunningIds.Contains(project.Id)) App.Current.LauncherFor(project).Send(typed);
                 break;
-            case "command" when project != null && Text("text") is { } line:
-                App.Current.LauncherFor(project).Run(line);
+            case "command" when console != null && Text("text") is { } line:
+                App.Current.LauncherFor(console).Run(line);
                 break;
-            case "stopCommand" when project != null:
-                App.Current.LauncherFor(project).StopCommand();
+            case "stopCommand" when console != null:
+                App.Current.LauncherFor(console).StopCommand();
                 break;
             case "stop" when project != null:
                 App.Current.StopProject(project.Id);

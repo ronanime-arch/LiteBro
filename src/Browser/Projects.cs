@@ -10,7 +10,7 @@ using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using System.Web.Script.Serialization;
 
-namespace LiteBrowser;
+namespace LiteBro;
 
 /// <summary>A tile on the start page: a local site and, optionally, the program that serves it.</summary>
 sealed class Project
@@ -37,7 +37,7 @@ sealed class Project
 static class ProjectStore
 {
     public static readonly JavaScriptSerializer Json = new() { MaxJsonLength = int.MaxValue };
-    static readonly string FilePath = Path.Combine(Settings.Dir, "projects.json");
+    static string FilePath => Path.Combine(Settings.Dir, "projects.json");
     static List<Project>? list;
 
     public static List<Project> All => list ??= Load();
@@ -99,7 +99,7 @@ static class ProjectStore
 
 /// <summary>
 /// Runs a project's program: no window, its output in a log, and in a job so that it dies with
-/// LiteBrowser, even if the browser crashes. Its output goes to a pipe of this process, so it cannot
+/// LiteBro, even if the browser crashes. Its output goes to a pipe of this process, so it cannot
 /// outlive the browser anyway: the first line it writes after that would kill it.
 /// </summary>
 sealed class Launcher

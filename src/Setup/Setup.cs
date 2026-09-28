@@ -10,24 +10,26 @@ using System.Runtime.InteropServices.ComTypes;
 using System.Text;
 using System.Threading;
 using System.Windows.Forms;
-using LiteBrowser;
+using LiteBro;
 using Microsoft.Win32;
 
-namespace LiteBrowserSetup;
+namespace LiteBroSetup;
 
 /// <summary>
-/// Installer and uninstaller for LiteBrowser, for the whole computer (it runs as administrator).
-/// LiteBrowser takes the links other programs open (Windows hands over http and https only together):
+/// Installer and uninstaller for LiteBro, for the whole computer (it runs as administrator).
+/// LiteBro takes the links other programs open (Windows hands over http and https only together):
 /// local addresses open in it, the rest goes straight on to the main browser, which keeps .html files.
-///   LiteBrowser-Setup.exe                    install with a dialog, then help the user give it the links
-///   LiteBrowser-Setup.exe /S                 install silently (desktop shortcut, no launch)
+/// Up to 1.9.6 it was called LiteBrowser; installing takes that away (see RemoveLiteBrowser).
+///   LiteBro-Setup.exe                        install with a dialog, then help the user give it the links
+///   LiteBro-Setup.exe /S                     install silently (desktop shortcut, no launch)
 ///   Uninstall.exe /uninstall [/S] [/purge]   remove; /purge also deletes this user's settings and browser data
-/// Exit codes: 0 done, 1 cancelled or failed, 2 LiteBrowser is running (silent mode).
+/// Exit codes: 0 done, 1 cancelled or failed, 2 LiteBro is running (silent mode).
 /// </summary>
 static class Program
 {
     const string AppName = Associations.AppName;
-    const string ExeName = "LiteBrowser.exe";
+    const string OldName = Associations.OldAppName;
+    const string ExeName = AppName + ".exe";
     const string UninstallerName = "Uninstall.exe";
     const string UninstallKey = @"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\" + AppName;
     const string ClientKey = @"SOFTWARE\Clients\StartMenuInternet\" + AppName;
@@ -39,20 +41,25 @@ static class Program
     const string WebView2Client = @"Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}";
     const string BrowserDescription =
         "Лёгкий браузер для локальных проектов: localhost и 127.0.0.1 открываются в нём, остальные ссылки — в основном браузере.";
+    const string LinkDescription = "Лёгкий браузер для локальных проектов";
 
     static readonly string LocalAppData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
-    static readonly string InstallDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), AppName);
+    static readonly string ProgramFiles = Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles);
+    static readonly string InstallDir = Path.Combine(ProgramFiles, AppName);
     static readonly string DataDir = Path.Combine(LocalAppData, AppName);
     static readonly string StartMenuLink = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonPrograms), AppName + ".lnk");
     static readonly string DesktopLink = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonDesktopDirectory), AppName + ".lnk");
+    // LiteBrowser, as this browser was called up to 1.9.6
+    static readonly string LiteBrowserDir = Path.Combine(ProgramFiles, OldName);
+    static readonly string LiteBrowserDataDir = Path.Combine(LocalAppData, OldName);
     // Versions up to 1.3 installed for one user; Windows never offered that copy for links
-    static readonly string OldInstallDir = Path.Combine(LocalAppData, "Programs", AppName);
+    static readonly string OldInstallDir = Path.Combine(LocalAppData, "Programs", OldName);
     static readonly string[] OldLinks =
     {
-        Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Programs), AppName + ".lnk"),
-        Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory), AppName + ".lnk"),
+        Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Programs), OldName + ".lnk"),
+        Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory), OldName + ".lnk"),
     };
-    static readonly string LogPath = Path.Combine(Path.GetTempPath(), "LiteBrowser-setup.log");
+    static readonly string LogPath = Path.Combine(Path.GetTempPath(), AppName + "-setup.log");
     static readonly string Version = Assembly.GetExecutingAssembly().GetName().Version.ToString(3);
     public static readonly Icon AppIcon = new(Assembly.GetExecutingAssembly().GetManifestResourceStream("app.ico"));
 
@@ -88,25 +95,33 @@ static class Program
         // right after the install.
         bool desktop = true, links = false, launch = false;
         bool hasLinks = HandlesLinks();
+        // Windows keeps the user's choice for links with LiteBrowser's ProgId, which goes with it
+        bool relink = !hasLinks && (Associations.OldNameHandles("http") || Associations.OldNameHandles("https"));
         if (!silent)
         {
             var desktopBox = new CheckBox { Text = "Ярлык на рабочем столе", Checked = true, AutoSize = true };
             var linksBox = new CheckBox
             {
-                Text = "Открывать в LiteBrowser ссылки на localhost и 127.0.0.1.\n" +
+                Text = "Открывать в LiteBro ссылки на localhost и 127.0.0.1.\n" +
                     "Остальные ссылки он сразу передаёт в " + Associations.OtherBrowserName() + ", своё окно не открывая.",
                 Checked = true,
                 AutoSize = true,
             };
-            var launchBox = new CheckBox { Text = "Запустить LiteBrowser после установки", Checked = true, AutoSize = true };
+            var launchBox = new CheckBox { Text = "Запустить LiteBro после установки", Checked = true, AutoSize = true };
             var text = "Лёгкий браузер для локальных проектов на движке Edge WebView2.\n\n" +
                 "Программа: " + InstallDir + "\nНастройки и данные: " + DataDir + " (у каждого пользователя свои)";
-            if (hasLinks) text += "\n\nСсылки из других программ уже идут через LiteBrowser.";
+            if (Directory.Exists(LiteBrowserDir) || Directory.Exists(LiteBrowserDataDir))
+                text += "\n\nLiteBrowser теперь называется LiteBro. Старая программа будет удалена, а проекты, значки, " +
+                    "логи и входы на сайты LiteBro перенесёт к себе при первом запуске.";
+            if (relink)
+                text += "\n\nWindows запомнила выбор для ссылок под старым именем, поэтому их нужно один раз " +
+                    "отдать LiteBro заново: после установки откроется подсказка.";
+            else if (hasLinks) text += "\n\nСсылки из других программ уже идут через LiteBro.";
             if (!HasWebView2())
                 text += "\n\nНе найден Microsoft Edge WebView2 Runtime, без него браузер не запустится. " +
                     "Установите его с developer.microsoft.com/microsoft-edge/webview2.";
             var options = hasLinks ? new[] { desktopBox, launchBox } : new[] { desktopBox, linksBox, launchBox };
-            using var dialog = new Dialog("Установка LiteBrowser", "LiteBrowser " + Version, text, "Установить", options);
+            using var dialog = new Dialog("Установка LiteBro", "LiteBro " + Version, text, "Установить", options);
             if (dialog.ShowDialog() != DialogResult.OK) return 1;
             desktop = desktopBox.Checked;
             links = linksBox.Checked && !hasLinks;
@@ -140,8 +155,8 @@ static class Program
         bytes += new FileInfo(uninstaller).Length;
 
         var exe = Path.Combine(InstallDir, ExeName);
-        Shortcut.Create(StartMenuLink, exe, "Лёгкий браузер для локальных проектов", Associations.AppUserModelId);
-        if (desktop) Shortcut.Create(DesktopLink, exe, "Лёгкий браузер для локальных проектов", Associations.AppUserModelId);
+        Shortcut.Create(StartMenuLink, exe, LinkDescription, Associations.AppUserModelId);
+        if (desktop) Shortcut.Create(DesktopLink, exe, LinkDescription, Associations.AppUserModelId);
         else DeleteLinkInto(DesktopLink, InstallDir);
 
         using (var key = Registry.LocalMachine.CreateSubKey(UninstallKey))
@@ -149,7 +164,7 @@ static class Program
             key.SetValue("DisplayName", AppName);
             key.SetValue("DisplayVersion", Version);
             key.SetValue("DisplayIcon", exe);
-            key.SetValue("Publisher", AppName);
+            key.SetValue("Publisher", Associations.Company);
             key.SetValue("InstallLocation", InstallDir);
             key.SetValue("InstallDate", DateTime.Now.ToString("yyyyMMdd"));
             key.SetValue("UninstallString", $"\"{uninstaller}\" /uninstall");
@@ -159,13 +174,17 @@ static class Program
             key.SetValue("NoRepair", 1, RegistryValueKind.DWord);
         }
 
+        Associations.MoveOldState();
+        // The main browser, found even should .html go to LiteBro later. Asked while LiteBrowser still has
+        // the links, if it had them: then the browser remembered before it stays.
+        Associations.RememberDefault();
+        RemoveLiteBrowser(exe);
         RegisterBrowser(exe); // lets Windows offer it for links
-        Associations.RememberDefault(); // the main browser, found even should .html go to LiteBrowser later
         // Earlier versions reached other programs' links in other ways
         RemoveChromeSwitch();
         RemoveBrowserVariable();
         RemoveHttpPolicy();
-        TryDelete(Path.Combine(DataDir, "other-browser.txt"));
+        foreach (var dir in new[] { DataDir, LiteBrowserDataDir }) TryDelete(Path.Combine(dir, "other-browser.txt"));
 
         if (links)
         {
@@ -176,16 +195,50 @@ static class Program
         if (launch) StartAsUser(exe);
         if (!launch || silent || (links && !hasLinks))
         {
-            Report("LiteBrowser " + Version + " установлен в " + InstallDir + "." + (hasLinks
+            Report(AppName + " " + Version + " установлен в " + InstallDir + "." + (hasLinks
                 ? "\nЛокальные адреса открываются в нём, остальные ссылки — в " + Associations.OtherBrowserName() + "."
-                : "\nЧтобы ссылки открывались в нём: Параметры → Приложения по умолчанию → LiteBrowser → HTTP → LiteBrowser."),
+                : "\nЧтобы ссылки открывались в нём: Параметры → Приложения по умолчанию → LiteBro → HTTP → LiteBro."),
                 MessageBoxIcon.Information);
         }
         return 0;
     }
 
-    /// <summary>True when Windows gives LiteBrowser both kinds of web links.</summary>
+    /// <summary>True when Windows gives LiteBro both kinds of web links.</summary>
     public static bool HandlesLinks() => Associations.Handles("http") && Associations.Handles("https");
+
+    /// <summary>
+    /// Takes away LiteBrowser, as this browser was called up to 1.9.6: its program, shortcuts and registration.
+    /// Its data stays for LiteBro to move over on its first start (Settings.MoveOldData). Windows keeps the user's
+    /// choice for links with the ProgId that goes here, so they are given to LiteBro once more (LinksStep).
+    /// </summary>
+    static void RemoveLiteBrowser(string exe)
+    {
+        var lm = Registry.LocalMachine;
+        lm.DeleteSubKeyTree(@"SOFTWARE\Classes\" + Associations.OldProgId, false);
+        lm.DeleteSubKeyTree(@"SOFTWARE\Clients\StartMenuInternet\" + OldName, false);
+        lm.DeleteSubKeyTree(@"SOFTWARE\Microsoft\Windows\CurrentVersion\App Paths\" + OldName + ".exe", false);
+        lm.DeleteSubKeyTree(@"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\" + OldName, false);
+        using (var apps = lm.OpenSubKey(RegisteredApps, writable: true)) apps?.DeleteValue(OldName, false);
+        foreach (var folder in new[] { Environment.SpecialFolder.CommonPrograms, Environment.SpecialFolder.CommonDesktopDirectory })
+            DeleteLinkInto(Path.Combine(Environment.GetFolderPath(folder), OldName + ".lnk"), LiteBrowserDir);
+        // A pin on the taskbar would point at a program that is gone: it is turned to LiteBro instead
+        var pins = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+            @"Microsoft\Internet Explorer\Quick Launch\User Pinned\TaskBar");
+        if (Directory.Exists(pins))
+        {
+            foreach (var link in Directory.GetFiles(pins, "*.lnk"))
+            {
+                if (Shortcut.Target(link) is { } target && IsInside(target, LiteBrowserDir))
+                    Shortcut.Create(link, exe, LinkDescription, Associations.AppUserModelId);
+            }
+        }
+        for (int i = 0; i < 10 && Directory.Exists(LiteBrowserDir); i++)
+        {
+            try { Directory.Delete(LiteBrowserDir, true); }
+            catch (Exception e) when (e is IOException || e is UnauthorizedAccessException) { Thread.Sleep(500); }
+        }
+        SHChangeNotify(AssocChanged, 0, IntPtr.Zero, IntPtr.Zero);
+    }
 
     static void TryDelete(string file)
     {
@@ -197,7 +250,7 @@ static class Program
     static void RemoveBrowserVariable()
     {
         var current = Environment.GetEnvironmentVariable("BROWSER", EnvironmentVariableTarget.User);
-        if (!string.IsNullOrEmpty(current) && Associations.IsLiteBrowser(current!))
+        if (!string.IsNullOrEmpty(current) && Associations.IsOurs(current!))
             Environment.SetEnvironmentVariable("BROWSER", null, EnvironmentVariableTarget.User);
     }
 
@@ -210,7 +263,7 @@ static class Program
     {
         using (var key = Registry.LocalMachine.OpenSubKey(ChromePolicyKey, writable: true))
         {
-            if (key?.GetValue("AlternativeBrowserPath") is not string path || !IsInside(path, InstallDir)) return;
+            if (key?.GetValue("AlternativeBrowserPath") is not string path || !InOurFolders(path)) return;
             foreach (var name in SwitchValues) key.DeleteValue(name, false);
             key.DeleteSubKeyTree("BrowserSwitcherUrlList", false);
             key.DeleteSubKeyTree("AlternativeBrowserParameters", false);
@@ -228,16 +281,16 @@ static class Program
 
     /// <summary>
     /// Takes back the default associations policy that versions 1.4 to 1.7 set on a domain (Windows ignores it
-    /// anywhere else), and only one pointing into the install folder; the file itself goes with that folder.
+    /// anywhere else), and only one pointing into an install folder; the file itself goes with that folder.
     /// </summary>
     static void RemoveHttpPolicy()
     {
         using var key = Registry.LocalMachine.OpenSubKey(PolicyKey, writable: true);
-        if (key?.GetValue(PolicyValue) is string existing && IsInside(existing, InstallDir)) key.DeleteValue(PolicyValue, false);
+        if (key?.GetValue(PolicyValue) is string existing && InOurFolders(existing)) key.DeleteValue(PolicyValue, false);
     }
 
     /// <summary>
-    /// Registers LiteBrowser for the whole computer the way Chrome does (one AppUserModelID for the ProgId,
+    /// Registers LiteBro for the whole computer the way Chrome does (one AppUserModelID for the ProgId,
     /// the shortcuts and the windows), so Windows offers it in its choice for HTTP and HTTPS.
     /// This changes no defaults: the user picks it there, and the main browser keeps the rest.
     /// </summary>
@@ -248,7 +301,7 @@ static class Program
         lm.DeleteSubKeyTree(ProgIdKey, false);
         using (var progId = lm.CreateSubKey(ProgIdKey))
         {
-            progId.SetValue("", "LiteBrowser HTML Document");
+            progId.SetValue("", AppName + " HTML Document");
             progId.SetValue("AppUserModelId", Associations.AppUserModelId);
             using (var k = progId.CreateSubKey("DefaultIcon")) k.SetValue("", icon);
             using (var k = progId.CreateSubKey(@"shell\open\command")) k.SetValue("", $"\"{exe}\" \"%1\"");
@@ -258,7 +311,7 @@ static class Program
                 k.SetValue("ApplicationName", AppName);
                 k.SetValue("ApplicationDescription", BrowserDescription);
                 k.SetValue("ApplicationIcon", icon);
-                k.SetValue("ApplicationCompany", AppName);
+                k.SetValue("ApplicationCompany", Associations.Company);
             }
         }
         lm.DeleteSubKeyTree(ClientKey, false);
@@ -311,14 +364,14 @@ static class Program
     static void RemoveOldPerUserInstall()
     {
         var cu = Registry.CurrentUser;
-        cu.DeleteSubKeyTree(@"Software\Classes\" + Associations.ProgId, false);
-        cu.DeleteSubKeyTree(@"Software\Clients\StartMenuInternet\" + AppName, false);
-        cu.DeleteSubKeyTree(@"Software\Microsoft\Windows\CurrentVersion\App Paths\" + ExeName, false);
-        cu.DeleteSubKeyTree(@"Software\Microsoft\Windows\CurrentVersion\Uninstall\" + AppName, false);
-        using (var apps = cu.OpenSubKey(@"Software\RegisteredApplications", writable: true)) apps?.DeleteValue(AppName, false);
+        cu.DeleteSubKeyTree(@"Software\Classes\" + Associations.OldProgId, false);
+        cu.DeleteSubKeyTree(@"Software\Clients\StartMenuInternet\" + OldName, false);
+        cu.DeleteSubKeyTree(@"Software\Microsoft\Windows\CurrentVersion\App Paths\" + OldName + ".exe", false);
+        cu.DeleteSubKeyTree(@"Software\Microsoft\Windows\CurrentVersion\Uninstall\" + OldName, false);
+        using (var apps = cu.OpenSubKey(@"Software\RegisteredApplications", writable: true)) apps?.DeleteValue(OldName, false);
         foreach (var ext in new[] { ".htm", ".html" })
             using (var k = cu.OpenSubKey($@"Software\Classes\{ext}\OpenWithProgids", writable: true))
-                k?.DeleteValue(Associations.ProgId, false);
+                k?.DeleteValue(Associations.OldProgId, false);
         foreach (var link in OldLinks) DeleteLinkInto(link, OldInstallDir);
         try { if (Directory.Exists(OldInstallDir)) Directory.Delete(OldInstallDir, true); }
         catch (Exception e) when (e is IOException || e is UnauthorizedAccessException) { }
@@ -351,7 +404,7 @@ static class Program
         var self = Assembly.GetExecutingAssembly().Location;
         if (IsInside(self, InstallDir))
         {
-            var copy = Path.Combine(Path.GetTempPath(), "LiteBrowser-uninstall-" + Guid.NewGuid().ToString("N").Substring(0, 8) + ".exe");
+            var copy = Path.Combine(Path.GetTempPath(), AppName + "-uninstall-" + Guid.NewGuid().ToString("N").Substring(0, 8) + ".exe");
             File.Copy(self, copy);
             Process.Start(new ProcessStartInfo(copy, string.Join(" ", args)) { UseShellExecute = false });
             return 0;
@@ -367,7 +420,7 @@ static class Program
                 Text = "Удалить также мои настройки и данные браузера:\nпроекты, cookies, settings.ini",
                 AutoSize = true,
             };
-            using var dialog = new Dialog("Удаление LiteBrowser", "Удалить LiteBrowser?",
+            using var dialog = new Dialog("Удаление LiteBro", "Удалить LiteBro?",
                 "Будут удалены программа, ярлыки и запись в списке установленных приложений.\n" +
                 "Данные в " + DataDir + " останутся, если не отметить пункт ниже." +
                 (hadLinks ? "\n\nЗатем ссылки нужно будет вернуть " + Associations.OtherBrowserName() +
@@ -379,7 +432,7 @@ static class Program
 
         if (hadLinks && !silent)
         {
-            // LiteBrowser's page in Settings is there only while it is registered
+            // LiteBro's page in Settings is there only while it is registered
             using var step = new LinksStep(giveBack: true);
             step.ShowDialog();
             hadLinks = Associations.Handles("http") || Associations.Handles("https");
@@ -397,49 +450,58 @@ static class Program
             catch (Exception e) when (e is IOException || e is UnauthorizedAccessException) { Thread.Sleep(500); }
         }
         Registry.LocalMachine.DeleteSubKeyTree(UninstallKey, false);
-        if (purge)
+        // LiteBrowser's folder too, should LiteBro not have moved it over yet
+        foreach (var dir in purge ? new[] { DataDir, LiteBrowserDataDir } : new string[0])
         {
-            for (int i = 0; i < 10 && Directory.Exists(DataDir); i++)
+            for (int i = 0; i < 10 && Directory.Exists(dir); i++)
             {
-                try { Directory.Delete(DataDir, true); }
+                try { Directory.Delete(dir, true); }
                 catch (Exception e) when (e is IOException || e is UnauthorizedAccessException) { Thread.Sleep(500); }
             }
         }
 
         if (Directory.Exists(InstallDir)) Report("Не всё удалось удалить: " + InstallDir, MessageBoxIcon.Warning);
-        else Report("LiteBrowser удалён." + (purge ? "" : "\nНастройки и данные остались в " + DataDir), MessageBoxIcon.Information);
+        else Report("LiteBro удалён." + (purge ? "" : "\nНастройки и данные остались в " + DataDir), MessageBoxIcon.Information);
         if (hadLinks)
         {
-            Report("Ссылки http и https всё ещё назначены LiteBrowser, которого больше нет. Выберите для них браузер " +
+            Report("Ссылки http и https всё ещё назначены LiteBro, которого больше нет. Выберите для них браузер " +
                 "в Параметрах → Приложения по умолчанию: в поле поиска введите http.", MessageBoxIcon.Information);
             if (!silent) OpenSettings("ms-settings:defaultapps");
         }
         return 0;
     }
 
-    /// <summary>Closes LiteBrowser windows so their files can be replaced; in silent mode only reports them.</summary>
+    /// <summary>
+    /// Closes the browser's windows, as LiteBro or as the LiteBrowser it replaces, so their files can be
+    /// replaced and the data folder moved; in silent mode only reports them.
+    /// </summary>
     static bool CloseRunning()
     {
-        var running = Process.GetProcessesByName(AppName).Where(p =>
+        var running = Process.GetProcessesByName(AppName).Concat(Process.GetProcessesByName(OldName)).Where(p =>
         {
-            try { return IsInside(p.MainModule!.FileName, InstallDir) || IsInside(p.MainModule!.FileName, OldInstallDir); }
+            try
+            {
+                var file = p.MainModule!.FileName;
+                return InOurFolders(file) || IsInside(file, OldInstallDir);
+            }
             catch (Exception) { return false; }
         }).ToArray();
         if (running.Length == 0) return true;
+        var name = running[0].ProcessName;
         if (silent)
         {
-            Report("LiteBrowser запущен: закройте его и повторите.", MessageBoxIcon.Warning);
+            Report(name + " запущен: закройте его и повторите.", MessageBoxIcon.Warning);
             return false;
         }
         var answer = MessageBox.Show(
-            "LiteBrowser запущен. Закрыть его и продолжить?\n\n" +
-            "Harness, который запустил браузер, тоже остановится, а текущая задача агента прервётся.",
-            "LiteBrowser", MessageBoxButtons.OKCancel, MessageBoxIcon.Warning);
+            name + " запущен. Закрыть его и продолжить?\n\n" +
+            "Программы проектов, которые он запустил (например, dsh), тоже остановятся, а текущая задача агента прервётся.",
+            name, MessageBoxButtons.OKCancel, MessageBoxIcon.Warning);
         if (answer != DialogResult.OK) return false;
         foreach (var p in running) p.CloseMainWindow();
         if (running.Any(p => !p.WaitForExit(15000)))
         {
-            Report("LiteBrowser не закрылся. Закройте его вручную и повторите.", MessageBoxIcon.Warning);
+            Report(name + " не закрылся. Закройте его вручную и повторите.", MessageBoxIcon.Warning);
             return false;
         }
         Thread.Sleep(1000); // WebView2 processes let go of their files
@@ -462,6 +524,9 @@ static class Program
 
     static bool IsInside(string path, string dir) =>
         Path.GetFullPath(path).StartsWith(Path.GetFullPath(dir).TrimEnd('\\') + "\\", StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>In Program Files\LiteBro, or in the LiteBrowser folder of the versions up to 1.9.6.</summary>
+    static bool InOurFolders(string path) => IsInside(path, InstallDir) || IsInside(path, LiteBrowserDir);
 
     static void Report(string message, MessageBoxIcon icon)
     {
@@ -530,8 +595,8 @@ sealed class Dialog : Form
 }
 
 /// <summary>
-/// Windows lets only the user choose the program for a link type. This window opens LiteBrowser's own page
-/// in Settings, names the three clicks to make there and closes itself once links go to LiteBrowser
+/// Windows lets only the user choose the program for a link type. This window opens LiteBro's own page
+/// in Settings, names the three clicks to make there and closes itself once links go to LiteBro
 /// (or, when it is being removed, back to the main browser).
 /// </summary>
 sealed class LinksStep : Form
@@ -547,7 +612,7 @@ sealed class LinksStep : Form
     public LinksStep(bool giveBack)
     {
         this.giveBack = giveBack;
-        Text = "LiteBrowser";
+        Text = Associations.AppName;
         Icon = Program.AppIcon;
         Font = new Font("Segoe UI", 9f);
         FormBorderStyle = FormBorderStyle.FixedDialog;
@@ -570,17 +635,17 @@ sealed class LinksStep : Form
         body.Controls.Add(new Label
         {
             Text = giveBack
-                ? "LiteBrowser удаляется, а ссылки http и https пока назначены ему. Выбрать для них программу " +
+                ? "LiteBro удаляется, а ссылки http и https пока назначены ему. Выбрать для них программу " +
                     "Windows разрешает только вам. В открывшемся окне Параметров:\n\n" +
-                    "1. Нажмите на плитку под заголовком HTTP (сейчас там LiteBrowser).\n" +
+                    "1. Нажмите на плитку под заголовком HTTP (сейчас там LiteBro).\n" +
                     "2. В открывшемся окне выберите " + browser + ".\n" +
                     "3. Нажмите «Задать по умолчанию».\n\n" +
                     "Windows вернёт " + browser + " и HTTP, и HTTPS."
                 : "Выбрать программу для ссылок Windows разрешает только вам. В открывшемся окне Параметров:\n\n" +
                     "1. Нажмите на плитку под заголовком HTTP (вероятно, сейчас там " + browser + ").\n" +
-                    "2. В открывшемся окне выберите LiteBrowser.\n" +
+                    "2. В открывшемся окне выберите LiteBro.\n" +
                     "3. Нажмите «Задать по умолчанию».\n\n" +
-                    "Windows отдаст LiteBrowser и HTTP, и HTTPS: локальные адреса он откроет сам, остальные сразу передаст " +
+                    "Windows отдаст LiteBro и HTTP, и HTTPS: локальные адреса он откроет сам, остальные сразу передаст " +
                     "в " + browser + ". Если " + browser + " потом предложит стать браузером по умолчанию, откажитесь: " +
                     "иначе он заберёт ссылки обратно.",
             AutoSize = true,
@@ -645,7 +710,7 @@ sealed class LinksStep : Form
 
     void Check()
     {
-        // Done: LiteBrowser has the protocol when installing, has it no longer when being removed
+        // Done: LiteBro has the protocol when installing, has it no longer when being removed
         bool http = Chosen("http") != giveBack, https = Chosen("https") != giveBack;
         if (http != https)
         {
@@ -655,7 +720,7 @@ sealed class LinksStep : Form
         }
         if (!http) return;
         poll.Stop();
-        status.Text = giveBack ? "Готово: ссылки снова у " + browser + "." : "Готово: ссылки идут через LiteBrowser.";
+        status.Text = giveBack ? "Готово: ссылки снова у " + browser + "." : "Готово: ссылки идут через LiteBro.";
         close.Text = "Готово";
         close.DialogResult = DialogResult.OK;
         var done = new System.Windows.Forms.Timer { Interval = 1500 };

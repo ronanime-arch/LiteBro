@@ -1,10 +1,10 @@
-# Builds the browser and packs it into the installer: dist\LiteBrowser-Setup.exe
+# Builds the browser and packs it into the installer: dist\LiteBro-Setup.exe
 $ErrorActionPreference = 'Stop'
 $root = $PSScriptRoot
 $build = Join-Path $root 'build'
 
 Remove-Item $build -Recurse -Force -ErrorAction SilentlyContinue
-dotnet build "$root\src\Browser\LiteBrowser.csproj" -c Release -o "$build\app" --nologo -v q
+dotnet build "$root\src\Browser\LiteBro.csproj" -c Release -o "$build\app" --nologo -v q
 if ($LASTEXITCODE) { throw 'browser build failed' }
 
 # Forward slashes in entry names, which the installer's ZipArchive expects
@@ -21,5 +21,5 @@ finally { $zip.Dispose() }
 dotnet build "$root\src\Setup\Setup.csproj" -c Release -o "$build\setup" --nologo -v q
 if ($LASTEXITCODE) { throw 'installer build failed' }
 New-Item -ItemType Directory -Force "$root\dist" | Out-Null
-Copy-Item "$build\setup\LiteBrowser-Setup.exe" "$root\dist\" -Force
-Get-Item "$root\dist\LiteBrowser-Setup.exe" | Select-Object FullName, @{ n = 'KB'; e = { [math]::Round($_.Length / 1KB) } }
+Copy-Item "$build\setup\LiteBro-Setup.exe" "$root\dist\" -Force
+Get-Item "$root\dist\LiteBro-Setup.exe" | Select-Object FullName, @{ n = 'KB'; e = { [math]::Round($_.Length / 1KB) } }

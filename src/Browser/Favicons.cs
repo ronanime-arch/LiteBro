@@ -8,12 +8,12 @@ using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using Microsoft.Web.WebView2.Core;
 
-namespace LiteBrowser;
+namespace LiteBro;
 
 /// <summary>
 /// The site's own icon for a project tile: the biggest one its page declares (an apple-touch-icon is made
 /// for tiles like these, an svg scales to any size), else its favicon. Fetched when the project is saved,
-/// and taken from the page when LiteBrowser opens it, which works behind a login too.
+/// and taken from the page when LiteBro opens it, which works behind a login too.
 /// </summary>
 static class Favicons
 {
@@ -102,7 +102,7 @@ static class Favicons
         return await DownloadAsync(candidates);
     }
 
-    /// <summary>From a page open in LiteBrowser: what it declares, the favicon Chromium chose, and at last that as drawn.</summary>
+    /// <summary>From a page open in LiteBro: what it declares, the favicon Chromium chose, and at last that as drawn.</summary>
     public static async Task<byte[]?> CaptureAsync(CoreWebView2 core)
     {
         var candidates = new List<Candidate>();

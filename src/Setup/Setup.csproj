@@ -7,13 +7,14 @@
     <LangVersion>10</LangVersion>
     <Nullable>enable</Nullable>
     <PlatformTarget>x64</PlatformTarget>
-    <AssemblyName>LiteBrowser-Setup</AssemblyName>
-    <RootNamespace>LiteBrowserSetup</RootNamespace>
+    <AssemblyName>LiteBro-Setup</AssemblyName>
+    <RootNamespace>LiteBroSetup</RootNamespace>
     <ApplicationIcon>..\Browser\app.ico</ApplicationIcon>
     <ApplicationManifest>app.manifest</ApplicationManifest>
-    <Version>1.9.6</Version>
-    <Product>LiteBrowser</Product>
-    <Description>Установка LiteBrowser</Description>
+    <Version>1.9.7</Version>
+    <Product>LiteBro</Product>
+    <Company>ronanime-arch</Company>
+    <Description>Установка LiteBro</Description>
     <DebugType>none</DebugType>
   </PropertyGroup>
 

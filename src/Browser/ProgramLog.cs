@@ -112,7 +112,9 @@ static class ProgramLog
         "#out{flex:1;margin:0;padding:10px 14px;overflow:auto;white-space:pre-wrap;word-break:break-word;font:13px/1.45 Consolas,monospace}" +
         "form{display:flex;gap:8px;align-items:center;padding:8px 14px;border-top:1px solid var(--line)}" +
         "#mode{padding:4px 10px}#mode.cmd{border-color:var(--accent);color:var(--accent)}" +
-        "#prompt{font:13px Consolas,monospace;color:var(--muted);max-width:40%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;direction:rtl}" +
+        "#prompt{font:13px Consolas,monospace;color:var(--muted);field-sizing:content;min-width:6ch;max-width:45%;padding:5px 6px;border:1px solid transparent;border-radius:6px;background:transparent;outline:none}" +
+        "#prompt:hover{border-color:var(--line)}#prompt:focus{border-color:var(--accent);color:inherit}#prompt:disabled{opacity:.6}#prompt[hidden]{display:none}" +
+        "#gt{font:13px Consolas,monospace;color:var(--muted);margin-left:-6px}" +
         "#line{flex:1;font:13px Consolas,monospace;padding:6px 8px;border:1px solid var(--line);border-radius:6px;background:transparent;color:inherit;outline:none}" +
         "#line:focus{border-color:var(--accent)}#line:disabled{opacity:.5}" +
         "</style></head><body>" +
@@ -120,7 +122,7 @@ static class ProgramLog
         "<button id=stop hidden>Остановить программу</button><button id=halt hidden>Прервать команду</button><button id=clear>Очистить экран</button><button id=term title='PowerShell в папке команд, в новой вкладке: работают claude, vim и другие программы с экраном'>Терминал</button>" +
         "<span id=path title='" + H(LogPath(p.Id)) + "'>" + H(LogPath(p.Id)) + "</span></header>" +
         "<pre id=out></pre>" +
-        "<form id=send><button type=button id=mode></button><span id=prompt></span>" +
+        "<form id=send><button type=button id=mode></button><input id=prompt autocomplete=off spellcheck=false><span id=gt>&gt;</span>" +
         "<input id=line autocomplete=off spellcheck=false></form>" +
         "<script>" +
         "const id=" + Js(p.Id) + ",shell=" + (IsShell(p) ? "true" : "false") + ",$=s=>document.getElementById(s),out=$('out'),line=$('line'),state=$('state'),stopBtn=$('stop'),halt=$('halt'),mode=$('mode'),promptEl=$('prompt');" +
@@ -129,10 +131,16 @@ static class ProgramLog
         // Two ways to type: a command for cmd in the console's folder, or a line to the running program
         "function modeShow(){mode.textContent=cmd?'Команда':'Программе';mode.className=cmd?'cmd':'';" +
         "mode.title=cmd?'Строка выполняется в cmd в папке ниже; cd меняет папку. Нажмите, чтобы писать программе проекта':'Строка уходит на ввод программе проекта. Нажмите, чтобы выполнять команды';" +
-        "promptEl.textContent=cmd?dir+'>':'>';promptEl.title=cmd?dir:'';" +
+        "promptEl.hidden=!cmd;if(document.activeElement!==promptEl)promptEl.value=dir;promptEl.disabled=command&&!shell;" +
+        "promptEl.title=promptEl.disabled?'Папку можно сменить, когда команда закончится':'Папка команд: исправьте и нажмите Enter, Esc — отменить';" +
         "line.placeholder=cmd?(command?'Команда выполняется: строка уйдёт ей на ввод':'Команда, например: git status, npm install, dir'):(running?'Строка для программы, Enter — отправить':'Программа не запущена');" +
         "line.disabled=!cmd&&!running;mode.hidden=shell;if(shell)line.placeholder=command?'Команда выполняется: следующая встанет в очередь':'Команда PowerShell, например: Get-ChildItem, git status, winget list';}" +
         "mode.addEventListener('click',()=>{cmd=!cmd;modeShow();line.focus();});" +
+        // The folder is edited in place: Enter goes there, Esc or leaving the field puts the current one back
+        "promptEl.addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();const v=promptEl.value.trim();" +
+        "if(v&&v!==dir){post({type:'cd',id,dir:v});setTimeout(poll,150);}line.focus();}" +
+        "else if(e.key==='Escape'){e.preventDefault();promptEl.value=dir;line.focus();}});" +
+        "promptEl.addEventListener('blur',()=>{promptEl.value=dir;});" +
         "function show(d){running=d.running;command=d.command;dir=d.dir;state.textContent=shell?(command?'● команда выполняется':''):running?'● программа работает':'программа остановлена';state.className=running?'on':'';" +
         "stopBtn.hidden=!running;halt.hidden=!command;modeShow();}" +
         "async function poll(){if(busy)return;busy=true;try{" +

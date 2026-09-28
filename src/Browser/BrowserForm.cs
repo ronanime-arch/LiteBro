@@ -1515,6 +1515,9 @@ sealed class BrowserForm : Form
             case "command" when console != null && Text("text") is { } line:
                 App.Current.LauncherFor(console).Run(line);
                 break;
+            case "cd" when console != null && Text("dir") is { } folder:
+                App.Current.LauncherFor(console).ChangeDir(folder);
+                break;
             case "stopCommand" when console != null:
                 App.Current.LauncherFor(console).StopCommand();
                 break;

@@ -259,6 +259,11 @@ static class NetLog
         return ip;
     }
 
+    public static Entry? Get(long seq)
+    {
+        lock (recent) return recent.FirstOrDefault(e => e.Seq == seq);
+    }
+
     /// <summary>Entries after a number, for the /net page; at most the last 500.</summary>
     public static string Since(long after)
     {
@@ -325,6 +330,8 @@ static class NetPage
 {
     public const string Path = "/net";
     public const string Url = "https://" + Home.Host + Path;
+
+    public static bool Is(string? uri) => Home.Is(uri) && new Uri(uri!).AbsolutePath == Path;
     static byte[]? html;
 
     public static Stream Html()

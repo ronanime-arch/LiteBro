@@ -896,28 +896,61 @@ sealed class BrowserForm : Form
     }
 
     /// <summary>A PNG of the tab into a file the user picks: the whole page (up to 16384 pixels down) or what is on screen.</summary>
+    // How tall the page would be if nothing scrolled: the document, or the viewport grown by what its main scrolling
+    // area hides (a chat's 100vh layout grows with the viewport, so its messages then fit)
+    const string MeasureScript = @"(() => {
+  let extra = 0;
+  for (const el of document.querySelectorAll('*')) {
+    if (el.clientHeight < innerHeight * 0.3 || el.scrollHeight <= el.clientHeight + 1) continue;
+    const y = getComputedStyle(el).overflowY;
+    if (y === 'auto' || y === 'scroll' || y === 'overlay') extra = Math.max(extra, el.scrollHeight - el.clientHeight);
+  }
+  const doc = Math.max(document.documentElement.scrollHeight, document.body ? document.body.scrollHeight : 0);
+  return JSON.stringify({ w: document.documentElement.clientWidth || innerWidth, h: innerHeight, doc, extra, x: scrollX, y: scrollY });
+})()";
+
+    /// <summary>
+    /// The whole page: as DevTools' full size screenshot, the viewport is made as tall as the page for one shot
+    /// (captureBeyondViewport alone gives the visible part only in WebView2), then set back.
+    /// </summary>
+    async Task<byte[]> FullShotAsync(Tab tab, CoreWebView2 core)
+    {
+        var measured = ProjectStore.Json.Deserialize<Dictionary<string, object>>(
+            ProjectStore.Json.Deserialize<string>(await core.ExecuteScriptAsync(MeasureScript)) ?? "{}");
+        double Get(string key) => measured.TryGetValue(key, out var v) && v != null ? Convert.ToDouble(v) : 0;
+        int width = (int)Math.Max(1, Get("w"));
+        int height = (int)Math.Min(16384, Math.Max(Get("h"), Math.Max(Get("doc"), Get("h") + Get("extra"))));
+        try
+        {
+            await core.CallDevToolsProtocolMethodAsync("Emulation.setDeviceMetricsOverride",
+                $"{{\"width\":{width},\"height\":{height},\"deviceScaleFactor\":0,\"mobile\":{(tab.Device?.Mobile == true ? "true" : "false")}}}");
+            // Layout, and pictures that load as they come into view
+            await Task.Delay(400);
+            await core.ExecuteScriptAsync("scrollTo(0, 0)");
+            await Task.Delay(100);
+            var shot = ProjectStore.Json.Deserialize<Dictionary<string, object>>(await core.CallDevToolsProtocolMethodAsync(
+                "Page.captureScreenshot", "{\"format\":\"png\"}"));
+            return Convert.FromBase64String((string)shot["data"]);
+        }
+        finally
+        {
+            // Back to the tab's own screen: its emulated device, or none
+            if (tab.Device != null) await Emulation.ApplyAsync(core, tab.Device, tab.Speed, RoomOf(tab));
+            else
+                try { await core.CallDevToolsProtocolMethodAsync("Emulation.clearDeviceMetricsOverride", "{}"); }
+                catch (Exception) { }
+            try { await core.ExecuteScriptAsync(FormattableString.Invariant($"scrollTo({Get("x")}, {Get("y")})")); }
+            catch (Exception) { }
+        }
+    }
+
     async void Snapshot(Tab tab, bool full)
     {
         if (tab.Core is not { } core) return;
         byte[] png;
         try
         {
-            if (full)
-            {
-                var metrics = ProjectStore.Json.Deserialize<Dictionary<string, object>>(
-                    await core.CallDevToolsProtocolMethodAsync("Page.getLayoutMetrics", "{}"));
-                double Size(string key) => metrics.TryGetValue("cssContentSize", out var v) && v is Dictionary<string, object> box
-                    && box.TryGetValue(key, out var n) ? Convert.ToDouble(n) : 0;
-                double width = Math.Max(1, Math.Ceiling(Size("width"))), height = Math.Max(1, Math.Min(16384, Math.Ceiling(Size("height"))));
-                var shot = ProjectStore.Json.Deserialize<Dictionary<string, object>>(await core.CallDevToolsProtocolMethodAsync("Page.captureScreenshot",
-                    ProjectStore.Json.Serialize(new Dictionary<string, object>
-                    {
-                        ["format"] = "png",
-                        ["captureBeyondViewport"] = true,
-                        ["clip"] = new Dictionary<string, object> { ["x"] = 0, ["y"] = 0, ["width"] = width, ["height"] = height, ["scale"] = 1 },
-                    })));
-                png = Convert.FromBase64String((string)shot["data"]);
-            }
+            if (full) png = await FullShotAsync(tab, core);
             else
             {
                 using var stream = new MemoryStream();

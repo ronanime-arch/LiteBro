@@ -35,6 +35,9 @@ sealed class Tab
     public bool NetFilter;
     /// <summary>The request filters of the mocks (MockStore) in place on the current WebView.</summary>
     public HashSet<string> MockFilters = new();
+    /// <summary>The screen and network the tab emulates (the toolbar's phone button); null for its own.</summary>
+    public Emulation.Device? Device;
+    public Emulation.Speed? Speed;
     public string? NetScript;
     public int NetGeneration;
     /// <summary>The journal's listener to responses, only while it is on: each response it hears crosses to this process.</summary>

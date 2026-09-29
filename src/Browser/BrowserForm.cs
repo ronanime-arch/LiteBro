@@ -106,7 +106,9 @@ sealed class BrowserForm : Form
         reload = MakeButton(GlyphReload, "Обновить (F5)", ReloadOrStop);
         reset = MakeButton(GlyphReset, "Сбросить Service Worker и кэш сайта, загрузить заново (Ctrl+Shift+R)", ResetSite);
         reset.Visible = false;
-        home = MakeButton(GlyphHome, "Проекты (Alt+Home)", GoHome);
+        home = MakeButton(GlyphHome, "Проекты (Alt+Home). Ctrl+клик или колёсико — в новой вкладке",
+            () => { if (ModifierKeys == Keys.Control) OpenNewTab(null); else GoHome(); });
+        home.MouseUp += (_, e) => { if (e.Button == MouseButtons.Middle) OpenNewTab(null); };
         country = MakeButton(GlyphGlobe, "Страна поиска", ShowCountryMenu);
         country.Visible = false;
         star = MakeButton(GlyphStar, "", ShowFavoriteMenu);
@@ -2198,11 +2200,12 @@ sealed class BrowserForm : Form
                 else tab.Core?.Navigate(ProgramLog.Url(console));
                 break;
             case "terminal":
-                // PowerShell in a terminal tab: in the console's folder (a tab of its own, beside the console),
-                // or the user's from the start page, in its own tab unless Ctrl+clicked
-                if (console != null) OpenTerminal(App.Current.LauncherFor(console).CommandDir);
-                else if (Flag("newTab")) OpenTerminal(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile));
-                else OpenTerminalHere(tab, Environment.GetFolderPath(Environment.SpecialFolder.UserProfile));
+                // PowerShell in a terminal: in the console's folder, or the user's from the start page;
+                // in this tab, or a new one on Ctrl+click or the mouse wheel
+                var termDir = console != null ? App.Current.LauncherFor(console).CommandDir
+                    : Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+                if (Flag("newTab")) OpenTerminal(termDir);
+                else OpenTerminalHere(tab, termDir);
                 break;
             case "termStart" when TermPage.Is(e.Source):
                 StartTerm(tab, Number("cols"), Number("rows"));

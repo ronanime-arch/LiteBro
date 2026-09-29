@@ -52,8 +52,8 @@ sealed class BrowserForm : Form
     };
     readonly ToolTip tips = new();
     readonly TableLayoutPanel bar;
-    readonly ToolButton back, forward, reload, reset, home, country, star;
-    const string GlyphStar = "\uE734", GlyphStarFilled = "\uE735", GlyphReset = "\uE75C";
+    readonly ToolButton back, forward, reload, reset, home, country, star, emulate;
+    const string GlyphStar = "\uE734", GlyphStarFilled = "\uE735", GlyphReset = "\uE75C", GlyphTools = "\uE90F";
     readonly Font countryGlyphFont, countryCodeFont = new("Segoe UI", 9f, FontStyle.Bold);
     readonly Timer ramTimer = new() { Interval = 2000 };
     // How long a window may sit in the background before it gives memory back
@@ -110,22 +110,24 @@ sealed class BrowserForm : Form
         country = MakeButton(GlyphGlobe, "Страна поиска", ShowCountryMenu);
         country.Visible = false;
         star = MakeButton(GlyphStar, "", ShowFavoriteMenu);
+        emulate = MakeButton(GlyphTools, "Инструменты: эмуляция устройства и сети", ShowToolsMenu);
+        emulate.Visible = false;
         countryGlyphFont = country.Font;
 
         bar = new TableLayoutPanel
         {
             Dock = DockStyle.Top,
             AutoSize = true,
-            ColumnCount = 9,
+            ColumnCount = 10,
             RowCount = 1,
             Padding = new Padding(4, 3, 0, 3),
         };
         for (int i = 0; i < 5; i++) bar.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
         bar.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
-        for (int i = 0; i < 3; i++) bar.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
-        var cells = new Control[] { back, forward, reload, reset, home, address, star, country, ram };
+        for (int i = 0; i < 4; i++) bar.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+        var cells = new Control[] { back, forward, reload, reset, home, address, emulate, star, country, ram };
         bar.Controls.AddRange(cells);
-        // Fixed cells: a hidden button (reset, star, country) leaves its column empty instead of shifting the rest along
+        // Fixed cells: a hidden button (reset, emulate, star, country) leaves its column empty instead of shifting the rest along
         for (int i = 0; i < cells.Length; i++) bar.SetCellPosition(cells[i], new TableLayoutPanelCellPosition(i, 0));
 
         // Docking goes from the last added: the strip on top, the toolbar under it, the page in what is left
@@ -159,6 +161,12 @@ sealed class BrowserForm : Form
             EnterBackground();
         };
         freezeTimer.Tick += (_, _) => FreezeIdleTabs();
+        fitTimer.Tick += (_, _) =>
+        {
+            fitTimer.Stop();
+            foreach (var tab in OnScreen)
+                if (tab.Device != null && tab.Core is { } core) _ = Emulation.ApplyAsync(core, tab.Device, tab.Speed, RoomOf(tab));
+        };
         host.Resize += (_, _) => LayoutPanes();
         address.HandleCreated += (_, _) => Theme.ApplyEdit(address.Handle);
         ApplyTheme();
@@ -167,7 +175,7 @@ sealed class BrowserForm : Form
     /// <summary>The toolbar's glyphs differ in width and height: every button gets the box of the largest.</summary>
     void EvenButtons()
     {
-        var buttons = new[] { back, forward, reload, reset, home, star, country };
+        var buttons = new[] { back, forward, reload, reset, home, emulate, star, country };
         foreach (var b in buttons) b.MinimumSize = Size.Empty;
         var size = new Size(buttons.Max(b => b.PreferredSize.Width), buttons.Max(b => b.PreferredSize.Height));
         size.Width = size.Height = Math.Max(size.Width, size.Height);
@@ -192,7 +200,7 @@ sealed class BrowserForm : Form
         BackColor = host.BackColor = Theme.PageBackground;
         divider.BackColor = Theme.Strip;
         bar.BackColor = Theme.Face;
-        foreach (var b in new[] { back, forward, reload, reset, home, star, country })
+        foreach (var b in new[] { back, forward, reload, reset, home, emulate, star, country })
         {
             b.BackColor = Theme.Face;
             b.ForeColor = Theme.Text;
@@ -200,6 +208,7 @@ sealed class BrowserForm : Form
             b.FlatAppearance.MouseDownBackColor = Theme.Mix(Theme.Face, Theme.Text, .2f);
         }
         if (active != null) ShowStar(active); // gold stays gold
+        if (active != null) ShowEmulation(active); // and green green
         address.BackColor = Theme.Field;
         address.ForeColor = Theme.Text;
         ram.ForeColor = Theme.Dim;
@@ -355,6 +364,8 @@ sealed class BrowserForm : Form
         tab.NetScript = null;
         tab.NetResponse = null;
         ApplyNet(tab);
+        // A new WebView (another profile, loaded again) keeps the tab's emulation
+        if (tab.Device != null || tab.Speed != null) _ = Emulation.ApplyAsync(core, tab.Device, tab.Speed, RoomOf(tab));
         core.WebMessageReceived += (_, e) => OnWebMessage(tab, e);
         core.FaviconChanged += (_, _) => TakeSiteIcon(tab);
 
@@ -522,6 +533,7 @@ sealed class BrowserForm : Form
         ShowCountry(tab);
         ShowStar(tab);
         reset.Visible = SiteOrigin(tab) != null;
+        ShowEmulation(tab);
         ShowStrip();
     }
 
@@ -830,7 +842,77 @@ sealed class BrowserForm : Form
         }
         foreach (var tab in OnScreen)
             if (tab.Ctl is { } c) c.Bounds = BoundsOf(tab);
+        // An emulated screen is fitted to the room anew once the resizing stops
+        if (OnScreen.Any(t => t.Device != null))
+        {
+            fitTimer.Stop();
+            fitTimer.Start();
+        }
     }
+
+    readonly Timer fitTimer = new() { Interval = 300 };
+
+    /// <summary>The page's room in CSS pixels: what an emulated screen is shrunk to fit.</summary>
+    Size RoomOf(Tab tab)
+    {
+        var b = BoundsOf(tab);
+        double scale = DeviceDpi / 96.0 * (tab.Ctl?.ZoomFactor ?? 1);
+        return new Size((int)(b.Width / scale), (int)(b.Height / scale));
+    }
+
+    /// <summary>The tools button: on sites and files, lit while the tab emulates something.</summary>
+    void ShowEmulation(Tab tab)
+    {
+        bool on = tab.Device != null || tab.Speed != null;
+        emulate.Visible = on || (!tab.ShowingInternalPage && !IsInternal(tab.Site) && tab.Term == null);
+        emulate.ForeColor = on ? Color.FromArgb(0x1f, 0x9d, 0x55) : Theme.Text;
+        var what = string.Join(", ", new[] { tab.Device?.Name, tab.Speed?.Name }.OfType<string>());
+        tips.SetToolTip(emulate, on ? "Инструменты. Эмуляция: " + what : "Инструменты: эмуляция устройства и сети");
+    }
+
+    /// <summary>The tools button's menu: the screen and the network the tab emulates.</summary>
+    void ShowToolsMenu()
+    {
+        if (active is not { } tab) return;
+        var menu = NewMenu();
+        var screen = new ToolStripMenuItem("Устройство" + (tab.Device != null ? ": " + tab.Device.Name : ""));
+        screen.DropDownItems.Add(new ToolStripMenuItem("Обычный экран", null, (_, _) => SetEmulation(tab, null, tab.Speed)) { Checked = tab.Device == null });
+        foreach (var d in Emulation.Devices)
+            screen.DropDownItems.Add(new ToolStripMenuItem($"{d.Name} ({d.Width}×{d.Height})", null, (_, _) => SetEmulation(tab, d, tab.Speed)) { Checked = tab.Device == d });
+        var net = new ToolStripMenuItem("Сеть" + (tab.Speed != null ? ": " + tab.Speed.Name : ""));
+        net.DropDownItems.Add(new ToolStripMenuItem("Обычная", null, (_, _) => SetEmulation(tab, tab.Device, null)) { Checked = tab.Speed == null });
+        foreach (var sp in Emulation.Speeds)
+            net.DropDownItems.Add(new ToolStripMenuItem(sp.Name, null, (_, _) => SetEmulation(tab, tab.Device, sp)) { Checked = tab.Speed == sp });
+        foreach (var sub in new[] { screen, net })
+            if (Theme.Dark)
+            {
+                sub.DropDown.Renderer = menu.Renderer;
+                sub.DropDown.ForeColor = Theme.Text;
+            }
+        menu.Items.Add(screen);
+        menu.Items.Add(net);
+        if (tab.Device != null || tab.Speed != null)
+        {
+            menu.Items.Add(new ToolStripSeparator());
+            menu.Items.Add(new ToolStripMenuItem("Выключить эмуляцию", null, (_, _) => SetEmulation(tab, null, null)));
+        }
+        menu.Show(emulate, new Point(0, emulate.Height));
+    }
+
+    /// <summary>A device or network for the tab; the page reloads when the device changes, so it lays out as on it.</summary>
+    async void SetEmulation(Tab tab, Emulation.Device? device, Emulation.Speed? speed)
+    {
+        bool reload = device != tab.Device;
+        tab.Device = device;
+        tab.Speed = speed;
+        ShowState(tab);
+        if (tab.Core is not { } core) return;
+        await Emulation.ApplyAsync(core, device, speed, RoomOf(tab));
+        // Pages read the user agent and touch support once, as they load
+        if (reload && tab.Core == core && !tab.ShowingInternalPage)
+            try { core.Reload(); } catch (Exception) { }
+    }
+
 
     /// <summary>The tab beside becomes the tab in front, where it is.</summary>
     void FocusPane(Tab tab)

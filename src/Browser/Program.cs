@@ -368,6 +368,12 @@ sealed class App : ApplicationContext
         foreach (var form in forms) form.ApplyNet();
     }
 
+    /// <summary>A switch of the «Для разработчика» page: every window's toolbar, menus and pages follow it.</summary>
+    public void ApplyDev()
+    {
+        foreach (var form in forms.ToList()) form.ApplyDev();
+    }
+
     /// <summary>The network flags the running engine was started with.</summary>
     string engineKey = "";
 

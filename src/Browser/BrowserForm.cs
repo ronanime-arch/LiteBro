@@ -434,7 +434,7 @@ sealed class BrowserForm : Form
         core.NavigationCompleted += (_, e) =>
         {
             SetLoading(tab, false);
-            if (e.IsSuccess && !tab.ShowingInternalPage && !IsInternal(core.Source)) ShowJson(core);
+            if (e.IsSuccess && !tab.ShowingInternalPage && !IsInternal(core.Source) && Dev.On("json")) ShowJson(core);
             // A site that does not answer gets this program's page, not the engine's own one that names Edge
             if (!e.IsSuccess && IsUnreachable(e.WebErrorStatus) && Uri.TryCreate(core.Source, UriKind.Absolute, out var failed)
                 && !Home.Is(core.Source) && (failed.Scheme == "http" || failed.Scheme == "https"))
@@ -539,7 +539,13 @@ sealed class BrowserForm : Form
         if (switched || !address.Focused) address.Text = AddressOf(tab);
         ShowCountry(tab);
         ShowStar(tab);
-        reset.Visible = SiteOrigin(tab) != null;
+        reset.Visible = SiteOrigin(tab) != null && Dev.On("reset");
+        // Buttons switched off on the «Для разработчика» page; their keys still work
+        back.Visible = Dev.On("back");
+        forward.Visible = Dev.On("forward");
+        reload.Visible = Dev.On("reload");
+        home.Visible = Dev.On("home");
+        ram.Visible = Dev.On("ram");
         ShowEmulation(tab);
         ShowStrip();
         if (App.Current.S.AutoReload || watchers.Count > 0) WatchFolders();
@@ -589,7 +595,7 @@ sealed class BrowserForm : Form
     void ShowStar(Tab tab)
     {
         var url = Savable(tab);
-        star.Visible = url != null;
+        star.Visible = url != null && Dev.On("star");
         if (url == null) return;
         var saved = SavedIn(url);
         var text = saved == null ? GlyphStar : GlyphStarFilled;
@@ -678,7 +684,7 @@ sealed class BrowserForm : Form
     /// <summary>The country button: on Google search only, with the code of the picked country or a globe.</summary>
     void ShowCountry(Tab tab)
     {
-        country.Visible = !tab.ShowingInternalPage && SearchCountry.IsGoogleSearch(tab.Site);
+        country.Visible = !tab.ShowingInternalPage && SearchCountry.IsGoogleSearch(tab.Site) && Dev.On("country");
         var picked = SearchCountry.Current;
         var text = picked?.Code ?? GlyphGlobe;
         if (country.Text == text) return;
@@ -715,7 +721,7 @@ sealed class BrowserForm : Form
     void ShowTabMenu(Tab tab, Point at)
     {
         var menu = NewMenu();
-        if (active != null && !IsPane(tab) && tab != active)
+        if (active != null && !IsPane(tab) && tab != active && Dev.On("split"))
             menu.Items.Add(new ToolStripMenuItem("Открыть рядом", null, (_, _) => SplitWith(tab)));
         if (Split)
         {
@@ -988,7 +994,8 @@ sealed class BrowserForm : Form
     void ShowEmulation(Tab tab)
     {
         bool on = tab.Device != null || tab.Speed != null;
-        emulate.Visible = on || (!tab.ShowingInternalPage && !IsInternal(tab.Site) && tab.Term == null);
+        bool any = Dev.On("emulation") || Dev.On("snapshot") || Dev.On("storage");
+        emulate.Visible = on || (any && !tab.ShowingInternalPage && !IsInternal(tab.Site) && tab.Term == null);
         emulate.ForeColor = on ? Color.FromArgb(0x1f, 0x9d, 0x55) : Theme.Text;
         var what = string.Join(", ", new[] { tab.Device?.Name, tab.Speed?.Name }.OfType<string>());
         tips.SetToolTip(emulate, on ? "Инструменты. Эмуляция: " + what : "Инструменты: эмуляция устройства и сети");
@@ -999,6 +1006,31 @@ sealed class BrowserForm : Form
     {
         if (active is not { } tab) return;
         var menu = NewMenu();
+        if (Dev.On("emulation"))
+            AddEmulationItems(menu, tab);
+        if (Dev.On("snapshot"))
+        {
+            if (menu.Items.Count > 0) menu.Items.Add(new ToolStripSeparator());
+            menu.Items.Add(new ToolStripMenuItem("Снимок страницы целиком…", null, (_, _) => Snapshot(tab, full: true)) { ShortcutKeyDisplayString = "Ctrl+Shift+S" });
+            menu.Items.Add(new ToolStripMenuItem("Снимок видимой части…", null, (_, _) => Snapshot(tab, full: false)));
+        }
+        if (Dev.On("storage") && tab.Core is { } core && StoragePage.HasSite(core))
+        {
+            if (menu.Items.Count > 0 && !Dev.On("snapshot")) menu.Items.Add(new ToolStripSeparator());
+            menu.Items.Add(new ToolStripMenuItem("Хранилище сайта: cookies, localStorage, IndexedDB", null, (_, _) => OpenStorage(tab)));
+        }
+        // An emulation left on is always switched off from here, the feature on or not
+        if (tab.Device != null || tab.Speed != null)
+        {
+            if (menu.Items.Count > 0) menu.Items.Add(new ToolStripSeparator());
+            menu.Items.Add(new ToolStripMenuItem("Выключить эмуляцию", null, (_, _) => SetEmulation(tab, null, null)));
+        }
+        if (menu.Items.Count == 0) return;
+        menu.Show(emulate, new Point(0, emulate.Height));
+    }
+
+    void AddEmulationItems(ContextMenuStrip menu, Tab tab)
+    {
         var screen = new ToolStripMenuItem("Устройство" + (tab.Device != null ? ": " + tab.Device.Name : ""));
         screen.DropDownItems.Add(new ToolStripMenuItem("Обычный экран", null, (_, _) => SetEmulation(tab, null, tab.Speed)) { Checked = tab.Device == null });
         foreach (var d in Emulation.Devices)
@@ -1015,19 +1047,6 @@ sealed class BrowserForm : Form
             }
         menu.Items.Add(screen);
         menu.Items.Add(net);
-        menu.Items.Add(new ToolStripSeparator());
-        menu.Items.Add(new ToolStripMenuItem("Снимок страницы целиком…", null, (_, _) => Snapshot(tab, full: true)) { ShortcutKeyDisplayString = "Ctrl+Shift+S" });
-        menu.Items.Add(new ToolStripMenuItem("Снимок видимой части…", null, (_, _) => Snapshot(tab, full: false)));
-        if (tab.Core is { } core && StoragePage.HasSite(core))
-        {
-            menu.Items.Add(new ToolStripMenuItem("Хранилище сайта: cookies, localStorage, IndexedDB", null, (_, _) => OpenStorage(tab)));
-        }
-        if (tab.Device != null || tab.Speed != null)
-        {
-            menu.Items.Add(new ToolStripSeparator());
-            menu.Items.Add(new ToolStripMenuItem("Выключить эмуляцию", null, (_, _) => SetEmulation(tab, null, null)));
-        }
-        menu.Show(emulate, new Point(0, emulate.Height));
     }
 
     /// <summary>A device or network for the tab; the page reloads when the device changes, so it lays out as on it.</summary>
@@ -1275,6 +1294,16 @@ sealed class BrowserForm : Form
     }
 
     /// <summary>The network switches changed: every tab follows, and the start pages and /net show them.</summary>
+    /// <summary>After a switch on the «Для разработчика» page: emulation switched off leaves the tabs, the toolbar follows.</summary>
+    public void ApplyDev()
+    {
+        if (!Dev.On("emulation"))
+            foreach (var tab in tabs.Where(t => t.Device != null || t.Speed != null).ToList())
+                SetEmulation(tab, null, null);
+        ApplyNet();
+        if (active != null) ShowState(active);
+    }
+
     public void ApplyNet()
     {
         foreach (var tab in tabs)
@@ -1391,7 +1420,7 @@ sealed class BrowserForm : Form
                 core.RemoveWebResourceRequestedFilter("*", CoreWebView2WebResourceContext.All, All);
             tab.NetFilter = NetGuard.LocalOnly;
             // Mocks see only the requests to their own addresses
-            var mocks = MockStore.Filters();
+            var mocks = Dev.On("mocks") ? MockStore.Filters() : new HashSet<string>();
             foreach (var gone in tab.MockFilters.Except(mocks).ToList())
             {
                 core.RemoveWebResourceRequestedFilter(gone, CoreWebView2WebResourceContext.All, All);
@@ -1435,6 +1464,7 @@ sealed class BrowserForm : Form
                 ["autoReload"] = App.Current.S.AutoReload,
                 ["file"] = NetLog.FilePath,
                 ["mocks"] = MockStore.Summary(),
+                ["off"] = Dev.OffList(),
             }));
     }
 
@@ -1496,7 +1526,7 @@ sealed class BrowserForm : Form
     /// <summary>A request a mock answers gets its stub, in «только localhost» mode too; the journal notes it.</summary>
     bool TryMock(Tab tab, CoreWebView2WebResourceRequestedEventArgs e, CoreWebView2Environment env)
     {
-        if (MockStore.All.Count == 0 || !Uri.TryCreate(e.Request.Uri, UriKind.Absolute, out var url) || !NetGuard.IsNetwork(url)) return false;
+        if (MockStore.All.Count == 0 || !Dev.On("mocks") || !Uri.TryCreate(e.Request.Uri, UriKind.Absolute, out var url) || !NetGuard.IsNetwork(url)) return false;
         var method = e.Request.Method;
         string? origin = e.Request.Headers.Contains("Origin") ? e.Request.Headers.GetHeader("Origin") : null;
         // The page may read the stub from another site: allowed for it, with its cookies
@@ -1927,6 +1957,8 @@ sealed class BrowserForm : Form
         }
         else if (path == NetPage.Path)
             e.Response = env.CreateWebResourceResponse(NetPage.Html(), 200, "OK", ProgramLog.Headers);
+        else if (path == Dev.Path)
+            e.Response = env.CreateWebResourceResponse(Dev.Html(), 200, "OK", ProgramLog.Headers);
         else if (path == StoragePage.Path)
             e.Response = env.CreateWebResourceResponse(StoragePage.Html(), 200, "OK", ProgramLog.Headers);
         else if (path == NetPage.Path + "/log")
@@ -2033,6 +2065,16 @@ sealed class BrowserForm : Form
                 break;
             case "netOpen":
                 OpenNewTab(NetPage.Url);
+                break;
+            case "devOpen":
+                OpenNewTab(Dev.Url);
+                break;
+            case "dev" when Dev.Is(e.Source) && Text("id") is { } devId:
+                if (Dev.Set(devId, Flag("on"))) BeginInvoke(new Action(App.Current.ApplyDev));
+                break;
+            case "devReset" when Dev.Is(e.Source):
+                Dev.Reset();
+                BeginInvoke(new Action(App.Current.ApplyDev));
                 break;
             case "open" when project != null:
                 // One of the project's own links, never an address the page makes up
@@ -2298,10 +2340,11 @@ sealed class BrowserForm : Form
             case Keys.F5:
             case Keys.Control | Keys.R:
                 return ReloadOrStop;
-            case Keys.Control | Keys.Shift | Keys.R:
-            case Keys.Control | Keys.F5:
+            // Switched off on the «Для разработчика» page: the key goes to the page, as in other browsers
+            case Keys.Control | Keys.Shift | Keys.R when Dev.On("reset"):
+            case Keys.Control | Keys.F5 when Dev.On("reset"):
                 return ResetSite;
-            case Keys.Control | Keys.Shift | Keys.S:
+            case Keys.Control | Keys.Shift | Keys.S when Dev.On("snapshot"):
                 return () => { if (active != null) Snapshot(active, full: true); };
             case Keys.Shift | Keys.Escape:
                 return () => Core?.OpenTaskManagerWindow();

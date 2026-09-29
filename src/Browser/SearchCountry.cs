@@ -60,8 +60,8 @@ static class SearchCountry
     public static Country? Find(string? code) =>
         All.FirstOrDefault(c => string.Equals(c.Code, code?.Trim(), StringComparison.OrdinalIgnoreCase));
 
-    /// <summary>The country picked for searches; null to search as usual.</summary>
-    public static Country? Current => Find(App.Current.S.SearchCountry);
+    /// <summary>The country picked for searches; null to search as usual, or while switched off on the «Для разработчика» page.</summary>
+    public static Country? Current => Dev.On("country") ? Find(App.Current.S.SearchCountry) : null;
 
     // google.com, www.google.de, google.co.uk, www.google.com.ua
     static readonly Regex GoogleHost = new(@"^(www\.)?google\.(com?\.)?[a-z]{2,3}$", RegexOptions.IgnoreCase);

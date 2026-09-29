@@ -70,10 +70,12 @@ sealed class Settings
     public bool ClearOnExit;
     /// <summary>A page on screen loads again when a file in its project's folder (or its own folder, for a file) changes.</summary>
     public bool AutoReload;
+    /// <summary>Buttons and tools switched off on the «Для разработчика» page (Dev.Ids), through spaces.</summary>
+    public string DevOff = "";
 
     static readonly string[] Keys =
     {
-        "searchurl", "searchcountry", "theme", "gpu", "extrabrowserargs", "localhosts", "otherbrowser", "localonly", "netjournal", "allowhosts", "ignorecors", "clearonexit", "autoreload",
+        "searchurl", "searchcountry", "theme", "gpu", "extrabrowserargs", "localhosts", "otherbrowser", "localonly", "netjournal", "allowhosts", "ignorecors", "clearonexit", "autoreload", "devoff",
     };
 
     public static Settings Load()
@@ -112,6 +114,7 @@ sealed class Settings
                 case "ignorecors": s.IgnoreCors = IsTrue(value); break;
                 case "clearonexit": s.ClearOnExit = IsTrue(value); break;
                 case "autoreload": s.AutoReload = IsTrue(value); break;
+                case "devoff": s.DevOff = value; break;
             }
         }
         // A file from an older version lacks the newer keys or has ones since dropped: rewrite it, keeping the values
@@ -153,6 +156,13 @@ sealed class Settings
     public void SaveAutoReload(bool on)
     {
         AutoReload = on;
+        Save();
+    }
+
+    /// <summary>Remembers what is switched off on the «Для разработчика» page.</summary>
+    public void SaveDevOff(string off)
+    {
+        DevOff = off;
         Save();
     }
 
@@ -210,6 +220,11 @@ sealed class Settings
         "ClearOnExit = " + Bool(ClearOnExit),
         "# Обновлять страницу на экране, когда меняется файл в папке её проекта (или в папке открытого файла)",
         "AutoReload = " + Bool(AutoReload),
+        "",
+        "# --- Для разработчика ---",
+        "# Что выключено на странице «Для разработчика» (кнопка у правого края стартовой страницы), через пробел.",
+        "# Пусто = всё включено. Саму страницу выключить нельзя.",
+        "DevOff = " + DevOff,
         "");
 
     public static (Rectangle Bounds, bool Maximized, double Zoom)? LoadWindow()

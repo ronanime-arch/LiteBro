@@ -22,6 +22,8 @@
     <EmbeddedResource Include="home.html" LogicalName="home.html" />
     <EmbeddedResource Include="net.html" LogicalName="net.html" />
     <EmbeddedResource Include="netpage.js" LogicalName="netpage.js" />
+    <EmbeddedResource Include="storage.html" LogicalName="storage.html" />
+    <EmbeddedResource Include="sitestorage.js" LogicalName="sitestorage.js" />
     <EmbeddedResource Include="term\index.html" LogicalName="term/index.html" />
     <EmbeddedResource Include="term\term.js" LogicalName="term/term.js" />
     <EmbeddedResource Include="term\xterm.js" LogicalName="term/xterm.js" />

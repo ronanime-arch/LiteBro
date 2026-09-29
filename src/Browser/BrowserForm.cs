@@ -860,6 +860,50 @@ sealed class BrowserForm : Form
         return new Size((int)(b.Width / scale), (int)(b.Height / scale));
     }
 
+    /// <summary>The storage page of a site's tab, in a new tab in front.</summary>
+    async void OpenStorage(Tab site)
+    {
+        var tab = await CreateTabAsync(null);
+        if (tab?.Core is not { } core) return;
+        tab.StorageOf = site;
+        Add(tab, front: true);
+        core.Navigate(StoragePage.Url);
+    }
+
+    /// <summary>A storage page's request: done in the site's page (or its cookie manager), then the storage read anew.</summary>
+    async void StorageOp(Tab page, Tab site, Dictionary<string, object> m)
+    {
+        var reply = new Dictionary<string, object> { ["type"] = "storage" };
+        string? Text(string key) => m.TryGetValue(key, out var v) ? v as string : null;
+        try
+        {
+            if (site.Closed) throw new InvalidOperationException("Вкладка сайта закрыта.");
+            if (site.Core is not { } core) throw new InvalidOperationException("Вкладка сайта выгружена: откройте её, потом нажмите «Обновить».");
+            if (!StoragePage.HasSite(core)) throw new InvalidOperationException("Во вкладке сейчас не сайт.");
+            try { core.Resume(); } catch (Exception) { } // a paused page answers nothing
+            site.Suspended = false;
+            reply["title"] = site.Title;
+            switch (Text("op"))
+            {
+                case "load":
+                    break;
+                case "cookieSet":
+                    StoragePage.SetCookie(core, m);
+                    break;
+                case "cookieDelete":
+                    StoragePage.DeleteCookie(core, Text("name") ?? "", Text("domain") ?? "", Text("path") ?? "/");
+                    break;
+                default:
+                    await StoragePage.RunAsync(core, m);
+                    break;
+            }
+            reply["cookies"] = await StoragePage.CookiesAsync(core);
+            reply["data"] = await StoragePage.RunAsync(core, new Dictionary<string, object> { ["op"] = "load" });
+        }
+        catch (Exception ex) { reply["error"] = ex.Message; }
+        if (page.Core is { } c && StoragePage.Is(c.Source)) c.PostWebMessageAsJson(ProjectStore.Json.Serialize(reply));
+    }
+
     /// <summary>The tools button: on sites and files, lit while the tab emulates something.</summary>
     void ShowEmulation(Tab tab)
     {
@@ -891,6 +935,11 @@ sealed class BrowserForm : Form
             }
         menu.Items.Add(screen);
         menu.Items.Add(net);
+        if (tab.Core is { } core && StoragePage.HasSite(core))
+        {
+            menu.Items.Add(new ToolStripSeparator());
+            menu.Items.Add(new ToolStripMenuItem("Хранилище сайта: cookies, localStorage, IndexedDB", null, (_, _) => OpenStorage(tab)));
+        }
         if (tab.Device != null || tab.Speed != null)
         {
             menu.Items.Add(new ToolStripSeparator());
@@ -1083,6 +1132,8 @@ sealed class BrowserForm : Form
             if (tab.InactiveSince is not { } since || tab.Core is not { } core) continue;
             // Nor a terminal: what runs in it goes on printing
             if (core.IsDocumentPlayingAudio || tab.Term != null || App.Current.IsRunningSite(tab.Site)) continue;
+            // Nor a site whose storage a storage page shows: it reads it from the live page
+            if (tabs.Any(t => t.StorageOf == tab)) continue;
             // A page Chromium refused to pause is busy with something (a call, say): it is not closed either
             if (tab.Suspended && now - since >= UnloadAfter) Unload(tab);
             else if (!tab.Suspended && now - since >= SuspendAfter) Suspend(tab, core);
@@ -1712,6 +1763,8 @@ sealed class BrowserForm : Form
         }
         else if (path == NetPage.Path)
             e.Response = env.CreateWebResourceResponse(NetPage.Html(), 200, "OK", ProgramLog.Headers);
+        else if (path == StoragePage.Path)
+            e.Response = env.CreateWebResourceResponse(StoragePage.Html(), 200, "OK", ProgramLog.Headers);
         else if (path == NetPage.Path + "/log")
         {
             var m = Regex.Match(new Uri(e.Request.Uri).Query, @"[?&]after=(\d+)");
@@ -1803,6 +1856,9 @@ sealed class BrowserForm : Form
             case "mockDelete" when Text("id") is { } deleted:
                 MockStore.Delete(deleted);
                 App.Current.ApplyNet();
+                break;
+            case "storage" when StoragePage.Is(e.Source) && tab.StorageOf is { } site:
+                StorageOp(tab, site, m);
                 break;
             case "netClear":
                 NetLog.Clear();

@@ -113,6 +113,8 @@ kbd { font: 12px Consolas, monospace; padding: 1px 6px; border: 1px solid var(--
       <input type="checkbox" id="journal"><span class="track"></span><span>Вести журнал и без режима</span></label>
     <label class="switch" title="Когда закрывается последнее окно LiteBro. Хранилище сайтов (localStorage, IndexedDB) остаётся. Проекты с галочкой «Не удалять cookies и кэш при выходе» (в настройках плитки) сохраняют свои.">
       <input type="checkbox" id="clearOnExit"><span class="track"></span><span>Удалять cookies и кэш при выходе</span></label>
+    <label class="switch" title="Страница на экране загружается заново, когда в папке её проекта (из настроек плитки) или в папке открытого файла сохраняют файл. node_modules, .git, bin, obj, логи и временные файлы не считаются. Проектам на Vite, Next и подобных это не нужно: они обновляют страницу сами.">
+      <input type="checkbox" id="autoReload"><span class="track"></span><span>Обновлять страницу при изменении файлов</span></label>
     <button id="keysOpen" title="Все горячие клавиши и приёмы браузера с описанием">Быстрые команды</button>
   </div>
   <details id="allowBox">
@@ -475,6 +477,7 @@ $("localOnly").addEventListener("change", e => {
 });
 $("journal").addEventListener("change", e => post({ type: "net", journal: e.target.checked }));
 $("clearOnExit").addEventListener("change", e => post({ type: "net", clearOnExit: e.target.checked }));
+$("autoReload").addEventListener("change", e => post({ type: "net", autoReload: e.target.checked }));
 $("saveAllow").addEventListener("click", () => post({ type: "net", allow: $("allow").value }));
 $("cors").addEventListener("change", e => {
   const question = e.target.checked
@@ -562,6 +565,7 @@ window.chrome.webview.addEventListener("message", e => {
   $("journal").checked = m.journal;
   $("cors").checked = m.cors;
   $("clearOnExit").checked = !!m.clearOnExit;
+  $("autoReload").checked = !!m.autoReload;
   $("cors").disabled = !m.localOnly;
   $("corsBox").classList.toggle("off", !m.localOnly);
   $("file").textContent = m.file;

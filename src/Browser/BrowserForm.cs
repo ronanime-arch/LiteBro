@@ -1294,6 +1294,23 @@ sealed class BrowserForm : Form
     }
 
     /// <summary>The network switches changed: every tab follows, and the start pages and /net show them.</summary>
+    /// <summary>«Настройки по умолчанию» on the «Для разработчика» page: asked here, so the dialog can say what restarts.</summary>
+    void ConfirmResetSettings()
+    {
+        var text = "Вернуть все настройки LiteBro к исходным, как после установки?\n\n" +
+            "Сбросятся: тема, страна поиска, «только localhost», разрешённые сайты, журнал сети, CORS, " +
+            "удаление cookies при выходе, обновление при изменении файлов, выключенное на странице «Для разработчика», " +
+            "а также строки settings.ini (поиск, видеокарта, флаги движка, локальные имена, основной браузер).\n\n" +
+            "Останутся: плитки проектов, заглушки, cookies и входы на сайты, логи. " +
+            "Прежний файл сохранится как settings.ini.bak.";
+        if (App.Current.ResetRestartsEngine())
+            text += "\n\nДвижок браузера перезапустится: все вкладки перезагрузятся, открытые терминалы закроются. Программы проектов продолжат работать.";
+        if (MessageBox.Show(this, text, "Настройки по умолчанию", MessageBoxButtons.OKCancel, MessageBoxIcon.Question,
+                MessageBoxDefaultButton.Button2) != DialogResult.OK)
+            return;
+        App.Current.ResetSettings();
+    }
+
     /// <summary>After a switch on the «Для разработчика» page: emulation switched off leaves the tabs, the toolbar follows.</summary>
     public void ApplyDev()
     {
@@ -2071,6 +2088,9 @@ sealed class BrowserForm : Form
                 break;
             case "dev" when Dev.Is(e.Source) && Text("id") is { } devId:
                 if (Dev.Set(devId, Flag("on"))) BeginInvoke(new Action(App.Current.ApplyDev));
+                break;
+            case "settingsReset" when Dev.Is(e.Source):
+                BeginInvoke(new Action(ConfirmResetSettings));
                 break;
             case "devReset" when Dev.Is(e.Source):
                 Dev.Reset();

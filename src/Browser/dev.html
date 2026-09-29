@@ -47,6 +47,11 @@ button:disabled { opacity: .45; cursor: default; background: transparent; }
     <span class="muted" id="count"></span>
   </div>
   <div id="groups"></div>
+  <h2>Настройки по умолчанию</h2>
+  <p class="muted">Все настройки браузера — как после установки, без переустановки: тема, страна поиска, режим «только localhost»
+    и разрешённые сайты, журнал сети, CORS, удаление cookies при выходе, обновление при изменении файлов, выключенное на этой странице
+    и строки settings.ini. Плитки проектов, заглушки, cookies и входы на сайты не трогаются. Перед сбросом браузер спросит подтверждение.</p>
+  <div class="row"><button id="defaults">Вернуть настройки по умолчанию…</button></div>
 </main>
 <script>
 "use strict";
@@ -127,6 +132,7 @@ for (const [title, note, items] of GROUPS) {
 }
 
 $("allOn").addEventListener("click", () => post({ type: "devReset" }));
+$("defaults").addEventListener("click", () => post({ type: "settingsReset" }));
 
 window.chrome.webview.addEventListener("message", e => {
   const m = e.data;

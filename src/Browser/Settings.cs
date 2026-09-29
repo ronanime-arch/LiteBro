@@ -166,6 +166,20 @@ sealed class Settings
         Save();
     }
 
+    /// <summary>
+    /// Every value back to what a new install has, keeping the file as it was in settings.ini.bak.
+    /// Tiles, mocks, cookies and the rest of the user's data are other files and stay.
+    /// </summary>
+    public void ResetDefaults()
+    {
+        try { if (File.Exists(IniPath)) File.Copy(IniPath, IniPath + ".bak", true); }
+        catch (Exception e) when (e is IOException || e is UnauthorizedAccessException) { }
+        var d = new Settings();
+        foreach (var f in typeof(Settings).GetFields(System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance))
+            f.SetValue(this, f.GetValue(d));
+        Save();
+    }
+
     void Save()
     {
         try { File.WriteAllText(IniPath, DefaultText(), Encoding.UTF8); }

@@ -48,6 +48,9 @@ static class Dev
         return true;
     }
 
+    /// <summary>Reads DevOff again (after the settings were reset).</summary>
+    public static void Reload() => off = null;
+
     /// <summary>Everything back on.</summary>
     public static void Reset()
     {

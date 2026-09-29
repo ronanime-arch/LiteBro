@@ -429,7 +429,7 @@ const KEYS = [
   ["Стартовая страница", [
     ["Клик по плитке", "Открыть проект (и запустить его программу, если адрес не отвечает)"],
     ["Ctrl+клик, средний клик", "Открыть в новой вкладке"],
-    ["Ctrl+клик по терминалу, журналу, «Для разработчика»", "Открыть в новой вкладке (просто клик — в этой)"],
+    ["Ctrl+клик, колёсико по терминалу, журналу, «Для разработчика», >_", "Открыть в новой вкладке (просто клик — в этой)"],
     ["Shift+клик", "Открыть в новом окне"],
     ["Зажать и тащить плитку", "Поменять порядок плиток (Esc — отменить)"],
     ["↑, ↓, Esc в меню плитки", "Выбрать пункт меню ссылок, закрыть меню"],
@@ -474,6 +474,7 @@ function drawKeys() {
 }
 $("keysOpen").addEventListener("click", ev => { ev.stopPropagation(); drawKeys(); $("keys").showModal(); });
 $("devOpen").addEventListener("click", e => post({ type: "devOpen", newTab: e.ctrlKey }));
+$("devOpen").addEventListener("auxclick", e => { if (e.button === 1) { e.preventDefault(); post({ type: "devOpen", newTab: true }); } });
 $("keysClose").addEventListener("click", () => $("keys").close());
 $("keys").addEventListener("click", ev => { if (ev.target === $("keys")) $("keys").close(); });
 

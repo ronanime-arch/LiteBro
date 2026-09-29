@@ -844,7 +844,11 @@ function showOff(off) {
     top += b.offsetHeight + 6;
   }
 }
+// Asked again while nothing has come: the first ask can be lost while the engine starts
+let heard = false;
+window.chrome.webview.addEventListener("message", () => { heard = true; });
 post({ type: "ready" });
+for (let i = 1; i <= 5; i++) setTimeout(() => { if (!heard) post({ type: "ready" }); }, i * 1000);
 </script>
 </body>
 </html>

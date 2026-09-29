@@ -438,6 +438,12 @@ sealed class BrowserForm : Form
         core.NavigationCompleted += (_, e) =>
         {
             SetLoading(tab, false);
+            // A browser page gets its state without waiting for its "ready", which may be lost while the engine starts
+            if (e.IsSuccess && Home.Is(core.Source))
+            {
+                SendProjects(tab);
+                SendNet(tab);
+            }
             if (e.IsSuccess && !tab.ShowingInternalPage && !IsInternal(core.Source) && Dev.On("json")) ShowJson(core);
             // A site that does not answer gets this program's page, not the engine's own one that names Edge
             if (!e.IsSuccess && IsUnreachable(e.WebErrorStatus) && Uri.TryCreate(core.Source, UriKind.Absolute, out var failed)

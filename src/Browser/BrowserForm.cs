@@ -386,6 +386,8 @@ sealed class BrowserForm : Form
             if (tab.Address.StartsWith(ProgramLog.Url(ProgramLog.Shell)) && !core.Source.StartsWith(ProgramLog.Url(ProgramLog.Shell)))
                 App.Current.ShellMaybeUnused();
             if (tab.Term != null && !TermPage.Is(core.Source)) StopTerm(tab);
+            // A tab that was a terminal is an ordinary one once it leaves: a later /term there starts nothing
+            if (tab.TermDir != null && !TermPage.Is(core.Source)) tab.TermDir = null;
             tab.Address = core.Source;
             ShowState(tab);
         };
@@ -1725,6 +1727,20 @@ sealed class BrowserForm : Form
         core.Navigate(TermPage.Url);
     }
 
+    /// <summary>The start page becomes the terminal, as a tile opens in its tab.</summary>
+    void OpenTerminalHere(Tab tab, string dir)
+    {
+        if (tab.Core is not { } core) return;
+        tab.TermDir = dir;
+        core.Navigate(TermPage.Url);
+    }
+
+    void OpenHereOrNew(Tab tab, string url, bool newTab)
+    {
+        if (newTab || tab.Core is not { } core) OpenNewTab(url);
+        else core.Navigate(url);
+    }
+
     // What a shell prints is gathered and posted to its page at most once per turn of the window's thread
     const int MaxTermPost = 1 << 20;
 
@@ -2148,11 +2164,12 @@ sealed class BrowserForm : Form
             case "netClear":
                 NetLog.Clear();
                 break;
+            // The browser's pages open where they are clicked, Ctrl+click in a new tab
             case "netOpen":
-                OpenNewTab(NetPage.Url);
+                OpenHereOrNew(tab, NetPage.Url, Flag("newTab"));
                 break;
             case "devOpen":
-                OpenNewTab(Dev.Url);
+                OpenHereOrNew(tab, Dev.Url, Flag("newTab"));
                 break;
             case "dev" when Dev.Is(e.Source) && Text("id") is { } devId:
                 if (Dev.Set(devId, Flag("on"))) BeginInvoke(new Action(App.Current.ApplyDev));
@@ -2181,9 +2198,11 @@ sealed class BrowserForm : Form
                 else tab.Core?.Navigate(ProgramLog.Url(console));
                 break;
             case "terminal":
-                // PowerShell in a terminal tab: in the console's folder, or the user's from the start page
-                OpenTerminal(console != null ? App.Current.LauncherFor(console).CommandDir
-                    : Environment.GetFolderPath(Environment.SpecialFolder.UserProfile));
+                // PowerShell in a terminal tab: in the console's folder (a tab of its own, beside the console),
+                // or the user's from the start page, in its own tab unless Ctrl+clicked
+                if (console != null) OpenTerminal(App.Current.LauncherFor(console).CommandDir);
+                else if (Flag("newTab")) OpenTerminal(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile));
+                else OpenTerminalHere(tab, Environment.GetFolderPath(Environment.SpecialFolder.UserProfile));
                 break;
             case "termStart" when TermPage.Is(e.Source):
                 StartTerm(tab, Number("cols"), Number("rows"));

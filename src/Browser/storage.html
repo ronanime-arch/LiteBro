@@ -1,0 +1,293 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<title>Хранилище сайта</title>
+<style>
+:root {
+  color-scheme: light dark;
+  --bg: #f2f3f6; --fg: #1b1d22; --muted: #6b7080; --card: #ffffff; --line: rgba(0, 0, 0, .12);
+  --accent: #1f9d55; --danger: #d9434b; --text: "Segoe UI Variable Text", "Segoe UI", sans-serif;
+}
+@media (prefers-color-scheme: dark) {
+  :root { --bg: #121212; --fg: #e9eaee; --muted: #9a9fae; --card: #1c1d20; --line: rgba(255, 255, 255, .14); }
+}
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+html, body { margin: 0; height: 100%; background: var(--bg); color: var(--fg); font: 14px/1.45 var(--text); }
+body { display: flex; flex-direction: column; }
+header { padding: 16px 22px 12px; display: grid; gap: 12px; border-bottom: 1px solid var(--line); }
+h1 { margin: 0; font-size: 20px; font-weight: 600; }
+.row { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 14px; }
+.muted { color: var(--muted); font-size: 12.5px; }
+#origin { font: 13px Consolas, monospace; }
+button, select { font: 13px var(--text); padding: 4px 12px; border: 1px solid var(--line); border-radius: 6px; background: transparent; color: inherit; cursor: pointer; }
+select { background: var(--card); }
+button:hover { background: rgba(127, 127, 127, .15); }
+button[hidden], select[hidden], .row [hidden] { display: none; }
+input[type=search], input[type=text] { font: 13px var(--text); padding: 4px 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--card); color: inherit; }
+input[type=search] { min-width: 220px; }
+.tabs { display: flex; gap: 2px; background: rgba(127, 127, 127, .15); padding: 2px; border-radius: 8px; width: fit-content; }
+.tabs button { border: 0; border-radius: 6px; padding: 5px 14px; }
+.tabs button.on { background: var(--card); box-shadow: 0 1px 3px rgba(0, 0, 0, .2); font-weight: 600; }
+#error { color: var(--danger); font-weight: 600; }
+#error:empty { display: none; }
+#wrap { flex: 1; overflow: auto; }
+table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+th, td { text-align: left; padding: 5px 10px; border-bottom: 1px solid var(--line); white-space: nowrap; vertical-align: top; }
+th { position: sticky; top: 0; background: var(--bg); font-weight: 600; z-index: 1; }
+td.code { font-family: Consolas, monospace; max-width: 560px; overflow: hidden; text-overflow: ellipsis; }
+td.key { max-width: 320px; }
+tbody tr { cursor: pointer; }
+tbody tr:hover td { background: rgba(127, 127, 127, .08); }
+tr.fixed td { opacity: .7; }
+#empty { padding: 28px 22px; }
+dialog { width: min(820px, calc(100vw - 32px)); padding: 0; border: 1px solid var(--line); border-radius: 10px;
+  background: var(--card); color: var(--fg); box-shadow: 0 10px 40px rgba(0, 0, 0, .35); }
+dialog::backdrop { background: rgba(0, 0, 0, .4); }
+dialog form { display: grid; gap: 10px; padding: 16px 18px; }
+dialog h2 { margin: 0; font-size: 17px; font-weight: 600; }
+label.f { display: grid; gap: 4px; font-size: 12.5px; color: var(--muted); }
+label.f[hidden] { display: none; }
+dialog input[type=text] { font-family: Consolas, monospace; background: var(--bg); width: 100%; }
+dialog textarea { width: 100%; min-height: 30vh; font: 13px Consolas, monospace; padding: 6px 8px; border-radius: 6px;
+  border: 1px solid var(--line); background: var(--bg); color: inherit; resize: vertical; }
+.grid3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; }
+.checks { display: flex; gap: 18px; align-items: center; font-size: 13px; }
+.checks[hidden] { display: none; }
+dialog .row { justify-content: flex-end; }
+dialog .grow { flex: 1; }
+</style>
+</head>
+<body>
+<header>
+  <div class="row">
+    <h1>Хранилище сайта</h1>
+    <span id="origin" class="muted"></span>
+    <button id="refresh" title="Прочитать заново (F5 тоже)">Обновить</button>
+  </div>
+  <div class="row">
+    <div class="tabs" id="tabs">
+      <button data-part="cookies">Cookies (<span>0</span>)</button>
+      <button data-part="local">localStorage (<span>0</span>)</button>
+      <button data-part="session">sessionStorage (<span>0</span>)</button>
+      <button data-part="idb">IndexedDB (<span>0</span>)</button>
+    </div>
+    <select id="idbStore" hidden title="База и хранилище объектов"></select>
+    <input type="search" id="find" placeholder="Найти">
+    <button id="add">Добавить</button>
+    <button id="clear">Очистить всё</button>
+  </div>
+  <div id="error"></div>
+  <div class="muted" id="note"></div>
+</header>
+<div id="wrap">
+  <table><thead id="head"></thead><tbody id="rows"></tbody></table>
+  <p class="muted" id="empty">Пусто.</p>
+</div>
+<dialog id="edit">
+  <form method="dialog" id="form">
+    <h2 id="editTitle"></h2>
+    <div class="grid3" id="cookieWhere">
+      <label class="f">Домен<input type="text" id="fDomain" spellcheck="false"></label>
+      <label class="f">Путь<input type="text" id="fPath" spellcheck="false" value="/"></label>
+      <label class="f">Истекает<input type="text" id="fExpires" spellcheck="false" placeholder="пусто — до закрытия браузера"></label>
+    </div>
+    <label class="f" id="keyBox"><span id="keyLabel">Имя</span><input type="text" id="fKey" spellcheck="false"></label>
+    <label class="f">Значение<textarea id="fValue" spellcheck="false"></textarea></label>
+    <div class="checks" id="cookieFlags">
+      <label><input type="checkbox" id="fHttpOnly"> HttpOnly</label>
+      <label><input type="checkbox" id="fSecure"> Secure</label>
+      <label>SameSite <select id="fSameSite"><option>Lax</option><option>Strict</option><option>None</option></select></label>
+    </div>
+    <div class="row">
+      <span class="muted grow" id="editNote"></span>
+      <button type="button" id="pretty" title="Выровнять JSON отступами">Форматировать JSON</button>
+      <button type="button" id="remove">Удалить</button>
+      <button type="button" id="cancel">Отмена</button>
+      <button type="submit" id="save">Сохранить</button>
+    </div>
+  </form>
+</dialog>
+<script>
+const $ = s => document.getElementById(s);
+const post = m => window.chrome.webview.postMessage(Object.assign({ type: "storage" }, m));
+let part = "cookies", state = { cookies: [], local: [], session: [], idb: [] }, store = "", editing = null;
+
+function td(text, cls) {
+  const c = document.createElement("td");
+  c.textContent = text;
+  if (cls) c.className = cls;
+  c.title = text.length > 60 ? text.slice(0, 2000) : "";
+  return c;
+}
+
+function stores() {
+  const list = [];
+  for (const db of state.idb) for (const s of db.stores) list.push({ db: db.name, store: s, id: db.name + "\u0000" + s.name });
+  return list;
+}
+
+const HEADS = {
+  cookies: ["Имя", "Значение", "Домен", "Путь", "Истекает", "HttpOnly", "Secure", "SameSite"],
+  local: ["Ключ", "Значение"], session: ["Ключ", "Значение"], idb: ["Ключ", "Значение"],
+};
+
+function current() {
+  if (part === "cookies") return state.cookies;
+  if (part === "local") return state.local;
+  if (part === "session") return state.session;
+  return stores().find(x => x.id === store)?.store.rows || [];
+}
+
+function draw() {
+  for (const b of $("tabs").children) {
+    b.classList.toggle("on", b.dataset.part === part);
+    const n = b.dataset.part === "idb" ? stores().length : state[b.dataset.part].length;
+    b.querySelector("span").textContent = n;
+  }
+  const idb = part === "idb", all = stores();
+  $("idbStore").hidden = !idb || !all.length;
+  if (idb) {
+    if (!all.some(x => x.id === store)) store = all.length ? all[0].id : "";
+    $("idbStore").textContent = "";
+    for (const x of all) {
+      const o = document.createElement("option");
+      o.value = x.id;
+      o.textContent = x.db + " / " + x.store.name + " (" + x.store.count + ")";
+      $("idbStore").append(o);
+    }
+    $("idbStore").value = store;
+  }
+  const s = idb ? all.find(x => x.id === store) : null;
+  $("add").hidden = idb && !s;
+  $("clear").hidden = part === "cookies" || (idb && !s);
+  $("clear").textContent = idb ? "Очистить хранилище" : "Очистить всё";
+  $("note").textContent = idb && s
+    ? (s.store.keyPath !== null ? "Ключ берётся из значения: " + JSON.stringify(s.store.keyPath) + ". " : "") +
+      (s.store.count > s.store.rows.length ? "Показаны первые " + s.store.rows.length + " из " + s.store.count + ". " : "") +
+      "Ключ и значение — JSON."
+    : part === "cookies" ? "Все cookies этого сайта и его родительских доменов, со всеми путями." : "";
+  const head = document.createElement("tr");
+  for (const h of HEADS[part]) { const th = document.createElement("th"); th.textContent = h; head.append(th); }
+  $("head").textContent = "";
+  $("head").append(head);
+  const find = $("find").value.trim().toLowerCase();
+  const rows = $("rows");
+  rows.textContent = "";
+  let shown = 0;
+  for (const item of current()) {
+    const cells = part === "cookies"
+      ? [item.name, item.value, item.domain, item.path, item.expires || "сеанс", item.httpOnly ? "да" : "", item.secure ? "да" : "", item.sameSite]
+      : part === "idb" ? [item.key, item.value] : [item[0], item[1]];
+    if (find && !cells.slice(0, 2).some(c => String(c).toLowerCase().includes(find))) continue;
+    const tr = document.createElement("tr");
+    if (item.fixed) tr.className = "fixed";
+    cells.forEach((c, i) => tr.append(td(String(c), i === 0 ? "code key" : i === 1 ? "code" : "")));
+    tr.addEventListener("click", () => open(item));
+    rows.append(tr);
+    shown++;
+  }
+  $("empty").hidden = shown > 0;
+  $("empty").textContent = part === "idb" && !all.length ? "У сайта нет баз IndexedDB." : current().length ? "Ничего не найдено." : "Пусто.";
+}
+
+function open(item) {
+  editing = item;
+  const cookie = part === "cookies", idb = part === "idb";
+  const s = idb ? stores().find(x => x.id === store) : null;
+  $("editTitle").textContent = (item ? "" : "Новая запись: ") + (cookie ? "cookie" : idb ? s.db + " / " + s.store.name : part === "local" ? "localStorage" : "sessionStorage");
+  $("cookieWhere").hidden = $("cookieFlags").hidden = !cookie;
+  $("keyLabel").textContent = cookie ? "Имя" : idb ? "Ключ (JSON)" : "Ключ";
+  const keyFromValue = idb && s.store.keyPath !== null;
+  $("keyBox").hidden = keyFromValue;
+  $("remove").hidden = !item;
+  $("pretty").hidden = cookie;
+  $("save").disabled = !!(item && item.fixed);
+  $("editNote").textContent = item && item.fixed ? "Значение не JSON (двоичные данные, Map, слишком длинное): только просмотр и удаление." : "";
+  if (cookie) {
+    const c = item || { name: "", value: "", domain: "", path: "/", expires: "", httpOnly: false, secure: false, sameSite: "Lax" };
+    $("fKey").value = c.name; $("fValue").value = c.value; $("fDomain").value = c.domain; $("fPath").value = c.path;
+    $("fExpires").value = c.expires; $("fHttpOnly").checked = c.httpOnly; $("fSecure").checked = c.secure;
+    $("fSameSite").value = ["Lax", "Strict", "None"].includes(c.sameSite) ? c.sameSite : "Lax";
+  } else if (idb) {
+    $("fKey").value = item ? item.key : "";
+    $("fValue").value = item ? pretty(item.value) : "{}";
+  } else {
+    $("fKey").value = item ? item[0] : "";
+    $("fValue").value = item ? item[1] : "";
+  }
+  $("edit").showModal();
+  (keyFromValue ? $("fValue") : $("fKey")).focus();
+}
+
+function pretty(text) {
+  try { return JSON.stringify(JSON.parse(text), null, 2); } catch { return text; }
+}
+
+function where() {
+  const [db, name] = store.split("\u0000");
+  return { db, store: name };
+}
+
+$("form").addEventListener("submit", ev => {
+  const key = $("fKey").value, value = $("fValue").value, item = editing;
+  if (part === "cookies") {
+    const m = { op: "cookieSet", name: key.trim(), value, domain: $("fDomain").value, path: $("fPath").value, expires: $("fExpires").value,
+      httpOnly: $("fHttpOnly").checked, secure: $("fSecure").checked, sameSite: $("fSameSite").value };
+    if (item) Object.assign(m, { oldName: item.name, oldDomain: item.domain, oldPath: item.path });
+    post(m);
+  } else if (part === "idb") {
+    try {
+      JSON.parse(value);
+      if (!$("keyBox").hidden && key.trim() !== "") JSON.parse(key);
+    } catch (err) {
+      ev.preventDefault();
+      $("editNote").textContent = "Не JSON: " + err.message;
+      return;
+    }
+    post(Object.assign({ op: "idbPut", key: key.trim(), value, oldKey: item ? item.key : null }, where()));
+  } else post({ op: "set", area: part, key, value, oldKey: item ? item[0] : null });
+});
+$("cancel").addEventListener("click", () => $("edit").close());
+$("remove").addEventListener("click", () => {
+  const item = editing;
+  if (part === "cookies") post({ op: "cookieDelete", name: item.name, domain: item.domain, path: item.path });
+  else if (part === "idb") post(Object.assign({ op: "idbDelete", key: item.key }, where()));
+  else post({ op: "remove", area: part, key: item[0] });
+  $("edit").close();
+});
+$("pretty").addEventListener("click", () => {
+  try { $("fValue").value = JSON.stringify(JSON.parse($("fValue").value), null, 2); $("editNote").textContent = ""; }
+  catch (err) { $("editNote").textContent = "Не JSON: " + err.message; }
+});
+$("add").addEventListener("click", () => open(null));
+$("clear").addEventListener("click", () => {
+  if (part === "idb") {
+    if (confirm("Удалить все записи хранилища " + where().store + "?")) post(Object.assign({ op: "idbClear" }, where()));
+  } else if (confirm("Удалить все записи " + (part === "local" ? "localStorage" : "sessionStorage") + " этого сайта?")) post({ op: "clear", area: part });
+});
+for (const b of $("tabs").children) b.addEventListener("click", () => { part = b.dataset.part; draw(); });
+$("idbStore").addEventListener("change", () => { store = $("idbStore").value; draw(); });
+$("find").addEventListener("input", draw);
+$("refresh").addEventListener("click", () => post({ op: "load" }));
+document.addEventListener("keydown", ev => { if (ev.key === "F5") { ev.preventDefault(); post({ op: "load" }); } });
+
+window.chrome.webview.addEventListener("message", e => {
+  const m = e.data;
+  if (!m || m.type !== "storage") return;
+  $("error").textContent = m.error || "";
+  if (m.data) {
+    const d = JSON.parse(m.data);
+    state = { cookies: m.cookies || [], local: d.local || [], session: d.session || [], idb: d.idb || [] };
+    $("origin").textContent = d.origin;
+    document.title = "Хранилище — " + d.origin.replace(/^https?:\/\//, "");
+  }
+  draw();
+});
+
+draw();
+post({ op: "load" });
+</script>
+</body>
+</html>

@@ -72,6 +72,8 @@ static class Favicons
         foreach (var c in ordered)
         {
             if (!Uri.TryCreate(c.Href, UriKind.Absolute, out var uri) || (uri.Scheme != "http" && uri.Scheme != "https")) continue;
+            // This request goes around the engine and its gateway: «только localhost» is kept here too
+            if (NetGuard.ShouldBlock(uri)) continue;
             try
             {
                 using var request = new HttpRequestMessage(HttpMethod.Get, uri);
@@ -119,8 +121,11 @@ static class Favicons
         if (core.FaviconUri is { Length: > 0 } favicon) candidates.Add(new Candidate { Href = favicon, Rel = "icon" });
 
         var manager = core.CookieManager;
+        Uri.TryCreate(core.Source, UriKind.Absolute, out var page);
+        // The page's own cookies, for an icon behind its login; never to another host the page names
         var bytes = await DownloadAsync(candidates, async uri =>
-            string.Join("; ", (await manager.GetCookiesAsync(uri.AbsoluteUri)).Select(c => c.Name + "=" + c.Value)));
+            page == null || !string.Equals(uri.Host, page.Host, StringComparison.OrdinalIgnoreCase) ? ""
+                : string.Join("; ", (await manager.GetCookiesAsync(uri.AbsoluteUri)).Select(c => c.Name + "=" + c.Value)));
         if (bytes != null) return bytes;
         try
         {

@@ -131,6 +131,7 @@ sealed class Launcher
     public Project Project { get; set; }
     readonly Action changed;
     readonly List<string> printed = new();
+    const int MaxPrinted = 20;
     Process? process;
     KillOnCloseJob? job;
     StreamWriter? log;
@@ -302,7 +303,11 @@ sealed class Launcher
         {
             var text = m.Value.TrimEnd('.', ',', ';', ')', ']', '\'', '"');
             // Servers print 0.0.0.0 or [::] ("all interfaces"), which cannot be opened as is
-            if (Uri.TryCreate(text, UriKind.Absolute, out var u)) lock (printed) printed.Add(Router.Normalize(u).AbsoluteUri);
+            // Only this machine's addresses, and the first few: a program echoing outside text (a chat's answer)
+            // must not put another site in the tile's place, nor grow this for its whole run
+            if (Project.OpenPrintedUrl && Uri.TryCreate(text, UriKind.Absolute, out var u) && Router.Normalize(u) is var local
+                && Router.IsLocal(local, App.Current.S))
+                lock (printed) if (printed.Count < MaxPrinted) printed.Add(local.AbsoluteUri);
         }
         var w = log;
         if (w == null) return;

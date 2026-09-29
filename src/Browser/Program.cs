@@ -150,8 +150,10 @@ sealed class App : ApplicationContext
         engineKey = EngineKey();
         if (NetGuard.CorsOff) args += " --disable-web-security";
         // «Только localhost»: all but local traffic through the gateway, which refuses what the rules forbid
+        // WebRTC's UDP would go around the proxy: none that is not proxied
         if (NetGuard.LocalOnly)
-            args += " --proxy-server=http://127.0.0.1:" + Gateway.Start() + " --proxy-bypass-list=" + Gateway.BypassList();
+            args += " --proxy-server=http://127.0.0.1:" + Gateway.Start() + " --proxy-bypass-list=" + Gateway.BypassList() +
+                " --force-webrtc-ip-handling-policy=disable_non_proxied_udp";
         var options = new CoreWebView2EnvironmentOptions(args);
         // A new WebView starts with the theme's background, not a white flash before its page paints
         var bg = Theme.PageBackground;

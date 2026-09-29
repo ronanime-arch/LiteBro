@@ -76,6 +76,16 @@ static class Router
             ? url.AbsoluteUri
             : argument.Replace("\"", "%22");
 
+    static readonly string[] Chromiums = { "chrome.exe", "msedge.exe", "brave.exe", "vivaldi.exe", "chromium.exe", "yandex.exe", "browser.exe" };
+
+    /// <summary>
+    /// LiteBro holds http and https so that local links stay here, so the main browser is never the default and
+    /// Chromium-based ones ask to be made it each time they start. Started by LiteBro, they are told not to ask
+    /// (before --single-argument, which takes all that follows as the address).
+    /// </summary>
+    static string NoDefaultCheck(string exe) =>
+        Chromiums.Contains(Path.GetFileName(exe), StringComparer.OrdinalIgnoreCase) ? "--no-default-browser-check " : "";
+
     /// <summary>
     /// Every link from other programs passes through here, so this must always open it somewhere:
     /// the settings override, the main browser (see Associations), then Edge. Never LiteBro under either name.
@@ -88,7 +98,7 @@ static class Router
             try
             {
                 if (Associations.Split(command, address) is not { } target || Associations.IsOurs(target.Exe)) continue;
-                Process.Start(new ProcessStartInfo(target.Exe, target.Args) { UseShellExecute = false });
+                Process.Start(new ProcessStartInfo(target.Exe, NoDefaultCheck(target.Exe) + target.Args) { UseShellExecute = false });
                 return;
             }
             catch (Exception) { }

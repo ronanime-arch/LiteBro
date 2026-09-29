@@ -80,6 +80,24 @@ th.on .drop::after { content: "\25CF"; font-size: 8px; vertical-align: top; marg
 #keys td { white-space: normal; border: none; padding: 5px 10px 5px 0; vertical-align: top; font-size: 13.5px; }
 #keys table { table-layout: fixed; }
 #keys td:first-child { width: 40%; padding-right: 18px; line-height: 1.9; }
+#mockBox table { margin-top: 8px; }
+#mockBox td { font-size: 12.5px; }
+#mockBox td.url { cursor: pointer; }
+#mockBox tr.off td { opacity: .5; }
+#mockBox td button { padding: 1px 8px; font-size: 12px; }
+#mockEdit { width: min(860px, calc(100vw - 32px)); padding: 0; border: 1px solid var(--line); border-radius: 10px;
+  background: var(--card); color: var(--fg); box-shadow: 0 10px 40px rgba(0, 0, 0, .35); }
+#mockEdit::backdrop { background: rgba(0, 0, 0, .4); }
+#mockEdit form { display: grid; gap: 10px; padding: 16px 18px; }
+#mockEdit h2 { margin: 0; font-size: 17px; font-weight: 600; }
+#mockEdit label.f { display: grid; gap: 4px; font-size: 12.5px; color: var(--muted); }
+#mockEdit input[type=text], #mockEdit input[type=number] { font: 13px Consolas, monospace; padding: 5px 8px; border: 1px solid var(--line);
+  border-radius: 6px; background: var(--bg); color: var(--fg); width: 100%; }
+#mockEdit .line { display: grid; grid-template-columns: 130px 1fr 110px; gap: 10px; }
+#mockEdit textarea { min-height: 40vh; margin: 0; }
+#mockEdit .row { justify-content: flex-end; }
+#mockEdit .row .grow { flex: 1; }
+tr.more button { font: 12px var(--text); margin-top: 8px; color: var(--fg); }
 kbd { font: 12px Consolas, monospace; padding: 1px 6px; border: 1px solid var(--line); border-bottom-width: 2px; border-radius: 4px; background: var(--bg); }
 </style>
 </head>
@@ -103,6 +121,12 @@ kbd { font: 12px Consolas, monospace; padding: 1px 6px; border: 1px solid var(--
     <div class="row"><button id="saveAllow">Сохранить</button>
       <span class="muted">По одному на строку. *.example.com пропускает сам сайт и все его поддомены. Уже открытые страницы получат список после обновления.</span></div>
   </details>
+  <details id="mockBox">
+    <summary>Заглушки (<span id="mockCount">0</span>)</summary>
+    <div class="row" style="margin-top:8px"><button id="mockNew">Новая заглушка</button>
+      <span class="muted">Запрос на адрес заглушки получает её ответ от самого LiteBro и не уходит на сервер, в том числе в режиме «только localhost». Сделать заглушку из запроса — кнопка в подробностях строки журнала. * в адресе — любые символы; адрес без ? подходит с любыми параметрами.</span></div>
+    <table><tbody id="mockRows"></tbody></table>
+  </details>
   <div class="row">
     <span class="muted">Название колонки — сортировка, стрелка рядом — фильтр.</span>
     <button id="resetFilters" hidden>Сбросить фильтры</button>
@@ -124,6 +148,28 @@ kbd { font: 12px Consolas, monospace; padding: 1px 6px; border: 1px solid var(--
 <dialog id="keys">
   <div class="head"><h2>Быстрые команды</h2><button id="keysClose">Закрыть</button></div>
   <div class="body" id="keysBody"></div>
+</dialog>
+<dialog id="mockEdit">
+  <form method="dialog" id="mockForm">
+    <h2 id="mockTitle">Заглушка</h2>
+    <div class="line">
+      <label class="f">Метод<input type="text" id="mockMethod" list="methods" placeholder="любой" spellcheck="false"></label>
+      <label class="f">Адрес<input type="text" id="mockUrl" placeholder="https://api.example.com/users/*" spellcheck="false" required></label>
+      <label class="f">Код ответа<input type="number" id="mockStatus" min="100" max="599" value="200"></label>
+    </div>
+    <label class="f">Тип содержимого<input type="text" id="mockType" list="types" spellcheck="false"></label>
+    <label class="f">Ответ<textarea id="mockBody" spellcheck="false"></textarea></label>
+    <div class="row">
+      <label class="switch grow"><input type="checkbox" id="mockOn" checked><span class="track"></span><span>Включена</span></label>
+      <span class="muted" id="mockNote"></span>
+      <button type="button" id="mockPretty" title="Выровнять JSON отступами">Форматировать JSON</button>
+      <button type="button" id="mockDelete">Удалить</button>
+      <button type="button" id="mockCancel">Отмена</button>
+      <button type="submit" id="mockSave">Сохранить</button>
+    </div>
+  </form>
+  <datalist id="methods"><option>GET</option><option>POST</option><option>PUT</option><option>PATCH</option><option>DELETE</option></datalist>
+  <datalist id="types"><option>application/json; charset=utf-8</option><option>text/plain; charset=utf-8</option><option>text/html; charset=utf-8</option><option>application/javascript</option><option>text/css</option></datalist>
 </dialog>
 <div id="pop" hidden>
   <input type="search" id="popFind" placeholder="Найти значение">
@@ -302,6 +348,11 @@ function details(e) {
   const c = document.createElement("td");
   c.colSpan = 8;
   c.textContent = e.Url + (e.Page ? "\nСтраница: " + e.Page : "") + "\nВремя: " + e.Time + (e.Stack ? "\nСтек:\n" + e.Stack : "");
+  const mock = document.createElement("button");
+  mock.textContent = "Сделать заглушку";
+  mock.title = "Ответ на этот адрес будет отдавать сам LiteBro. Для GET ответ сервера подставится, если сервер доступен.";
+  mock.addEventListener("click", () => post({ type: "mockFrom", seq: e.Seq }));
+  c.append(document.createElement("br"), mock);
   more.append(c);
   return more;
 }
@@ -380,7 +431,7 @@ const KEYS = [
   ["Журнал сети", [
     ["Клик по названию колонки", "Сортировка: по возрастанию, по убыванию, снова новые сверху"],
     ["Стрелка ▾ у названия", "Фильтр по значениям колонки (время — по минутам, размер — по диапазонам)"],
-    ["Клик по строке", "Подробности: полный адрес, страница, стек вызова"],
+    ["Клик по строке", "Подробности: полный адрес, страница, стек вызова, кнопка «Сделать заглушку»"],
     ["Esc", "Закрыть фильтр или это окно"],
   ]],
 ];
@@ -439,10 +490,72 @@ $("csv").addEventListener("click", () => exportAs("csv"));
 $("clear").addEventListener("click", () => { post({ type: "netClear" }); entries = []; last = 0; expanded.clear(); draw(); });
 $("onlyBlocked").addEventListener("change", draw);
 
+// Mocks: the list comes with every "net" message, one mock in full when it is to be edited
+let editing = null;
+function drawMocks(list) {
+  $("mockCount").textContent = list.length;
+  const rows = $("mockRows");
+  rows.textContent = "";
+  for (const m of list) {
+    const tr = document.createElement("tr");
+    tr.className = m.on ? "" : "off";
+    const on = document.createElement("td");
+    const box = document.createElement("input");
+    box.type = "checkbox";
+    box.checked = m.on;
+    box.title = "Включена";
+    box.addEventListener("change", () => post({ type: "mockOn", id: m.id, on: box.checked }));
+    on.append(box);
+    const url = td(m.url, "url");
+    url.title = "Изменить";
+    url.addEventListener("click", () => post({ type: "mockOpen", id: m.id }));
+    const edit = document.createElement("td");
+    const b = document.createElement("button");
+    b.textContent = "Изменить";
+    b.addEventListener("click", () => post({ type: "mockOpen", id: m.id }));
+    edit.append(b);
+    tr.append(on, td(m.method || "любой"), url, td(String(m.status), "num"), td(m.type), td(size(m.size), "num"), edit);
+    rows.append(tr);
+  }
+}
+
+function editMock(m) {
+  editing = m.id || "";
+  $("mockTitle").textContent = editing ? "Заглушка" : "Новая заглушка";
+  $("mockMethod").value = m.method || "";
+  $("mockUrl").value = m.url || "";
+  $("mockStatus").value = m.status || 200;
+  $("mockType").value = m.type || "application/json; charset=utf-8";
+  $("mockBody").value = m.body || "";
+  $("mockOn").checked = m.on !== false;
+  $("mockDelete").hidden = !editing;
+  $("mockNote").textContent = "";
+  if (!$("mockEdit").open) $("mockEdit").showModal();
+  $("mockUrl").focus();
+}
+
+$("mockNew").addEventListener("click", () => editMock({}));
+$("mockCancel").addEventListener("click", () => $("mockEdit").close());
+$("mockDelete").addEventListener("click", () => {
+  if (!confirm("Удалить заглушку?")) return;
+  post({ type: "mockDelete", id: editing });
+  $("mockEdit").close();
+});
+$("mockPretty").addEventListener("click", () => {
+  try { $("mockBody").value = JSON.stringify(JSON.parse($("mockBody").value), null, 2); $("mockNote").textContent = ""; }
+  catch (err) { $("mockNote").textContent = "Не JSON: " + err.message; }
+});
+$("mockForm").addEventListener("submit", () => post({
+  type: "mockSave", id: editing, on: $("mockOn").checked, method: $("mockMethod").value.trim(), url: $("mockUrl").value.trim(),
+  status: parseInt($("mockStatus").value, 10) || 200, mime: $("mockType").value.trim(), body: $("mockBody").value,
+}));
+
 let allowShown = null;
 window.chrome.webview.addEventListener("message", e => {
   const m = e.data;
+  if (m && m.type === "mockEdit") { editMock(m.mock); return; }
   if (!m || m.type !== "net") return;
+  if (m.mocks) drawMocks(m.mocks);
   $("localOnly").checked = m.localOnly;
   $("journal").checked = m.journal;
   $("cors").checked = m.cors;

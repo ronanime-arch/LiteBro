@@ -33,6 +33,8 @@ sealed class Tab
     public string? TermDir;
     /// <summary>The «только localhost» request filter and the web socket script are in place on the current WebView.</summary>
     public bool NetFilter;
+    /// <summary>The request filters of the mocks (MockStore) in place on the current WebView.</summary>
+    public HashSet<string> MockFilters = new();
     public string? NetScript;
     public int NetGeneration;
     /// <summary>The journal's listener to responses, only while it is on: each response it hears crosses to this process.</summary>

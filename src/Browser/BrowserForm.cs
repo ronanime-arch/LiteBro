@@ -351,6 +351,7 @@ sealed class BrowserForm : Form
         core.WebResourceRequested += OnHomeRequest;
         core.WebResourceRequested += (_, e) => OnNetRequest(tab, e);
         tab.NetFilter = false;
+        tab.MockFilters = new();
         tab.NetScript = null;
         tab.NetResponse = null;
         ApplyNet(tab);
@@ -1093,6 +1094,18 @@ sealed class BrowserForm : Form
             else if (!NetGuard.LocalOnly && tab.NetFilter)
                 core.RemoveWebResourceRequestedFilter("*", CoreWebView2WebResourceContext.All, All);
             tab.NetFilter = NetGuard.LocalOnly;
+            // Mocks see only the requests to their own addresses
+            var mocks = MockStore.Filters();
+            foreach (var gone in tab.MockFilters.Except(mocks).ToList())
+            {
+                core.RemoveWebResourceRequestedFilter(gone, CoreWebView2WebResourceContext.All, All);
+                tab.MockFilters.Remove(gone);
+            }
+            foreach (var added in mocks.Except(tab.MockFilters).ToList())
+            {
+                core.AddWebResourceRequestedFilter(added, CoreWebView2WebResourceContext.All, All);
+                tab.MockFilters.Add(added);
+            }
             // The script carries the rules: put in anew on every change, and run on the page already open,
             // which takes the new rules (and closes the sockets they forbid) without a reload
             if (tab.NetScript is { } old)
@@ -1124,6 +1137,7 @@ sealed class BrowserForm : Form
                 ["cors"] = NetGuard.IgnoreCors,
                 ["clearOnExit"] = App.Current.S.ClearOnExit,
                 ["file"] = NetLog.FilePath,
+                ["mocks"] = MockStore.Summary(),
             }));
     }
 
@@ -1170,6 +1184,7 @@ sealed class BrowserForm : Form
     void OnNetRequest(Tab tab, CoreWebView2WebResourceRequestedEventArgs e)
     {
         var env = App.Current.ResponseEnv;
+        if (env != null && TryMock(tab, e, env)) return;
         if (env == null || !NetGuard.LocalOnly || !Uri.TryCreate(e.Request.Uri, UriKind.Absolute, out var url) || !NetGuard.ShouldBlock(url))
             return;
         bool page = e.ResourceContext == CoreWebView2WebResourceContext.Document;
@@ -1179,7 +1194,56 @@ sealed class BrowserForm : Form
             page ? "" : tab.Site);
     }
 
-    const string BlockedReason = "Blocked by LiteBro";
+    const string BlockedReason = "Blocked by LiteBro", MockReason = "LiteBro mock";
+
+    /// <summary>A request a mock answers gets its stub, in «только localhost» mode too; the journal notes it.</summary>
+    bool TryMock(Tab tab, CoreWebView2WebResourceRequestedEventArgs e, CoreWebView2Environment env)
+    {
+        if (MockStore.All.Count == 0 || !Uri.TryCreate(e.Request.Uri, UriKind.Absolute, out var url) || !NetGuard.IsNetwork(url)) return false;
+        var method = e.Request.Method;
+        string? origin = e.Request.Headers.Contains("Origin") ? e.Request.Headers.GetHeader("Origin") : null;
+        // The page may read the stub from another site: allowed for it, with its cookies
+        var cors = origin != null
+            ? "Access-Control-Allow-Origin: " + origin + "\r\nAccess-Control-Allow-Credentials: true\r\nVary: Origin"
+            : "Access-Control-Allow-Origin: *";
+        var mock = MockStore.For(method, url);
+        if (mock == null && method == "OPTIONS" && e.Request.Headers.Contains("Access-Control-Request-Method") && MockStore.Covers(url))
+        {
+            var asked = e.Request.Headers.Contains("Access-Control-Request-Headers") ? e.Request.Headers.GetHeader("Access-Control-Request-Headers") : "";
+            e.Response = env.CreateWebResourceResponse(null, 204, MockReason, cors +
+                "\r\nAccess-Control-Allow-Methods: GET, POST, PUT, PATCH, DELETE, OPTIONS, HEAD" +
+                (asked.Length > 0 && asked.IndexOfAny(new[] { '\r', '\n' }) < 0 ? "\r\nAccess-Control-Allow-Headers: " + asked : "") +
+                "\r\nAccess-Control-Max-Age: 600");
+            return true;
+        }
+        if (mock == null) return false;
+        var body = Encoding.UTF8.GetBytes(mock.Body);
+        bool empty = mock.Status is 204 or 304 || method == "HEAD";
+        e.Response = env.CreateWebResourceResponse(empty ? null : new MemoryStream(body), mock.Status, MockReason,
+            "Content-Type: " + mock.Type + "\r\nCache-Control: no-store\r\nX-LiteBro-Mock: 1\r\n" + cors);
+        if (NetGuard.Watching)
+            NetLog.Add(method, url, "заглушка " + mock.Status, blocked: false, empty ? 0 : body.Length, KindOf(e.ResourceContext),
+                e.ResourceContext == CoreWebView2WebResourceContext.Document ? "" : tab.Site);
+        return true;
+    }
+
+    /// <summary>A journal entry turned into a new mock: the /net page opens it in its editor.</summary>
+    async void MockFromEntry(Tab tab, long seq)
+    {
+        if (NetLog.Get(seq) is not { } entry) return;
+        var mock = await MockStore.FromEntryAsync(entry);
+        SendMock(tab, mock);
+    }
+
+    void SendMock(Tab tab, Mock mock)
+    {
+        if (tab.Core is { } core && NetPage.Is(core.Source))
+            core.PostWebMessageAsJson(ProjectStore.Json.Serialize(new Dictionary<string, object>
+            {
+                ["type"] = "mockEdit",
+                ["mock"] = MockStore.Full(mock),
+            }));
+    }
 
     static string KindOf(CoreWebView2WebResourceContext c) => c switch
     {
@@ -1227,7 +1291,7 @@ sealed class BrowserForm : Form
     {
         if (!NetGuard.Watching || !Uri.TryCreate(e.Request.Uri, UriKind.Absolute, out var url) || !NetGuard.IsOutside(url)) return;
         var r = e.Response;
-        if (r.ReasonPhrase == BlockedReason) return; // journaled when refused
+        if (r.ReasonPhrase is BlockedReason or MockReason) return; // journaled when refused or stubbed
         long size = -1;
         try
         {
@@ -1624,6 +1688,39 @@ sealed class BrowserForm : Form
                 var numbers = list.Cast<object>().Select(o => o is int i ? i : o is long l ? l : -1L).Where(n => n > 0).ToList();
                 bool csv = Text("format") == "csv";
                 BeginInvoke(new Action(() => ExportJournal(numbers, csv)));
+                break;
+            case "mockFrom" when m.TryGetValue("seq", out var seq) && seq is int n:
+                MockFromEntry(tab, n);
+                break;
+            case "mockOpen" when MockStore.Find(Text("id")) is { } opened:
+                SendMock(tab, opened);
+                break;
+            case "mockSave":
+                var mock = new Mock
+                {
+                    Id = MockStore.Find(Text("id"))?.Id ?? "",
+                    On = !m.ContainsKey("on") || Flag("on"),
+                    Method = Text("method") ?? "",
+                    Url = (Text("url") ?? "").Trim(),
+                    Status = Number("status"),
+                    Type = (Text("mime") ?? "").Trim() is { Length: > 0 } mime ? mime : "text/plain; charset=utf-8",
+                    Body = Text("body") ?? "",
+                };
+                if (MockStore.Problem(mock) is { } problem)
+                {
+                    BeginInvoke(new Action(() => MessageBox.Show(this, problem, "Заглушка не сохранена", MessageBoxButtons.OK, MessageBoxIcon.Warning)));
+                    break;
+                }
+                MockStore.Save(mock);
+                App.Current.ApplyNet();
+                break;
+            case "mockOn" when Text("id") is { } mockId:
+                MockStore.SetOn(mockId, Flag("on"));
+                App.Current.ApplyNet();
+                break;
+            case "mockDelete" when Text("id") is { } deleted:
+                MockStore.Delete(deleted);
+                App.Current.ApplyNet();
                 break;
             case "netClear":
                 NetLog.Clear();

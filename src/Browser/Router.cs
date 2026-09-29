@@ -6,6 +6,7 @@ using System.IO.Pipes;
 using System.Linq;
 using System.Net;
 using System.Runtime.InteropServices;
+using System.Security.AccessControl;
 using System.Security.Principal;
 using System.Text;
 using System.Text.RegularExpressions;
@@ -143,6 +144,14 @@ static class SingleInstance
         catch (Exception) { return false; }
     }
 
+    /// <summary>This user alone may connect: another account's process cannot pass addresses in.</summary>
+    static PipeSecurity OwnerOnly()
+    {
+        var security = new PipeSecurity();
+        security.AddAccessRule(new PipeAccessRule(WindowsIdentity.GetCurrent().User!, PipeAccessRights.FullControl, AccessControlType.Allow));
+        return security;
+    }
+
     /// <summary>Serves later launches on a background thread; handle runs the request and says if it was taken.</summary>
     public static void Listen(Func<string, bool> handle)
     {
@@ -152,7 +161,8 @@ static class SingleInstance
             {
                 try
                 {
-                    using var pipe = new NamedPipeServerStream(PipeName, PipeDirection.InOut, 1, PipeTransmissionMode.Byte);
+                    using var pipe = new NamedPipeServerStream(PipeName, PipeDirection.InOut, 1, PipeTransmissionMode.Byte,
+                        PipeOptions.None, 0, 0, OwnerOnly());
                     pipe.WaitForConnection();
                     var line = new List<byte>();
                     for (int b; (b = pipe.ReadByte()) >= 0 && b != '\n' && line.Count < 65536;) line.Add((byte)b);

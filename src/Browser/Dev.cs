@@ -6,7 +6,7 @@ using System.Linq;
 namespace LiteBro;
 
 /// <summary>
-/// «Для разработчика»: buttons and tools the user has switched off (DevOff in settings.ini). The page itself,
+/// «Для разработчика»: buttons and tools the user has switched off (Disabled in settings.ini). The page itself,
 /// and the buttons that lead to it, are not on the list: it can always be reached to switch things back on.
 /// </summary>
 static class Dev
@@ -25,11 +25,14 @@ static class Dev
         "shell", "localonly", "netlog", "console",
     };
 
+    /// <summary>A new install, or settings back to their defaults: the developer tools wait to be switched on.</summary>
+    public const string DefaultOff = "reset emulation snapshot storage json mocks";
+
     static HashSet<string>? off;
 
     static HashSet<string> Off => off ??= Parse(App.Current.S.DevOff);
 
-    /// <summary>The known ids in a DevOff line; the rest is dropped (a newer version's, or a typo).</summary>
+    /// <summary>The known ids in a Disabled line; the rest is dropped (a newer version's, or a typo).</summary>
     public static HashSet<string> Parse(string text) =>
         new(text.Split(new[] { ' ', ',', ';' }, StringSplitOptions.RemoveEmptyEntries)
             .Select(s => s.ToLowerInvariant()).Where(Ids.Contains));
@@ -47,6 +50,9 @@ static class Dev
         App.Current.S.SaveDevOff(string.Join(" ", OffList()));
         return true;
     }
+
+    /// <summary>Reads the Disabled line again (after the settings were reset).</summary>
+    public static void Reload() => off = null;
 
     /// <summary>Everything back on.</summary>
     public static void Reset()

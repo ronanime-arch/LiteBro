@@ -18,7 +18,9 @@ static class Home
     public const string Url = "https://" + Host + "/";
     // Nothing but the page's own script and pictures, and no site may frame it to trick a click on a tile
     public const string Headers = "Content-Type: text/html; charset=utf-8\r\nContent-Security-Policy: default-src 'none'; " +
-        "script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src 'self' data:; frame-ancestors 'none'";
+        "script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src 'self' data:; frame-ancestors 'none'\r\n" + Isolation;
+    /// <summary>No other site's window keeps a hold of these pages, nor loads their files.</summary>
+    public const string Isolation = "Cross-Origin-Opener-Policy: same-origin\r\nCross-Origin-Resource-Policy: same-origin";
     static byte[]? html;
 
     public static bool Is(string? uri) =>

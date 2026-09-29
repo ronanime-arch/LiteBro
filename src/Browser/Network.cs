@@ -168,11 +168,19 @@ static class NetLog
     /// <summary>A page's script saw a request to this address go out, with this call stack.</summary>
     public static void NoteStack(string url, string stack)
     {
-        if (stacks.Count > 2000)
+        // Any page may send these: bounded, so a flood cannot eat memory
+        if (url.Length > 4096) return;
+        if (stack.Length > MaxStack) stack = stack.Substring(0, MaxStack) + "…";
+        if (stacks.Count >= MaxStacks)
+        {
             foreach (var old in stacks.Where(p => DateTime.UtcNow - p.Value.At > StackKept).Select(p => p.Key).ToList())
                 stacks.TryRemove(old, out _);
+            if (stacks.Count >= MaxStacks) return;
+        }
         stacks[url] = (stack, DateTime.UtcNow);
     }
+
+    const int MaxStacks = 2000, MaxStack = 4000;
     static Thread? writer;
 
     public static string FilePath => Path.Combine(Settings.Dir, "logs", "network.log");
@@ -207,7 +215,9 @@ static class NetLog
     {
         foreach (var e in queue.GetConsumingEnumerable())
         {
-            e.Ip = Resolve(e.Host);
+            // No lookup of its own for a blocked request, nor in «только localhost» mode at all: a page could
+            // otherwise send data out in a host name to the attacker's DNS server
+            e.Ip = Resolve(e.Host, dns: !e.Blocked && !NetGuard.LocalOnly);
             // The page's message with the stack may come a moment after the request itself
             var wait = e.Created + StackWait - DateTime.UtcNow;
             if (e.Stack.Length == 0 && wait > TimeSpan.Zero && !stacks.ContainsKey(e.Url)) Thread.Sleep(wait);
@@ -239,15 +249,16 @@ static class NetLog
     }
 
     /// <summary>
-    /// The host's address as Windows resolves it (the browser does not say which one it connected to).
-    /// A blocked host is looked up too: the lookup itself goes only to the DNS server.
+    /// The host's address: the one the gateway connected to, else as Windows resolves it (the browser does not say
+    /// which one it connected to). Without dns only the gateway's.
     /// </summary>
-    static string Resolve(string host)
+    static string Resolve(string host, bool dns)
     {
         if (IPAddress.TryParse(host.Trim('[', ']'), out _)) return host.Trim('[', ']');
         // Through the gateway («только localhost») the address really connected to is known
         if (Gateway.IpOf(host) is { } real) return real;
         if (ips.TryGetValue(host, out var ip)) return ip;
+        if (!dns) return "";
         try
         {
             var task = Dns.GetHostAddressesAsync(host);
@@ -311,7 +322,12 @@ static class NetLog
         return sb.ToString();
     }
 
-    static string Cell(string s) => s.IndexOfAny(new[] { ';', '"', '\r', '\n' }) < 0 ? s : "\"" + s.Replace("\"", "\"\"") + "\"";
+    static string Cell(string s)
+    {
+        // A site's address or stack starting with = + - @ would be a formula in Excel
+        if (s.Length > 0 && "=+-@\t\r".IndexOf(s[0]) >= 0) s = "'" + s;
+        return s.IndexOfAny(new[] { ';', '"', '\r', '\n' }) < 0 ? s : "\"" + s.Replace("\"", "\"\"") + "\"";
+    }
 
     public static void Clear()
     {

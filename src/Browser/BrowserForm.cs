@@ -1294,6 +1294,23 @@ sealed class BrowserForm : Form
     }
 
     /// <summary>The network switches changed: every tab follows, and the start pages and /net show them.</summary>
+    /// <summary>«Настройки по умолчанию» on the «Для разработчика» page: asked here, so the dialog can say what restarts.</summary>
+    void ConfirmResetSettings()
+    {
+        var text = "Вернуть все настройки LiteBro к исходным, как после установки?\n\n" +
+            "Сбросятся: тема, страна поиска, «только localhost», разрешённые сайты, журнал сети, CORS, " +
+            "удаление cookies при выходе, обновление при изменении файлов, выключенное на странице «Для разработчика», " +
+            "а также строки settings.ini (поиск, видеокарта, флаги движка, локальные имена, основной браузер).\n\n" +
+            "Останутся: плитки проектов, заглушки, cookies и входы на сайты, логи. " +
+            "Прежний файл сохранится как settings.ini.bak.";
+        if (App.Current.ResetRestartsEngine())
+            text += "\n\nДвижок браузера перезапустится: все вкладки перезагрузятся, открытые терминалы закроются. Программы проектов продолжат работать.";
+        if (MessageBox.Show(this, text, "Настройки по умолчанию", MessageBoxButtons.OKCancel, MessageBoxIcon.Question,
+                MessageBoxDefaultButton.Button2) != DialogResult.OK)
+            return;
+        App.Current.ResetSettings();
+    }
+
     /// <summary>After a switch on the «Для разработчика» page: emulation switched off leaves the tabs, the toolbar follows.</summary>
     public void ApplyDev()
     {
@@ -1648,7 +1665,7 @@ sealed class BrowserForm : Form
             string Get(string key) => m.TryGetValue(key, out var v) && v is string s ? s : "";
             if (!Uri.TryCreate(Get("url"), UriKind.Absolute, out var url) || !NetGuard.IsOutside(url)) return;
             var stack = Get("stack");
-            var method = Get("method") is { Length: > 0 and < 16 } verb ? verb : "GET";
+            var method = Get("method") is { Length: > 0 and < 16 } verb && verb.All(char.IsLetter) ? verb.ToUpperInvariant() : "GET";
             switch (Get("event"))
             {
                 case "stack":
@@ -1934,12 +1951,17 @@ sealed class BrowserForm : Form
         if (env == null || !Home.Is(e.Request.Uri)) return;
         // Consoles, the journal and the rest are read only by the browser's own pages: with CORS off
         // any site could fetch them otherwise (a console's output, tokens included)
-        if (e.ResourceContext != CoreWebView2WebResourceContext.Document && !(sender is CoreWebView2 asker && Home.Is(asker.Source)))
+        var path = new Uri(e.Request.Uri).AbsolutePath;
+        // Only the pages themselves open anywhere (a frame of another site included, which frame-ancestors then refuses);
+        // their data (a console's text, the journal, icons) goes to the browser's own pages alone
+        bool document = path is "/" or NetPage.Path or Dev.Path or StoragePage.Path or "/term"
+            || (ProgramLog.Parse(path, out bool isText) != null && !isText);
+        if (!(sender is CoreWebView2 asker && Home.Is(asker.Source))
+            && (e.ResourceContext != CoreWebView2WebResourceContext.Document || !document))
         {
             e.Response = env.CreateWebResourceResponse(null, 403, "Forbidden", "");
             return;
         }
-        var path = new Uri(e.Request.Uri).AbsolutePath;
         if (path == "/")
             e.Response = env.CreateWebResourceResponse(Home.Page(), 200, "OK", Home.Headers);
         else if (ProgramLog.Parse(path, out bool text) is { } p)
@@ -1971,10 +1993,37 @@ sealed class BrowserForm : Form
             e.Response = env.CreateWebResourceResponse(file, 200, "OK", headers);
         else if (path.StartsWith("/icon/") && Icons.Read(Uri.UnescapeDataString(path.Substring(6))) is { } bytes)
             e.Response = env.CreateWebResourceResponse(new MemoryStream(bytes), 200, "OK",
-                "Content-Type: " + Icons.ContentType(path) + "\r\n" + Icons.Headers);
+                "Content-Type: " + Icons.ContentType(path) + "\r\n" + Icons.Headers + "\r\n" + Home.Isolation);
         else
             e.Response = env.CreateWebResourceResponse(null, 404, "Not Found", "");
     }
+
+    /// <summary>Which of the browser's own pages a start.litebro address is.</summary>
+    static string PageOf(string source)
+    {
+        var path = new Uri(source).AbsolutePath;
+        if (path == "/") return "home";
+        if (path == NetPage.Path) return "net";
+        if (path == Dev.Path) return "dev";
+        if (path == StoragePage.Path) return "storage";
+        if (path == "/term") return "term";
+        return ProgramLog.Parse(path, out bool text) != null && !text ? "console" : "";
+    }
+
+    /// <summary>The pages each request may come from; a type not listed (ready) from any of them.</summary>
+    static readonly Dictionary<string, string[]> Senders = new()
+    {
+        ["browse"] = new[] { "home" }, ["save"] = new[] { "home" }, ["delete"] = new[] { "home" }, ["order"] = new[] { "home" },
+        ["open"] = new[] { "home" }, ["openAll"] = new[] { "home" }, ["log"] = new[] { "home" },
+        ["stop"] = new[] { "home", "console" }, ["terminal"] = new[] { "home", "console" },
+        ["command"] = new[] { "console" }, ["cd"] = new[] { "console" }, ["input"] = new[] { "console" }, ["stopCommand"] = new[] { "console" },
+        ["net"] = new[] { "home", "net" }, ["netOpen"] = new[] { "home", "dev" }, ["devOpen"] = new[] { "home", "net" },
+        ["netClear"] = new[] { "net" }, ["netExport"] = new[] { "net" }, ["mockFrom"] = new[] { "net" }, ["mockOpen"] = new[] { "net" },
+        ["mockSave"] = new[] { "net" }, ["mockOn"] = new[] { "net" }, ["mockDelete"] = new[] { "net" },
+        ["dev"] = new[] { "dev" }, ["devReset"] = new[] { "dev" }, ["settingsReset"] = new[] { "dev" },
+        ["storage"] = new[] { "storage" },
+        ["termStart"] = new[] { "term" }, ["termIn"] = new[] { "term" }, ["termSize"] = new[] { "term" },
+    };
 
     /// <summary>
     /// Requests of the start page. Every page may post web messages, and these start programs,
@@ -1996,7 +2045,10 @@ sealed class BrowserForm : Form
         var project = ProjectStore.Find(Text("id"));
         // A project's console, or PowerShell's of no project
         var console = ProgramLog.Find(Text("id"));
-        switch (Text("type"))
+        // Each request only from the page that makes it: a flaw in one page cannot reach the others' powers
+        var type = Text("type") ?? "";
+        if (Senders.TryGetValue(type, out var senders) && !senders.Contains(PageOf(e.Source))) return;
+        switch (type)
         {
             case "ready":
                 SendProjects(tab);
@@ -2071,6 +2123,9 @@ sealed class BrowserForm : Form
                 break;
             case "dev" when Dev.Is(e.Source) && Text("id") is { } devId:
                 if (Dev.Set(devId, Flag("on"))) BeginInvoke(new Action(App.Current.ApplyDev));
+                break;
+            case "settingsReset" when Dev.Is(e.Source):
+                BeginInvoke(new Action(ConfirmResetSettings));
                 break;
             case "devReset" when Dev.Is(e.Source):
                 Dev.Reset();
@@ -2388,6 +2443,14 @@ sealed class BrowserForm : Form
     async void OnNewWindowRequested(object? sender, CoreWebView2NewWindowRequestedEventArgs e)
     {
         bool front = (ModifierKeys & (Keys.Control | Keys.Shift)) != Keys.Control;
+        // A site opening a page of the browser gets no hold of it (no opener, which with CORS off could script it)
+        if (Home.Is(e.Uri) && !(sender is CoreWebView2 asker && Home.Is(asker.Source)))
+        {
+            e.Handled = true;
+            var target = e.Uri;
+            BeginInvoke(new Action(() => OpenNewTab(target)));
+            return;
+        }
         var deferral = e.GetDeferral();
         try
         {

@@ -18,8 +18,8 @@ static class ProgramLog
     const int FirstBytes = 256 << 10, MaxBytes = 512 << 10;
     // Like the start page, and the page may fetch from its own host
     public const string Headers = "Content-Type: text/html; charset=utf-8\r\nContent-Security-Policy: default-src 'none'; " +
-        "script-src 'unsafe-inline'; style-src 'unsafe-inline'; connect-src 'self'; frame-ancestors 'none'";
-    public const string JsonHeaders = "Content-Type: application/json; charset=utf-8\r\nCache-Control: no-store";
+        "script-src 'unsafe-inline'; style-src 'unsafe-inline'; connect-src 'self'; frame-ancestors 'none'\r\n" + Home.Isolation;
+    public const string JsonHeaders = "Content-Type: application/json; charset=utf-8\r\nCache-Control: no-store\r\n" + Home.Isolation;
 
     public static string Url(Project p) => Home.Url + "log/" + p.Id;
 

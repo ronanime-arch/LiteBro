@@ -70,12 +70,12 @@ sealed class Settings
     public bool ClearOnExit;
     /// <summary>A page on screen loads again when a file in its project's folder (or its own folder, for a file) changes.</summary>
     public bool AutoReload;
-    /// <summary>Buttons and tools switched off on the «Для разработчика» page (Dev.Ids), through spaces.</summary>
-    public string DevOff = "";
+    /// <summary>Buttons and tools switched off on the «Для разработчика» page (Dev.Ids), through spaces; the developer tools by default.</summary>
+    public string DevOff = Dev.DefaultOff;
 
     static readonly string[] Keys =
     {
-        "searchurl", "searchcountry", "theme", "gpu", "extrabrowserargs", "localhosts", "otherbrowser", "localonly", "netjournal", "allowhosts", "ignorecors", "clearonexit", "autoreload", "devoff",
+        "searchurl", "searchcountry", "theme", "gpu", "extrabrowserargs", "localhosts", "otherbrowser", "localonly", "netjournal", "allowhosts", "ignorecors", "clearonexit", "autoreload", "disabled",
     };
 
     public static Settings Load()
@@ -114,7 +114,7 @@ sealed class Settings
                 case "ignorecors": s.IgnoreCors = IsTrue(value); break;
                 case "clearonexit": s.ClearOnExit = IsTrue(value); break;
                 case "autoreload": s.AutoReload = IsTrue(value); break;
-                case "devoff": s.DevOff = value; break;
+                case "disabled": s.DevOff = value; break;
             }
         }
         // A file from an older version lacks the newer keys or has ones since dropped: rewrite it, keeping the values
@@ -163,6 +163,20 @@ sealed class Settings
     public void SaveDevOff(string off)
     {
         DevOff = off;
+        Save();
+    }
+
+    /// <summary>
+    /// Every value back to what a new install has, keeping the file as it was in settings.ini.bak.
+    /// Tiles, mocks, cookies and the rest of the user's data are other files and stay.
+    /// </summary>
+    public void ResetDefaults()
+    {
+        try { if (File.Exists(IniPath)) File.Copy(IniPath, IniPath + ".bak", true); }
+        catch (Exception e) when (e is IOException || e is UnauthorizedAccessException) { }
+        var d = new Settings();
+        foreach (var f in typeof(Settings).GetFields(System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance))
+            f.SetValue(this, f.GetValue(d));
         Save();
     }
 
@@ -223,8 +237,9 @@ sealed class Settings
         "",
         "# --- Для разработчика ---",
         "# Что выключено на странице «Для разработчика» (кнопка у правого края стартовой страницы), через пробел.",
-        "# Пусто = всё включено. Саму страницу выключить нельзя.",
-        "DevOff = " + DevOff,
+        "# После установки выключены инструменты разработчика: " + Dev.DefaultOff + ". Пусто = всё включено.",
+        "# Саму страницу выключить нельзя.",
+        "Disabled = " + DevOff,
         "");
 
     public static (Rectangle Bounds, bool Maximized, double Zoom)? LoadWindow()

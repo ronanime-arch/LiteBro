@@ -265,7 +265,7 @@ static class TermPage
             stream.CopyTo(copy);
             cache[path] = bytes = copy.ToArray();
         }
-        headers = "Content-Type: " + f.Type + "; charset=utf-8\r\n" + Policy;
+        headers = "Content-Type: " + f.Type + "; charset=utf-8\r\n" + Policy + "\r\n" + Home.Isolation;
         return new MemoryStream(bytes, writable: false);
     }
 }

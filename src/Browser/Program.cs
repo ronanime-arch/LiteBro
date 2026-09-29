@@ -150,8 +150,10 @@ sealed class App : ApplicationContext
         engineKey = EngineKey();
         if (NetGuard.CorsOff) args += " --disable-web-security";
         // «Только localhost»: all but local traffic through the gateway, which refuses what the rules forbid
+        // WebRTC's UDP would go around the proxy: none that is not proxied
         if (NetGuard.LocalOnly)
-            args += " --proxy-server=http://127.0.0.1:" + Gateway.Start() + " --proxy-bypass-list=" + Gateway.BypassList();
+            args += " --proxy-server=http://127.0.0.1:" + Gateway.Start() + " --proxy-bypass-list=" + Gateway.BypassList() +
+                " --force-webrtc-ip-handling-policy=disable_non_proxied_udp";
         var options = new CoreWebView2EnvironmentOptions(args);
         // A new WebView starts with the theme's background, not a white flash before its page paints
         var bg = Theme.PageBackground;
@@ -368,6 +370,25 @@ sealed class App : ApplicationContext
         foreach (var form in forms) form.ApplyNet();
     }
 
+    /// <summary>Would the engine restart if the settings went back to their defaults.</summary>
+    public bool ResetRestartsEngine() =>
+        NetGuard.LocalOnly || NetGuard.CorsOff || !S.Gpu || S.ExtraBrowserArgs.Length > 0;
+
+    /// <summary>
+    /// «Настройки по умолчанию»: settings.ini as after a new install, applied at once. The engine restarts
+    /// only when its flags change (local mode, CORS, GPU, extra flags).
+    /// </summary>
+    public void ResetSettings()
+    {
+        S.ResetDefaults();
+        Dev.Reload();
+        Theme.Init(S.Theme);
+        foreach (var form in forms.ToList()) form.ApplyTheme();
+        // Saves the network values again (the same defaults) and restarts the engine if its flags changed
+        SetNet(S.LocalOnly, S.NetJournal, S.AllowHosts, S.IgnoreCors);
+        ApplyDev();
+    }
+
     /// <summary>A switch of the «Для разработчика» page: every window's toolbar, menus and pages follow it.</summary>
     public void ApplyDev()
     {
@@ -377,8 +398,8 @@ sealed class App : ApplicationContext
     /// <summary>The network flags the running engine was started with.</summary>
     string engineKey = "";
 
-    /// <summary>The engine flags that follow the network switches: the gateway (local mode) and CORS.</summary>
-    static string EngineKey() => NetGuard.LocalOnly + "|" + NetGuard.CorsOff;
+    /// <summary>The engine flags that can change while it runs: the gateway (local mode), CORS, and GPU and extra flags on a reset.</summary>
+    static string EngineKey() => NetGuard.LocalOnly + "|" + NetGuard.CorsOff + "|" + Current.S.Gpu + "|" + Current.S.ExtraBrowserArgs;
 
     /// <summary>
     /// Flags of the engine apply to its whole browser process: every tab is closed (keeping its address), the process

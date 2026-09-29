@@ -428,6 +428,7 @@ sealed class BrowserForm : Form
         core.NavigationCompleted += (_, e) =>
         {
             SetLoading(tab, false);
+            if (e.IsSuccess && !tab.ShowingInternalPage && !IsInternal(core.Source)) ShowJson(core);
             // A site that does not answer gets this program's page, not the engine's own one that names Edge
             if (!e.IsSuccess && IsUnreachable(e.WebErrorStatus) && Uri.TryCreate(core.Source, UriKind.Absolute, out var failed)
                 && !Home.Is(core.Source) && (failed.Scheme == "http" || failed.Scheme == "https"))
@@ -860,6 +861,78 @@ sealed class BrowserForm : Form
         return new Size((int)(b.Width / scale), (int)(b.Height / scale));
     }
 
+    /// <summary>A JSON document (an API's answer opened in a tab) is shown as a tree by jsonview.js.</summary>
+    static async void ShowJson(CoreWebView2 core)
+    {
+        try
+        {
+            if (!(await core.ExecuteScriptAsync("document.contentType")).Contains("json")) return;
+            jsonView ??= ReadResource("jsonview.js");
+            await core.ExecuteScriptAsync(jsonView);
+        }
+        catch (Exception) { } // the page went on meanwhile
+    }
+
+    static string? jsonView;
+
+    static string ReadResource(string name)
+    {
+        using var stream = typeof(BrowserForm).Assembly.GetManifestResourceStream(name);
+        using var reader = new StreamReader(stream, Encoding.UTF8);
+        return reader.ReadToEnd();
+    }
+
+    /// <summary>A PNG of the tab into a file the user picks: the whole page (up to 16384 pixels down) or what is on screen.</summary>
+    async void Snapshot(Tab tab, bool full)
+    {
+        if (tab.Core is not { } core) return;
+        byte[] png;
+        try
+        {
+            if (full)
+            {
+                var metrics = ProjectStore.Json.Deserialize<Dictionary<string, object>>(
+                    await core.CallDevToolsProtocolMethodAsync("Page.getLayoutMetrics", "{}"));
+                double Size(string key) => metrics.TryGetValue("cssContentSize", out var v) && v is Dictionary<string, object> box
+                    && box.TryGetValue(key, out var n) ? Convert.ToDouble(n) : 0;
+                double width = Math.Max(1, Math.Ceiling(Size("width"))), height = Math.Max(1, Math.Min(16384, Math.Ceiling(Size("height"))));
+                var shot = ProjectStore.Json.Deserialize<Dictionary<string, object>>(await core.CallDevToolsProtocolMethodAsync("Page.captureScreenshot",
+                    ProjectStore.Json.Serialize(new Dictionary<string, object>
+                    {
+                        ["format"] = "png",
+                        ["captureBeyondViewport"] = true,
+                        ["clip"] = new Dictionary<string, object> { ["x"] = 0, ["y"] = 0, ["width"] = width, ["height"] = height, ["scale"] = 1 },
+                    })));
+                png = Convert.FromBase64String((string)shot["data"]);
+            }
+            else
+            {
+                using var stream = new MemoryStream();
+                await core.CapturePreviewAsync(CoreWebView2CapturePreviewImageFormat.Png, stream);
+                png = stream.ToArray();
+            }
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show(this, "Не удалось снять страницу.\n\n" + ex.Message, "LiteBro", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            return;
+        }
+        var host = Uri.TryCreate(tab.Site, UriKind.Absolute, out var u) && u.Host.Length > 0 ? u.Host : "page";
+        using var dialog = new SaveFileDialog
+        {
+            Title = full ? "Снимок страницы целиком" : "Снимок видимой части",
+            FileName = host + "-" + DateTime.Now.ToString("yyyy-MM-dd-HHmmss") + ".png",
+            Filter = "PNG (*.png)|*.png",
+            InitialDirectory = Environment.GetFolderPath(Environment.SpecialFolder.MyPictures),
+        };
+        if (dialog.ShowDialog(this) != DialogResult.OK) return;
+        try { File.WriteAllBytes(dialog.FileName, png); }
+        catch (Exception ex) when (ex is IOException || ex is UnauthorizedAccessException)
+        {
+            MessageBox.Show(this, "Не удалось записать файл.\n\n" + ex.Message, "LiteBro", MessageBoxButtons.OK, MessageBoxIcon.Error);
+        }
+    }
+
     /// <summary>The storage page of a site's tab, in a new tab in front.</summary>
     async void OpenStorage(Tab site)
     {
@@ -935,9 +1008,11 @@ sealed class BrowserForm : Form
             }
         menu.Items.Add(screen);
         menu.Items.Add(net);
+        menu.Items.Add(new ToolStripSeparator());
+        menu.Items.Add(new ToolStripMenuItem("Снимок страницы целиком…", null, (_, _) => Snapshot(tab, full: true)) { ShortcutKeyDisplayString = "Ctrl+Shift+S" });
+        menu.Items.Add(new ToolStripMenuItem("Снимок видимой части…", null, (_, _) => Snapshot(tab, full: false)));
         if (tab.Core is { } core && StoragePage.HasSite(core))
         {
-            menu.Items.Add(new ToolStripSeparator());
             menu.Items.Add(new ToolStripMenuItem("Хранилище сайта: cookies, localStorage, IndexedDB", null, (_, _) => OpenStorage(tab)));
         }
         if (tab.Device != null || tab.Speed != null)
@@ -2133,6 +2208,8 @@ sealed class BrowserForm : Form
             case Keys.Control | Keys.Shift | Keys.R:
             case Keys.Control | Keys.F5:
                 return ResetSite;
+            case Keys.Control | Keys.Shift | Keys.S:
+                return () => { if (active != null) Snapshot(active, full: true); };
             case Keys.Shift | Keys.Escape:
                 return () => Core?.OpenTaskManagerWindow();
         }

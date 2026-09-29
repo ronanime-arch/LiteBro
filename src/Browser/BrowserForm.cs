@@ -161,6 +161,12 @@ sealed class BrowserForm : Form
             EnterBackground();
         };
         freezeTimer.Tick += (_, _) => FreezeIdleTabs();
+        reloadTimer.Tick += (_, _) => ReloadChanged();
+        FormClosed += (_, _) =>
+        {
+            foreach (var w in watchers.Values) w.Dispose();
+            watchers.Clear();
+        };
         fitTimer.Tick += (_, _) =>
         {
             fitTimer.Stop();
@@ -536,6 +542,7 @@ sealed class BrowserForm : Form
         reset.Visible = SiteOrigin(tab) != null;
         ShowEmulation(tab);
         ShowStrip();
+        if (App.Current.S.AutoReload || watchers.Count > 0) WatchFolders();
     }
 
     /// <summary>The tab strip, hidden while the start page is all the window shows: it comes with the first site or tile.</summary>
@@ -1275,6 +1282,87 @@ sealed class BrowserForm : Form
             ApplyNet(tab);
             SendNet(tab);
         }
+        WatchFolders();
+    }
+
+    // Reloading on file changes: a watcher per folder of the pages on screen, only while the switch is on
+    readonly Dictionary<string, FileSystemWatcher> watchers = new(StringComparer.OrdinalIgnoreCase);
+    readonly HashSet<string> changedFolders = new(StringComparer.OrdinalIgnoreCase);
+    readonly Timer reloadTimer = new() { Interval = 400 };
+    static readonly string[] Noise = { "\\node_modules\\", "\\.git\\", "\\.vs\\", "\\.idea\\", "\\obj\\", "\\bin\\", "\\__pycache__\\", "\\.venv\\", "\\.cache\\", "\\.next\\" };
+
+    /// <summary>The folder whose files make a tab's page: its project's, or a file's own.</summary>
+    string? FolderOf(Tab tab)
+    {
+        if (tab.ShowingInternalPage || tab.Term != null || !Uri.TryCreate(tab.Site, UriKind.Absolute, out var u)) return null;
+        if (u.IsFile) return Path.GetDirectoryName(u.LocalPath);
+        if (IsInternal(tab.Site) || OwnerOf(tab, u) is not { } p) return null;
+        var dir = App.Current.LauncherFor(p).WorkDir;
+        return dir.Length > 0 ? dir : null;
+    }
+
+    void WatchFolders()
+    {
+        var wanted = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        if (App.Current.S.AutoReload && !minimized)
+            foreach (var tab in OnScreen)
+                if (FolderOf(tab) is { } dir) wanted.Add(dir);
+        foreach (var gone in watchers.Keys.Where(d => !wanted.Contains(d)).ToList())
+        {
+            watchers[gone].Dispose();
+            watchers.Remove(gone);
+        }
+        foreach (var dir in wanted.Where(d => !watchers.ContainsKey(d)))
+        {
+            try
+            {
+                if (!Directory.Exists(dir)) continue;
+                var w = new FileSystemWatcher(dir)
+                {
+                    IncludeSubdirectories = true,
+                    NotifyFilter = NotifyFilters.FileName | NotifyFilters.LastWrite | NotifyFilters.Size,
+                    InternalBufferSize = 64 * 1024,
+                };
+                FileSystemEventHandler changed = (_, e) => OnFileChanged(dir, e.FullPath);
+                w.Changed += changed;
+                w.Created += changed;
+                w.Deleted += changed;
+                w.Renamed += (_, e) => OnFileChanged(dir, e.FullPath);
+                w.EnableRaisingEvents = true;
+                watchers[dir] = w;
+            }
+            catch (Exception ex) when (ex is ArgumentException || ex is IOException || ex is UnauthorizedAccessException) { }
+        }
+    }
+
+    /// <summary>On a watcher's thread: a change that counts reloads the folder's pages once the saving settles.</summary>
+    void OnFileChanged(string dir, string path)
+    {
+        var rel = path.Length > dir.Length ? path.Substring(dir.Length) : path;
+        if (Noise.Any(n => (rel + "\\").IndexOf(n, StringComparison.OrdinalIgnoreCase) >= 0)) return;
+        var name = Path.GetFileName(path);
+        if (name.EndsWith("~") || name.StartsWith(".#") || name.StartsWith("~$")
+            || new[] { ".tmp", ".swp", ".swx", ".log", ".lock", ".pid", ".db-journal" }.Any(x => name.EndsWith(x, StringComparison.OrdinalIgnoreCase)))
+            return;
+        try
+        {
+            BeginInvoke(new Action(() =>
+            {
+                changedFolders.Add(dir);
+                reloadTimer.Stop();
+                reloadTimer.Start();
+            }));
+        }
+        catch (InvalidOperationException) { } // the window is gone
+    }
+
+    void ReloadChanged()
+    {
+        reloadTimer.Stop();
+        foreach (var tab in OnScreen)
+            if (FolderOf(tab) is { } dir && changedFolders.Contains(dir) && tab.Core is { } core)
+                try { core.Reload(); } catch (Exception) { }
+        changedFolders.Clear();
     }
 
     /// <summary>
@@ -1344,6 +1432,7 @@ sealed class BrowserForm : Form
                 ["allow"] = NetGuard.AllowText,
                 ["cors"] = NetGuard.IgnoreCors,
                 ["clearOnExit"] = App.Current.S.ClearOnExit,
+                ["autoReload"] = App.Current.S.AutoReload,
                 ["file"] = NetLog.FilePath,
                 ["mocks"] = MockStore.Summary(),
             }));
@@ -1881,6 +1970,10 @@ sealed class BrowserForm : Form
                 SendProjects(tab);
                 SendNet(tab);
                 break;
+            case "net" when m.TryGetValue("autoReload", out var reloadOn):
+                App.Current.S.SaveAutoReload(reloadOn is true);
+                App.Current.ApplyNet();
+                break;
             case "net" when m.TryGetValue("clearOnExit", out var clear):
                 App.Current.S.SaveClearOnExit(clear is true);
                 App.Current.ApplyNet();
@@ -2325,6 +2418,7 @@ sealed class BrowserForm : Form
             if (tab.Ctl is { } c) c.IsVisible = !now;
         if (now) EnterBackground();
         else LeaveBackground();
+        if (App.Current.S.AutoReload) WatchFolders();
     }
 
     protected override void OnMove(EventArgs e)

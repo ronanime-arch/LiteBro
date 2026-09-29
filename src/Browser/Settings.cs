@@ -68,10 +68,12 @@ sealed class Settings
     public bool IgnoreCors;
     /// <summary>Cookies and the HTTP cache are deleted when the last window closes, but for projects with KeepData.</summary>
     public bool ClearOnExit;
+    /// <summary>A page on screen loads again when a file in its project's folder (or its own folder, for a file) changes.</summary>
+    public bool AutoReload;
 
     static readonly string[] Keys =
     {
-        "searchurl", "searchcountry", "theme", "gpu", "extrabrowserargs", "localhosts", "otherbrowser", "localonly", "netjournal", "allowhosts", "ignorecors", "clearonexit",
+        "searchurl", "searchcountry", "theme", "gpu", "extrabrowserargs", "localhosts", "otherbrowser", "localonly", "netjournal", "allowhosts", "ignorecors", "clearonexit", "autoreload",
     };
 
     public static Settings Load()
@@ -109,6 +111,7 @@ sealed class Settings
                 case "allowhosts": s.AllowHosts = value; break;
                 case "ignorecors": s.IgnoreCors = IsTrue(value); break;
                 case "clearonexit": s.ClearOnExit = IsTrue(value); break;
+                case "autoreload": s.AutoReload = IsTrue(value); break;
             }
         }
         // A file from an older version lacks the newer keys or has ones since dropped: rewrite it, keeping the values
@@ -143,6 +146,13 @@ sealed class Settings
     public void SaveClearOnExit(bool on)
     {
         ClearOnExit = on;
+        Save();
+    }
+
+    /// <summary>Remembers the switch of reloading pages when their project's files change (/net).</summary>
+    public void SaveAutoReload(bool on)
+    {
+        AutoReload = on;
         Save();
     }
 
@@ -198,6 +208,8 @@ sealed class Settings
         "IgnoreCors = " + Bool(IgnoreCors),
         "# Удалять cookies и кэш, когда закрывается последнее окно (кроме проектов с «Не удалять при выходе»)",
         "ClearOnExit = " + Bool(ClearOnExit),
+        "# Обновлять страницу на экране, когда меняется файл в папке её проекта (или в папке открытого файла)",
+        "AutoReload = " + Bool(AutoReload),
         "");
 
     public static (Rectangle Bounds, bool Maximized, double Zoom)? LoadWindow()

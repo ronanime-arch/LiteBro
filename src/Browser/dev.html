@@ -126,7 +126,8 @@ for (const [title, note, items] of GROUPS) {
   row.className = "row";
   const log = document.createElement("button");
   log.textContent = "Открыть журнал сети";
-  log.addEventListener("click", () => post({ type: "netOpen" }));
+  log.addEventListener("click", e => post({ type: "netOpen", newTab: e.ctrlKey }));
+  log.addEventListener("auxclick", e => { if (e.button === 1) { e.preventDefault(); post({ type: "netOpen", newTab: true }); } });
   row.append(log);
   $("groups").append(row);
 }

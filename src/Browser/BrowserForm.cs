@@ -106,7 +106,9 @@ sealed class BrowserForm : Form
         reload = MakeButton(GlyphReload, "Обновить (F5)", ReloadOrStop);
         reset = MakeButton(GlyphReset, "Сбросить Service Worker и кэш сайта, загрузить заново (Ctrl+Shift+R)", ResetSite);
         reset.Visible = false;
-        home = MakeButton(GlyphHome, "Проекты (Alt+Home)", GoHome);
+        home = MakeButton(GlyphHome, "Проекты (Alt+Home). Ctrl+клик или колёсико — в новой вкладке",
+            () => { if (ModifierKeys == Keys.Control) OpenNewTab(null); else GoHome(); });
+        home.MouseUp += (_, e) => { if (e.Button == MouseButtons.Middle) OpenNewTab(null); };
         country = MakeButton(GlyphGlobe, "Страна поиска", ShowCountryMenu);
         country.Visible = false;
         star = MakeButton(GlyphStar, "", ShowFavoriteMenu);
@@ -386,6 +388,8 @@ sealed class BrowserForm : Form
             if (tab.Address.StartsWith(ProgramLog.Url(ProgramLog.Shell)) && !core.Source.StartsWith(ProgramLog.Url(ProgramLog.Shell)))
                 App.Current.ShellMaybeUnused();
             if (tab.Term != null && !TermPage.Is(core.Source)) StopTerm(tab);
+            // A tab that was a terminal is an ordinary one once it leaves: a later /term there starts nothing
+            if (tab.TermDir != null && !TermPage.Is(core.Source)) tab.TermDir = null;
             tab.Address = core.Source;
             ShowState(tab);
         };
@@ -1725,6 +1729,20 @@ sealed class BrowserForm : Form
         core.Navigate(TermPage.Url);
     }
 
+    /// <summary>The start page becomes the terminal, as a tile opens in its tab.</summary>
+    void OpenTerminalHere(Tab tab, string dir)
+    {
+        if (tab.Core is not { } core) return;
+        tab.TermDir = dir;
+        core.Navigate(TermPage.Url);
+    }
+
+    void OpenHereOrNew(Tab tab, string url, bool newTab)
+    {
+        if (newTab || tab.Core is not { } core) OpenNewTab(url);
+        else core.Navigate(url);
+    }
+
     // What a shell prints is gathered and posted to its page at most once per turn of the window's thread
     const int MaxTermPost = 1 << 20;
 
@@ -2148,11 +2166,12 @@ sealed class BrowserForm : Form
             case "netClear":
                 NetLog.Clear();
                 break;
+            // The browser's pages open where they are clicked, Ctrl+click in a new tab
             case "netOpen":
-                OpenNewTab(NetPage.Url);
+                OpenHereOrNew(tab, NetPage.Url, Flag("newTab"));
                 break;
             case "devOpen":
-                OpenNewTab(Dev.Url);
+                OpenHereOrNew(tab, Dev.Url, Flag("newTab"));
                 break;
             case "dev" when Dev.Is(e.Source) && Text("id") is { } devId:
                 if (Dev.Set(devId, Flag("on"))) BeginInvoke(new Action(App.Current.ApplyDev));
@@ -2181,9 +2200,12 @@ sealed class BrowserForm : Form
                 else tab.Core?.Navigate(ProgramLog.Url(console));
                 break;
             case "terminal":
-                // PowerShell in a terminal tab: in the console's folder, or the user's from the start page
-                OpenTerminal(console != null ? App.Current.LauncherFor(console).CommandDir
-                    : Environment.GetFolderPath(Environment.SpecialFolder.UserProfile));
+                // PowerShell in a terminal: in the console's folder, or the user's from the start page;
+                // in this tab, or a new one on Ctrl+click or the mouse wheel
+                var termDir = console != null ? App.Current.LauncherFor(console).CommandDir
+                    : Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+                if (Flag("newTab")) OpenTerminal(termDir);
+                else OpenTerminalHere(tab, termDir);
                 break;
             case "termStart" when TermPage.Is(e.Source):
                 StartTerm(tab, Number("cols"), Number("rows"));

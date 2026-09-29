@@ -119,7 +119,7 @@ static class ProgramLog
         "#line:focus{border-color:var(--accent)}#line:disabled{opacity:.5}" +
         "</style></head><body>" +
         "<header><h1>" + H(p.Name) + "</h1><span id=state></span>" +
-        "<button id=stop hidden>Остановить программу</button><button id=halt hidden>Прервать команду</button><button id=clear>Очистить экран</button><button id=term title='PowerShell в папке команд, в новой вкладке: работают claude, vim и другие программы с экраном'>Терминал</button>" +
+        "<button id=stop hidden>Остановить программу</button><button id=halt hidden>Прервать команду</button><button id=clear>Очистить экран</button><button id=term title='PowerShell в папке команд: работают claude, vim и другие программы с экраном. Ctrl+клик или колёсико — в новой вкладке'>Терминал</button>" +
         "<span id=path title='" + H(LogPath(p.Id)) + "'>" + H(LogPath(p.Id)) + "</span></header>" +
         "<pre id=out></pre>" +
         "<form id=send><button type=button id=mode></button><input id=prompt autocomplete=off spellcheck=false><span id=gt>&gt;</span>" +
@@ -161,7 +161,9 @@ static class ProgramLog
         "stopBtn.addEventListener('click',()=>post({type:'stop',id}));" +
         "halt.addEventListener('click',()=>post({type:'stopCommand',id}));" +
         "$('clear').addEventListener('click',()=>{out.textContent='';});" +
-        "$('term').addEventListener('click',()=>post({type:'terminal',id}));" +
+        "$('term').addEventListener('click',e=>post({type:'terminal',id,newTab:e.ctrlKey}));" +
+        "$('term').addEventListener('mousedown',e=>{if(e.button===1)e.preventDefault();});" +
+        "$('term').addEventListener('auxclick',e=>{if(e.button===1){e.preventDefault();post({type:'terminal',id,newTab:true});}});" +
         // The browser tells the start pages when a program starts or stops: this page listens too
         "window.chrome.webview.addEventListener('message',e=>{if(e.data&&e.data.type==='projects')poll();});" +
         "modeShow();poll();setInterval(()=>{if(!document.hidden)poll();},700);line.focus();" +

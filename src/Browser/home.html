@@ -167,6 +167,14 @@ summary { cursor: pointer; font-weight: 500; }
 #netLog { top: 80px; width: 40px; height: 28px; padding: 0 0 0 10px; background: rgba(127, 127, 127, .35);
   font: 15px var(--icons); }
 #netLog:hover, #netLog:focus-visible { width: 46px; background: rgba(127, 127, 127, .55); outline: none; }
+/* «Для разработчика»: never switched off, so the switched-off things can always be switched back on */
+#dev { position: fixed; right: 0; top: 116px; width: 40px; height: 28px; padding: 0 0 0 10px; border: 0; border-radius: 10px 0 0 10px;
+  cursor: pointer; display: flex; align-items: center; color: #fff; background: rgba(127, 127, 127, .35); font: 15px var(--icons);
+  transition: width .12s, background .12s; }
+#dev:hover, #dev:focus-visible { width: 46px; background: rgba(127, 127, 127, .55); outline: none; }
+/* Switched off on the «Для разработчика» page */
+#shell[hidden], #net[hidden], #netLog[hidden] { display: none; }
+body.nolog .log { display: none; }
 </style>
 </head>
 <body>
@@ -181,6 +189,7 @@ summary { cursor: pointer; font-weight: 500; }
   <span class="knob"></span>
 </button>
 <button id="netLog" title="Журнал запросов в интернет и разрешённые сайты" aria-label="Журнал сети">&#xE8FD;</button>
+<button id="dev" title="Для разработчика: включить и выключить кнопки и инструменты браузера" aria-label="Для разработчика">&#xEC7A;</button>
 <main>
   <div class="grid" id="grid"></div>
   <p class="hint" id="hint"></p>
@@ -785,6 +794,7 @@ window.chrome.webview.addEventListener("message", e => {
     // The mode's gateway is a flag of the engine: switching restarts it
     $("#net").title += ". Переключение перезапускает движок: вкладки перезагрузятся, терминалы закроются"
       + (m.cors ? (localOnly ? ". CORS не проверяется" : ". С включением отключится CORS") : "");
+    showOff(m.off || []);
   } else if (m.type === "projects") {
     if (drag) waiting = m;
     else show(m);
@@ -812,6 +822,21 @@ $("#net").addEventListener("click", () => {
     post({ type: "net", localOnly: !localOnly });
 });
 $("#netLog").addEventListener("click", () => post({ type: "netOpen" }));
+$("#dev").addEventListener("click", () => post({ type: "devOpen" }));
+
+// Buttons switched off on the «Для разработчика» page; the ones left on the right edge close up
+function showOff(off) {
+  $("#shell").hidden = off.includes("shell");
+  $("#net").hidden = off.includes("localonly");
+  $("#netLog").hidden = off.includes("netlog");
+  document.body.classList.toggle("nolog", off.includes("console"));
+  let top = 36;
+  for (const b of [$("#net"), $("#netLog"), $("#dev")]) {
+    if (b.hidden) continue;
+    b.style.top = top + "px";
+    top += b.offsetHeight + 6;
+  }
+}
 post({ type: "ready" });
 </script>
 </body>

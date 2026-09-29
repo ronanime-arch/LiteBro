@@ -18,8 +18,10 @@ body { display: flex; flex-direction: column; }
 header { padding: 16px 22px 12px; display: grid; gap: 12px; border-bottom: 1px solid var(--line); }
 /* Out of the way, in the top right corner */
 header { position: relative; }
-header > .row:first-child { padding-right: 150px; }
-#keysOpen { position: absolute; top: 14px; right: 22px; }
+header > .row:first-child { padding-right: 330px; }
+#corner { position: absolute; top: 14px; right: 22px; display: flex; gap: 8px; }
+/* Mocks switched off on the «Для разработчика» page */
+body.nomocks .mockonly { display: none; }
 h1 { margin: 0; font-size: 20px; font-weight: 600; }
 .row { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 22px; }
 .muted { color: var(--muted); font-size: 12.5px; }
@@ -115,7 +117,10 @@ kbd { font: 12px Consolas, monospace; padding: 1px 6px; border: 1px solid var(--
       <input type="checkbox" id="clearOnExit"><span class="track"></span><span>Удалять cookies и кэш при выходе</span></label>
     <label class="switch" title="Страница на экране загружается заново, когда в папке её проекта (из настроек плитки) или в папке открытого файла сохраняют файл. node_modules, .git, bin, obj, логи и временные файлы не считаются. Проектам на Vite, Next и подобных это не нужно: они обновляют страницу сами.">
       <input type="checkbox" id="autoReload"><span class="track"></span><span>Обновлять страницу при изменении файлов</span></label>
-    <button id="keysOpen" title="Все горячие клавиши и приёмы браузера с описанием">Быстрые команды</button>
+    <div id="corner">
+      <button id="devOpen" title="Включить и выключить кнопки и инструменты браузера">Для разработчика</button>
+      <button id="keysOpen" title="Все горячие клавиши и приёмы браузера с описанием">Быстрые команды</button>
+    </div>
   </div>
   <details id="allowBox">
     <summary>Разрешённые сайты (<span id="allowCount">0</span>)</summary>
@@ -123,7 +128,7 @@ kbd { font: 12px Consolas, monospace; padding: 1px 6px; border: 1px solid var(--
     <div class="row"><button id="saveAllow">Сохранить</button>
       <span class="muted">По одному на строку. *.example.com пропускает сам сайт и все его поддомены. Уже открытые страницы получат список после обновления.</span></div>
   </details>
-  <details id="mockBox">
+  <details id="mockBox" class="mockonly">
     <summary>Заглушки (<span id="mockCount">0</span>)</summary>
     <div class="row" style="margin-top:8px"><button id="mockNew">Новая заглушка</button>
       <span class="muted">Запрос на адрес заглушки получает её ответ от самого LiteBro и не уходит на сервер, в том числе в режиме «только localhost». Сделать заглушку из запроса — кнопка в подробностях строки журнала. * в адресе — любые символы; адрес без ? подходит с любыми параметрами.</span></div>
@@ -351,6 +356,7 @@ function details(e) {
   c.colSpan = 8;
   c.textContent = e.Url + (e.Page ? "\nСтраница: " + e.Page : "") + "\nВремя: " + e.Time + (e.Stack ? "\nСтек:\n" + e.Stack : "");
   const mock = document.createElement("button");
+  mock.className = "mockonly";
   mock.textContent = "Сделать заглушку";
   mock.title = "Ответ на этот адрес будет отдавать сам LiteBro. Для GET ответ сервера подставится, если сервер доступен.";
   mock.addEventListener("click", () => post({ type: "mockFrom", seq: e.Seq }));
@@ -412,6 +418,9 @@ const KEYS = [
     ["Гаечный ключ в адресной строке", "Инструменты: эмуляция телефона, планшета, медленной сети или офлайна для этой вкладки, хранилище сайта"],
     ["Shift+Esc", "Диспетчер процессов браузера (также клик по памяти справа)"],
   ]],
+  ["Для разработчика", [
+    ["Кнопка у правого края стартовой страницы", "Включить и выключить кнопки и инструменты браузера; сама кнопка не выключается (ещё одна — вверху этой страницы)"],
+  ]],
   ["Адресная строка", [
     ["Ctrl+L, Alt+D, F6", "Перейти в адресную строку"],
     ["Enter", "Открыть адрес или искать текст"],
@@ -463,6 +472,7 @@ function drawKeys() {
   }
 }
 $("keysOpen").addEventListener("click", ev => { ev.stopPropagation(); drawKeys(); $("keys").showModal(); });
+$("devOpen").addEventListener("click", () => post({ type: "devOpen" }));
 $("keysClose").addEventListener("click", () => $("keys").close());
 $("keys").addEventListener("click", ev => { if (ev.target === $("keys")) $("keys").close(); });
 
@@ -561,6 +571,7 @@ window.chrome.webview.addEventListener("message", e => {
   if (m && m.type === "mockEdit") { editMock(m.mock); return; }
   if (!m || m.type !== "net") return;
   if (m.mocks) drawMocks(m.mocks);
+  document.body.classList.toggle("nomocks", (m.off || []).includes("mocks"));
   $("localOnly").checked = m.localOnly;
   $("journal").checked = m.journal;
   $("cors").checked = m.cors;

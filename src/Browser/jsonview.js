@@ -8,6 +8,7 @@
   let data;
   try { data = JSON.parse(raw); } catch { return; }
   window.__litebroJson = true;
+  window.__litebroJsonText = raw; // for "Save as": the tree replaces the text
 
   const css = `
 :root { color-scheme: light dark; --fg: #1b1d22; --muted: #6b7080; --key: #8a1bb5; --str: #1a7f37; --num: #0550ae; --lit: #b35900; --bg: #fff; --bar: #f2f3f6; --line: rgba(0,0,0,.12); }

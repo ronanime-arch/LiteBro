@@ -466,6 +466,8 @@ sealed class BrowserForm : Form
             }
         };
         core.NewWindowRequested += OnNewWindowRequested;
+        core.SaveAsUIShowing += (_, e) => OnSaveAs(tab, core, e);
+        core.ContextMenuRequested += (_, e) => AddPageTools(tab, core, e);
         // Not from inside the WebView's own event: closing the tab closes that WebView
         core.WindowCloseRequested += (_, _) => BeginInvoke(new Action(() => CloseTab(tab)));
         core.IsDocumentPlayingAudioChanged += (_, _) =>
@@ -1073,6 +1075,211 @@ sealed class BrowserForm : Form
         {
             MessageBox.Show(this, "Не удалось записать файл.\n\n" + ex.Message, "LiteBro", MessageBoxButtons.OK, MessageBoxIcon.Error);
         }
+    }
+
+    /// <summary>A format in the "Save as" dialog: one the engine writes (Kind), or one written here (Own).</summary>
+    sealed class SaveFormat
+    {
+        public string Filter = "", Ext = "";
+        public CoreWebView2SaveAsKind? Kind;
+        public string? Own; // pdf, png, txt, csv, json
+
+        public SaveFormat(string filter, string ext, CoreWebView2SaveAsKind kind) { Filter = filter; Ext = ext; Kind = kind; }
+        public SaveFormat(string filter, string ext, string own) { Filter = filter; Ext = ext; Own = own; }
+    }
+
+    static string lastSaveFormat = "";
+
+    static List<SaveFormat> SaveFormats(string mime, string ext)
+    {
+        var list = new List<SaveFormat>();
+        bool html = mime.Length == 0 || mime.Contains("html");
+        if (html)
+        {
+            list.Add(new SaveFormat("Веб-страница полностью (*.html)", ".html", CoreWebView2SaveAsKind.Complete));
+            list.Add(new SaveFormat("Веб-страница, только HTML (*.html)", ".html", CoreWebView2SaveAsKind.HtmlOnly));
+            list.Add(new SaveFormat("Веб-архив, один файл (*.mhtml)", ".mhtml", CoreWebView2SaveAsKind.SingleFile));
+        }
+        else if (mime.Contains("json"))
+            list.Add(new SaveFormat("JSON (*.json)", ".json", CoreWebView2SaveAsKind.Default));
+        else
+        {
+            if (ext.Length == 0) ext = ".*";
+            list.Add(new SaveFormat("Файл как есть (*" + ext + ")", ext == ".*" ? "" : ext, CoreWebView2SaveAsKind.Default));
+        }
+        list.Add(new SaveFormat("PDF (*.pdf)", ".pdf", "pdf"));
+        list.Add(new SaveFormat("Картинка всей страницы PNG (*.png)", ".png", "png"));
+        list.Add(new SaveFormat("Текст (*.txt)", ".txt", "txt"));
+        if (html)
+        {
+            list.Add(new SaveFormat("Таблицы страницы CSV для Excel (*.csv)", ".csv", "csv"));
+            list.Add(new SaveFormat("Таблицы страницы JSON (*.json)", ".json", "json"));
+        }
+        else if (mime.Contains("json"))
+            list.Add(new SaveFormat("Список из JSON в CSV для Excel (*.csv)", ".csv", "csv"));
+        return list;
+    }
+
+    /// <summary>
+    /// "Save as" (Ctrl+S, the page's menu): this program's dialog with more formats than the engine's.
+    /// HTML and MHTML still go to the engine, with the path picked here; the rest is written here.
+    /// </summary>
+    void OnSaveAs(Tab tab, CoreWebView2 core, CoreWebView2SaveAsUIShowingEventArgs e)
+    {
+        var deferral = e.GetDeferral();
+        var mime = (e.ContentMimeType ?? "").ToLowerInvariant();
+        var suggested = e.SaveAsFilePath ?? "";
+        BeginInvoke(new Action(async () =>
+        {
+            SaveFormat? format = null;
+            string path = "";
+            try
+            {
+                string name = "", dir = "", ext = "";
+                try
+                {
+                    name = Path.GetFileNameWithoutExtension(suggested);
+                    dir = Path.GetDirectoryName(suggested) ?? "";
+                    ext = Path.GetExtension(suggested);
+                }
+                catch (ArgumentException) { }
+                var formats = SaveFormats(mime, ext);
+                int last = formats.FindIndex(f => f.Filter == lastSaveFormat);
+                using var dialog = new SaveFileDialog
+                {
+                    Title = "Сохранить как",
+                    FileName = name.Length > 0 ? name : "page",
+                    Filter = string.Join("|", formats.Select(f => f.Filter + "|*" + (f.Ext.Length > 0 ? f.Ext : ".*"))),
+                    FilterIndex = last >= 0 ? last + 1 : 1,
+                    AddExtension = true,
+                };
+                if (dir.Length > 0 && Directory.Exists(dir)) dialog.InitialDirectory = dir;
+                if (dialog.ShowDialog(this) == DialogResult.OK && dialog.FilterIndex >= 1 && dialog.FilterIndex <= formats.Count)
+                {
+                    format = formats[dialog.FilterIndex - 1];
+                    path = dialog.FileName;
+                    lastSaveFormat = format.Filter;
+                }
+            }
+            finally
+            {
+                if (format?.Kind is { } kind)
+                {
+                    e.SuppressDefaultDialog = true;
+                    e.SaveAsFilePath = path;
+                    e.Kind = kind;
+                    e.AllowReplace = true; // the dialog here asked already
+                }
+                else e.Cancel = true;
+                deferral.Complete();
+            }
+            if (format?.Own is { } own) await SaveOwnAsync(tab, core, own, path);
+        }));
+    }
+
+    static string? savePage;
+
+    async Task SaveOwnAsync(Tab tab, CoreWebView2 core, string format, string path)
+    {
+        try
+        {
+            switch (format)
+            {
+                case "pdf":
+                    if (!await core.PrintToPdfAsync(path, null)) throw new IOException("Движок не смог напечатать страницу в PDF.");
+                    return;
+                case "png":
+                    File.WriteAllBytes(path, await FullShotAsync(tab, core));
+                    return;
+            }
+            savePage ??= ReadResource("savepage.js");
+            var result = await core.ExecuteScriptAsync("(" + savePage + ")(\"" + format + "\")");
+            var text = ProjectStore.Json.Deserialize<string?>(result);
+            if (text == null)
+            {
+                MessageBox.Show(this, format == "txt" ? "На странице нет текста." : "На странице нет таблиц, сохранять нечего.",
+                    "LiteBro", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                return;
+            }
+            // CSV with a BOM, so Excel reads the Cyrillic right
+            File.WriteAllText(path, text, new UTF8Encoding(format == "csv"));
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show(this, "Не удалось сохранить.\n\n" + ex.Message, "LiteBro", MessageBoxButtons.OK, MessageBoxIcon.Error);
+        }
+    }
+
+    /// <summary>
+    /// A site's right-click menu: this program's tools in the engine's "More tools" submenu (beside Share),
+    /// each as it is switched on for developers.
+    /// </summary>
+    void AddPageTools(Tab tab, CoreWebView2 core, CoreWebView2ContextMenuRequestedEventArgs e)
+    {
+        if (e.ContextMenuTarget.Kind != CoreWebView2ContextMenuTargetKind.Page || tab.ShowingInternalPage
+            || IsInternal(core.Source) || tab.Term != null || App.Current.Env is not { } env)
+            return;
+        CoreWebView2ContextMenuItem Item(string label, Action act, CoreWebView2ContextMenuItemKind kind = CoreWebView2ContextMenuItemKind.Command, bool on = false)
+        {
+            var item = env.CreateContextMenuItem(label, null, kind);
+            if (kind == CoreWebView2ContextMenuItemKind.Radio) item.IsChecked = on;
+            item.CustomItemSelected += (_, _) => BeginInvoke(act);
+            return item;
+        }
+        CoreWebView2ContextMenuItem Sub(string label, IEnumerable<CoreWebView2ContextMenuItem> children)
+        {
+            var sub = env.CreateContextMenuItem(label, null, CoreWebView2ContextMenuItemKind.Submenu);
+            foreach (var c in children) sub.Children.Add(c);
+            return sub;
+        }
+
+        var tools = new List<CoreWebView2ContextMenuItem>();
+        if (Dev.On("snapshot"))
+        {
+            tools.Add(Item("Захватить всю страницу… (Ctrl+Shift+S)", () => Snapshot(tab, full: true)));
+            tools.Add(Item("Захватить видимую часть…", () => Snapshot(tab, full: false)));
+        }
+        if (Dev.On("reset") && SiteOrigin(tab) != null)
+            tools.Add(Item("Сбросить кэш сайта и обновить (Ctrl+Shift+R)", () => ResetSite(tab)));
+        if (Dev.On("storage") && StoragePage.HasSite(core))
+            tools.Add(Item("Хранилище сайта", () => OpenStorage(tab)));
+        if (Dev.On("emulation"))
+        {
+            var radio = CoreWebView2ContextMenuItemKind.Radio;
+            var screens = new List<CoreWebView2ContextMenuItem> { Item("Обычный экран", () => SetEmulation(tab, null, tab.Speed), radio, tab.Device == null) };
+            screens.AddRange(Emulation.Devices.Select(d => Item($"{d.Name} ({d.Width}×{d.Height})", () => SetEmulation(tab, d, tab.Speed), radio, tab.Device == d)));
+            var speeds = new List<CoreWebView2ContextMenuItem> { Item("Обычная", () => SetEmulation(tab, tab.Device, null), radio, tab.Speed == null) };
+            speeds.AddRange(Emulation.Speeds.Select(sp => Item(sp.Name, () => SetEmulation(tab, tab.Device, sp), radio, tab.Speed == sp)));
+            tools.Add(Sub("Устройство" + (tab.Device != null ? ": " + tab.Device.Name : ""), screens));
+            tools.Add(Sub("Сеть" + (tab.Speed != null ? ": " + tab.Speed.Name : ""), speeds));
+        }
+        if (tab.Device != null || tab.Speed != null)
+            tools.Add(Item("Выключить эмуляцию", () => SetEmulation(tab, null, null)));
+        if (tools.Count == 0) return;
+
+        var into = MoreTools(e.MenuItems);
+        if (into == null)
+        {
+            // No "More tools" in this runtime: a submenu of its own, above "Inspect"
+            var own = Sub("Другие инструменты", tools);
+            int at = e.MenuItems.Select(i => i.Name).ToList().IndexOf("inspectElement");
+            e.MenuItems.Insert(at >= 0 ? at : e.MenuItems.Count, own);
+            return;
+        }
+        if (into.Count > 0) into.Add(env.CreateContextMenuItem("", null, CoreWebView2ContextMenuItemKind.Separator));
+        foreach (var t in tools) into.Add(t);
+    }
+
+    /// <summary>The engine's submenu that holds "Share".</summary>
+    static IList<CoreWebView2ContextMenuItem>? MoreTools(IList<CoreWebView2ContextMenuItem> items)
+    {
+        foreach (var i in items)
+        {
+            if (i.Kind != CoreWebView2ContextMenuItemKind.Submenu) continue;
+            if (i.Children.Any(c => c.Name == "share")) return i.Children;
+            if (MoreTools(i.Children) is { } inner) return inner;
+        }
+        return null;
     }
 
     /// <summary>The storage page of a site's tab, in a new tab in front.</summary>
@@ -2475,10 +2682,14 @@ sealed class BrowserForm : Form
     /// Ctrl+Shift+R: the site's service workers and Cache Storage go (a stale worker otherwise keeps serving
     /// the old build), the HTTP cache too, and the page loads anew past any cache. Cookies and storage stay.
     /// </summary>
-    async void ResetSite()
+    void ResetSite()
     {
-        var tab = active;
-        if (tab?.Core is not { } core) return;
+        if (active != null) ResetSite(active);
+    }
+
+    async void ResetSite(Tab tab)
+    {
+        if (tab.Core is not { } core) return;
         if (SiteOrigin(tab) is not { } origin)
         {
             ReloadOrStop();

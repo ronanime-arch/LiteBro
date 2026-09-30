@@ -53,7 +53,7 @@ sealed class Settings
 
     public string SearchUrl = "https://www.google.com/search?q=";
     public string SearchCountry = "";
-    public string Theme = "auto";
+    public string Theme = "dark";
     /// <summary>The interface language: auto (as Windows), ru, en.</summary>
     public string Language = "auto";
     public bool Gpu = true;
@@ -72,12 +72,21 @@ sealed class Settings
     public bool ClearOnExit;
     /// <summary>A page on screen loads again when a file in its project's folder (or its own folder, for a file) changes.</summary>
     public bool AutoReload;
+    /// <summary>Tracking prevention at its strict level (Edge's «Строгая»); else balanced, the engine's default.</summary>
+    public bool StrictTracking;
+    /// <summary>A click on a tab's speaker mutes it; off by default.</summary>
+    public bool TabMute;
+    /// <summary>Certificate errors of servers on this machine are let through; off by default.</summary>
+    public bool TrustLocalCerts;
+    /// <summary>Tabs in the background are paused after SuspendAfter minutes and closed after UnloadAfter (0 = never).</summary>
+    public bool FreezeTabs = true;
+    public int SuspendAfter = 1, UnloadAfter = 5;
     /// <summary>Buttons and tools switched off on the «Для разработчика» page (Dev.Ids), through spaces; the developer tools by default.</summary>
     public string DevOff = Dev.DefaultOff;
 
     static readonly string[] Keys =
     {
-        "searchurl", "searchcountry", "theme", "language", "gpu", "extrabrowserargs", "localhosts", "otherbrowser", "localonly", "netjournal", "allowhosts", "ignorecors", "clearonexit", "autoreload", "disabled",
+        "searchurl", "searchcountry", "theme", "language", "gpu", "extrabrowserargs", "localhosts", "otherbrowser", "localonly", "netjournal", "allowhosts", "ignorecors", "clearonexit", "autoreload", "stricttracking", "tabmute", "trustlocalcerts", "freezetabs", "suspendafter", "unloadafter", "disabled",
     };
 
     public static Settings Load()
@@ -104,7 +113,7 @@ sealed class Settings
                 case "searchcountry": s.SearchCountry = value.ToUpperInvariant(); break;
                 case "theme":
                     var t = value.ToLowerInvariant();
-                    s.Theme = t is "dark" or "light" ? t : "auto";
+                    s.Theme = t is "auto" or "light" ? t : "dark";
                     break;
                 case "language":
                     var lang = value.ToLowerInvariant();
@@ -120,6 +129,12 @@ sealed class Settings
                 case "ignorecors": s.IgnoreCors = IsTrue(value); break;
                 case "clearonexit": s.ClearOnExit = IsTrue(value); break;
                 case "autoreload": s.AutoReload = IsTrue(value); break;
+                case "stricttracking": s.StrictTracking = IsTrue(value); break;
+                case "tabmute": s.TabMute = IsTrue(value); break;
+                case "trustlocalcerts": s.TrustLocalCerts = IsTrue(value); break;
+                case "freezetabs": s.FreezeTabs = IsTrue(value); break;
+                case "suspendafter": s.SuspendAfter = Minutes(value, s.SuspendAfter, 1); break;
+                case "unloadafter": s.UnloadAfter = Minutes(value, s.UnloadAfter, 0); break;
                 case "disabled": s.DevOff = value; break;
             }
         }
@@ -201,6 +216,19 @@ sealed class Settings
         catch (Exception e) when (e is IOException || e is UnauthorizedAccessException) { }
     }
 
+    public const int MaxMinutes = 1440;
+
+    /// <summary>A number of minutes from min up to a day; the old value for anything else.</summary>
+    public static int Minutes(string v, int old, int min) =>
+        int.TryParse(v, NumberStyles.Integer, CultureInfo.InvariantCulture, out var n) && n >= min && n <= MaxMinutes ? n : old;
+
+    /// <summary>Changes values of the «Для разработчика» page and writes the file.</summary>
+    public void Change(Action<Settings> change)
+    {
+        change(this);
+        Save();
+    }
+
     static bool IsTrue(string v) =>
         v == "1" || v.Equals("true", StringComparison.OrdinalIgnoreCase) || v.Equals("yes", StringComparison.OrdinalIgnoreCase);
 
@@ -217,7 +245,7 @@ sealed class Settings
         L.T("# Пусто = как обычно. Кнопка сама меняет эту строку."),
         "SearchCountry = " + SearchCountry,
         "",
-        L.T("# Оформление: auto = как «Режим приложения» в Windows, dark = тёмное, light = светлое"),
+        L.T("# Оформление: dark = тёмное, light = светлое, auto = как «Режим приложения» в Windows"),
         "Theme = " + Theme,
         "",
         L.T("# Язык: auto = как в Windows, ru = русский, en = английский. Меняется на странице «Для разработчика»."),
@@ -252,6 +280,18 @@ sealed class Settings
         "ClearOnExit = " + Bool(ClearOnExit),
         L.T("# Обновлять страницу на экране, когда меняется файл в папке её проекта (или в папке открытого файла)"),
         "AutoReload = " + Bool(AutoReload),
+        L.T("# Строгая защита от трекеров: блокируется больше счётчиков и рекламы, изредка ломается вход через другой сайт"),
+        "StrictTracking = " + Bool(StrictTracking),
+        L.T("# Доверять сертификатам серверов на этом компьютере (localhost, *.localhost, 127.x, ::1)"),
+        "TrustLocalCerts = " + Bool(TrustLocalCerts),
+        "",
+        L.T("# --- Вкладки ---"),
+        L.T("# Клик по значку звука на вкладке выключает её звук"),
+        "TabMute = " + Bool(TabMute),
+        L.T("# Фоновые вкладки: приостановить через SuspendAfter минут, выгрузить из памяти через UnloadAfter (0 = не выгружать)"),
+        "FreezeTabs = " + Bool(FreezeTabs),
+        "SuspendAfter = " + SuspendAfter.ToString(CultureInfo.InvariantCulture),
+        "UnloadAfter = " + UnloadAfter.ToString(CultureInfo.InvariantCulture),
         "",
         L.T("# --- Для разработчика ---"),
         L.T("# Что выключено на странице «Для разработчика» (кнопка у правого края стартовой страницы), через пробел."),

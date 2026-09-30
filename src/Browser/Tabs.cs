@@ -94,6 +94,8 @@ sealed class TabStrip : Control
     public event Action<Tab>? Picked, Closing;
     /// <summary>A click on a tab's speaker: its sound off or on again.</summary>
     public event Action<Tab>? Mute;
+    /// <summary>The speaker mutes its tab when clicked («Для разработчика»); else it only shows the sound.</summary>
+    public bool MuteEnabled;
     /// <summary>A right click on a tab, with where to show its menu.</summary>
     public event Action<Tab, Point>? Menu;
     public event Action? NewTab;
@@ -177,7 +179,7 @@ sealed class TabStrip : Control
             var r = TabRect(i);
             if (!r.Contains(p)) continue;
             close = HasClose(i) && CloseRect(r).Contains(p);
-            sound = !close && SoundRect(i) is { } s && s.Contains(p);
+            sound = !close && MuteEnabled && SoundRect(i) is { } s && s.Contains(p);
             return i;
         }
         return -1;

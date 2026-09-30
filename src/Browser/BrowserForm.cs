@@ -20,7 +20,9 @@ sealed class BrowserForm : Form
     const string GlyphBack = "", GlyphForward = "", GlyphReload = "",
         GlyphStop = "", GlyphHome = "", GlyphGlobe = "";
     // A tab in the background is paused after a while, and after a long while closed until it is picked again
-    static readonly TimeSpan SuspendAfter = TimeSpan.FromMinutes(1), UnloadAfter = TimeSpan.FromMinutes(5);
+    // «Для разработчика»: how long a tab in the background runs before it is paused, and before it is closed (0 = never)
+    static TimeSpan SuspendAfter => TimeSpan.FromMinutes(App.Current.S.SuspendAfter);
+    static TimeSpan UnloadAfter => TimeSpan.FromMinutes(App.Current.S.UnloadAfter);
 
     [DllImport("user32.dll", CharSet = CharSet.Unicode)]
     static extern IntPtr SendMessage(IntPtr window, int message, IntPtr wParam, string lParam);
@@ -145,6 +147,7 @@ sealed class BrowserForm : Form
         strip.NewTab += () => OpenNewTab(null);
         strip.Menu += ShowTabMenu;
         strip.Mute += ToggleMute;
+        strip.MuteEnabled = App.Current.S.TabMute;
         host.Controls.Add(divider);
         host.Controls.Add(stripeLeft);
         host.Controls.Add(stripeRight);
@@ -388,6 +391,7 @@ sealed class BrowserForm : Form
         // SmartScreen sends the addresses to Microsoft: no telemetry
         try { core.Settings.IsReputationCheckingRequired = false; }
         catch (Exception) { } // an older WebView2 runtime
+        ApplyTracking(core);
         // The start page is served from here and talks to the browser through web messages
         core.AddWebResourceRequestedFilter(Home.Url + "*", CoreWebView2WebResourceContext.All);
         core.WebResourceRequested += OnHomeRequest;
@@ -511,6 +515,20 @@ sealed class BrowserForm : Form
             if (e.ProcessFailedKind == CoreWebView2ProcessFailedKind.RenderProcessExited) core.Reload();
         };
     }
+
+    /// <summary>Tracking prevention of the tab's profile: strict when switched on («Для разработчика»), else balanced.</summary>
+    static void ApplyTracking(CoreWebView2 core)
+    {
+        try
+        {
+            core.Profile.PreferredTrackingPreventionLevel = App.Current.S.StrictTracking
+                ? CoreWebView2TrackingPreventionLevel.Strict : CoreWebView2TrackingPreventionLevel.Balanced;
+        }
+        catch (Exception) { } // an older runtime, or the WebView is closing
+    }
+
+    /// <summary>A WebView here in that profile, to reach the profile's settings through; null if no tab is in it.</summary>
+    public CoreWebView2? CoreIn(string profile) => tabs.FirstOrDefault(t => t.Profile == profile && t.Core != null)?.Core;
 
     /// <summary>The site is not there: a server that is off, a name that does not resolve, no network.</summary>
     static bool IsUnreachable(CoreWebView2WebErrorStatus status) => status is CoreWebView2WebErrorStatus.CannotConnect
@@ -858,8 +876,9 @@ sealed class BrowserForm : Form
             menu.Items.Add(new ToolStripMenuItem(L.T("Убрать разделение"), null, (_, _) => Unsplit()));
         }
         if (menu.Items.Count > 0) menu.Items.Add(new ToolStripSeparator());
-        menu.Items.Add(new ToolStripMenuItem(tab.Muted ? L.T("Включить звук вкладки") : L.T("Выключить звук вкладки"), null,
-            (_, _) => ToggleMute(tab)));
+        if (App.Current.S.TabMute)
+            menu.Items.Add(new ToolStripMenuItem(tab.Muted ? L.T("Включить звук вкладки") : L.T("Выключить звук вкладки"), null,
+                (_, _) => ToggleMute(tab)));
         menu.Items.Add(new ToolStripMenuItem(L.T("Закрыть вкладку"), null, (_, _) => CloseTab(tab)) { ShortcutKeyDisplayString = tab == active ? "Ctrl+W" : "" });
         menu.Show(strip, at);
     }
@@ -1309,6 +1328,13 @@ sealed class BrowserForm : Form
         core.Navigate(StoragePage.Url);
     }
 
+    /// <summary>The permissions window: of the tab's site in its profile, or of every site (from «Для разработчика»).</summary>
+    void ShowPermissions(Tab? tab, Point at)
+    {
+        var origin = tab != null ? SitePermissions.OriginOf(tab.Site) : null;
+        new PermsPopup(Handle, origin != null ? tab!.Profile : null, origin).ShowAt(this, at);
+    }
+
     /// <summary>A storage page's request: done in the site's page (or its cookie manager), then the storage read anew.</summary>
     async void StorageOp(Tab page, Tab site, Dictionary<string, object> m)
     {
@@ -1347,7 +1373,7 @@ sealed class BrowserForm : Form
     void ShowEmulation(Tab tab)
     {
         bool on = tab.Device != null || tab.Speed != null;
-        bool any = Dev.On("emulation") || Dev.On("snapshot") || Dev.On("storage");
+        bool any = Dev.On("emulation") || Dev.On("snapshot") || Dev.On("storage") || Dev.On("perms");
         emulate.Visible = on || (any && !tab.ShowingInternalPage && !IsInternal(tab.Site) && tab.Term == null);
         emulate.ForeColor = on ? Color.FromArgb(0x1f, 0x9d, 0x55) : Theme.Text;
         var what = string.Join(", ", new[] { tab.Device?.Name, tab.Speed?.Name }.OfType<string>());
@@ -1371,6 +1397,13 @@ sealed class BrowserForm : Form
         {
             if (menu.Items.Count > 0 && !Dev.On("snapshot")) menu.Items.Add(new ToolStripSeparator());
             menu.Items.Add(new ToolStripMenuItem(L.T("Хранилище сайта: cookies, localStorage, IndexedDB"), null, (_, _) => OpenStorage(tab)));
+        }
+        if (Dev.On("perms"))
+        {
+            if (menu.Items.Count > 0 && !Dev.On("snapshot") && !(Dev.On("storage") && tab.Core is { } c && StoragePage.HasSite(c)))
+                menu.Items.Add(new ToolStripSeparator());
+            menu.Items.Add(new ToolStripMenuItem(L.T("Разрешения сайта: камера, микрофон, местоположение"), null,
+                (_, _) => ShowPermissions(tab, emulate.PointToScreen(new Point(0, emulate.Height)))));
         }
         // An emulation left on is always switched off from here, the feature on or not
         if (tab.Device != null || tab.Speed != null)
@@ -1429,6 +1462,7 @@ sealed class BrowserForm : Form
     /// <summary>The tab's speaker was clicked: its sound off, or on again.</summary>
     void ToggleMute(Tab tab)
     {
+        if (!App.Current.S.TabMute && !tab.Muted) return;
         tab.Muted = !tab.Muted;
         try { if (tab.Core is { } core) core.IsMuted = tab.Muted; }
         catch (Exception) { } // the WebView is closing
@@ -1514,7 +1548,7 @@ sealed class BrowserForm : Form
     /// </summary>
     static void OnCertificateError(object? sender, CoreWebView2ServerCertificateErrorDetectedEventArgs e)
     {
-        if (Uri.TryCreate(e.RequestUri, UriKind.Absolute, out var u) && IsThisMachine(u))
+        if (App.Current.S.TrustLocalCerts && Uri.TryCreate(e.RequestUri, UriKind.Absolute, out var u) && IsThisMachine(u))
             e.Action = CoreWebView2ServerCertificateErrorAction.AlwaysAllow;
     }
 
@@ -1678,6 +1712,7 @@ sealed class BrowserForm : Form
     /// </summary>
     void FreezeIdleTabs()
     {
+        if (!App.Current.S.FreezeTabs) return;
         var now = DateTime.UtcNow;
         foreach (var tab in tabs)
         {
@@ -1687,7 +1722,7 @@ sealed class BrowserForm : Form
             // Nor a site whose storage a storage page shows: it reads it from the live page
             if (tabs.Any(t => t.StorageOf == tab)) continue;
             // A page Chromium refused to pause is busy with something (a call, say): it is not closed either
-            if (tab.Suspended && now - since >= UnloadAfter) Unload(tab);
+            if (tab.Suspended && App.Current.S.UnloadAfter > 0 && now - since >= UnloadAfter) Unload(tab);
             else if (!tab.Suspended && now - since >= SuspendAfter) Suspend(tab, core);
         }
     }
@@ -1766,6 +1801,12 @@ sealed class BrowserForm : Form
     /// <summary>After a switch on the «Для разработчика» page: emulation switched off leaves the tabs, the toolbar follows.</summary>
     public void ApplyDev()
     {
+        foreach (var tab in tabs)
+            if (tab.Core is { } core) ApplyTracking(core);
+        // Muting switched off: no tab stays silent with no way to hear it again
+        strip.MuteEnabled = App.Current.S.TabMute;
+        if (!App.Current.S.TabMute)
+            foreach (var tab in tabs.Where(t => t.Muted).ToList()) ToggleMute(tab);
         if (!Dev.On("emulation"))
             foreach (var tab in tabs.Where(t => t.Device != null || t.Speed != null).ToList())
                 SetEmulation(tab, null, null);
@@ -1935,6 +1976,17 @@ sealed class BrowserForm : Form
                 ["mocks"] = MockStore.Summary(),
                 ["off"] = Dev.OffList(),
                 ["lang"] = App.Current.S.Language,
+                ["settings"] = new Dictionary<string, object>
+                {
+                    ["strictTracking"] = App.Current.S.StrictTracking,
+                    ["trustLocalCerts"] = App.Current.S.TrustLocalCerts,
+                    ["tabMute"] = App.Current.S.TabMute,
+                    ["freezeTabs"] = App.Current.S.FreezeTabs,
+                    ["suspendAfter"] = App.Current.S.SuspendAfter,
+                    ["unloadAfter"] = App.Current.S.UnloadAfter,
+                    ["theme"] = App.Current.S.Theme,
+                    ["gpu"] = App.Current.S.Gpu,
+                },
             }));
     }
 
@@ -2506,7 +2558,7 @@ sealed class BrowserForm : Form
         ["netClear"] = new[] { "net" }, ["netExport"] = new[] { "net" }, ["mockFrom"] = new[] { "net" }, ["mockOpen"] = new[] { "net" },
         ["mockSave"] = new[] { "net" }, ["mockOn"] = new[] { "net" }, ["mockDelete"] = new[] { "net" },
         ["dev"] = new[] { "dev" }, ["lang"] = new[] { "dev" }, ["devReset"] = new[] { "dev" }, ["settingsReset"] = new[] { "dev" },
-        ["storage"] = new[] { "storage" },
+        ["storage"] = new[] { "storage" }, ["permsOpen"] = new[] { "dev" }, ["setting"] = new[] { "dev" },
         ["termStart"] = new[] { "term" }, ["termIn"] = new[] { "term" }, ["termSize"] = new[] { "term" },
     };
 
@@ -2606,6 +2658,14 @@ sealed class BrowserForm : Form
                 break;
             case "devOpen":
                 OpenHereOrNew(tab, Dev.Url, Flag("newTab"));
+                break;
+            case "permsOpen":
+                // Every site, in the window under the toolbar's right end
+                BeginInvoke(new Action(() => ShowPermissions(null, PointToScreen(new Point(ClientSize.Width - Font.Height * 26, bar.Bottom)))));
+                break;
+            case "setting" when Dev.Is(e.Source) && Text("key") is { } key && m.TryGetValue("value", out var value):
+                // Not from inside the WebView's own event: GPU restarts the engine, closing this WebView too
+                BeginInvoke(new Action(() => App.Current.SetSetting(key, value)));
                 break;
             case "dev" when Dev.Is(e.Source) && Text("id") is { } devId:
                 if (Dev.Set(devId, Flag("on"))) BeginInvoke(new Action(App.Current.ApplyDev));

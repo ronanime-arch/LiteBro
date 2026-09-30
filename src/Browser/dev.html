@@ -35,6 +35,8 @@ label.item:hover { background: rgba(127, 127, 127, .06); }
 button { font: 13px var(--text); padding: 4px 12px; border: 1px solid var(--line); border-radius: 6px; background: transparent; color: inherit; cursor: pointer; }
 button:hover { background: rgba(127, 127, 127, .15); }
 select { font: 13px var(--text); padding: 4px 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--card); color: inherit; }
+input[type=number] { width: 70px; font: 13px var(--text); padding: 3px 6px; border: 1px solid var(--line); border-radius: 6px; background: var(--card); color: inherit; margin: 0 4px; }
+#timing.off { opacity: .5; }
 button:disabled { opacity: .45; cursor: default; background: transparent; }
 </style>
 </head>
@@ -52,6 +54,28 @@ button:disabled { opacity: .45; cursor: default; background: transparent; }
     </select>
     <span class="muted">Меняет язык браузера и его страниц. Движок перезапустится: вкладки перезагрузятся, открытые терминалы закроются.</span>
   </div>
+  <h2>Защита</h2>
+  <section id="protect"></section>
+  <div class="row">
+    <button id="perms">Разрешения сайтов</button>
+    <span class="muted">Камера, микрофон, местоположение, уведомления: что разрешено или запрещено сайтам, с отменой.</span>
+  </div>
+  <h2>Вкладки</h2>
+  <section id="tabsSection"></section>
+  <div class="row" id="timing">
+    <label class="muted">Приостановить через <input type="number" id="suspendAfter" min="1" max="1440"> мин</label>
+    <label class="muted">выгрузить из памяти через <input type="number" id="unloadAfter" min="0" max="1440"> мин (0 — не выгружать)</label>
+  </div>
+  <h2>Оформление и движок</h2>
+  <div class="row">
+    <select id="theme">
+      <option value="dark">Тёмное</option>
+      <option value="light">Светлое</option>
+      <option value="auto">Как в Windows</option>
+    </select>
+    <span class="muted">Окна и страницы браузера; сайты тоже получают этот выбор.</span>
+  </div>
+  <section id="engine"></section>
   <h2>Кнопки и инструменты</h2>
   <div class="row">
     <button id="allOn" disabled>Включить всё</button>
@@ -60,7 +84,7 @@ button:disabled { opacity: .45; cursor: default; background: transparent; }
   <div id="groups"></div>
   <h2>Настройки по умолчанию</h2>
   <p class="muted">Все настройки браузера — как после установки, без переустановки: тема, страна поиска, режим «только localhost»
-    и разрешённые сайты, журнал сети, CORS, удаление cookies при выходе, обновление при изменении файлов, выключенное на этой странице
+    и разрешённые сайты, журнал сети, CORS, удаление cookies при выходе, обновление при изменении файлов, защита, вкладки, видеокарта, выключенное на этой странице
     и строки settings.ini. Плитки проектов, заглушки, cookies и входы на сайты не трогаются. Перед сбросом браузер спросит подтверждение.</p>
   <div class="row"><button id="defaults">Вернуть настройки по умолчанию…</button></div>
 </main>
@@ -88,6 +112,7 @@ const GROUPS = [
     ["json", "Просмотр JSON деревом", "Ответы API в формате JSON показываются простым текстом."],
     ["mocks", "Заглушки", "Запросы снова идут на сервер, раздел на странице журнала сети скрыт. Сами заглушки сохраняются."],
     ["split", "Две вкладки рядом", "Пункт «Открыть рядом» в меню вкладки. Уже открытое разделение убирается как обычно."],
+    ["perms", "Разрешения сайтов", "Пункт меню «Инструменты» (разрешения открытого сайта). Окно со всеми сайтами открывается кнопкой в разделе «Защита» выше."],
   ]],
   ["Стартовая страница", "Пропадает только кнопка; кнопку «Для разработчика» выключить нельзя.", [
     ["shell", "Терминал (фиолетовая кнопка слева)", "Терминал в папке проекта открывается из консоли проекта."],
@@ -157,6 +182,54 @@ $("lang").addEventListener("change", () => {
   post({ type: "lang", value });
 });
 
+// Settings kept in settings.ini, keys as in App.SetSetting
+const SETTINGS = [
+  ["protect", "strictTracking", "Строгая защита от трекеров", "Как «Строгая» в Edge: блокируется больше счётчиков, рекламы и сторонних cookies. Изредка ломается вход через другой сайт или встроенное видео; тогда выключите. Выключено — «Сбалансированная», как в Edge по умолчанию."],
+  ["protect", "trustLocalCerts", "Доверять сертификатам localhost", "Локальный сервер на https со своим сертификатом (vite --https, dotnet dev-certs) открывается без предупреждения. Только localhost, *.localhost, 127.x и ::1. Выключение действует после перезапуска браузера для уже открытых адресов."],
+  ["tabsSection", "tabMute", "Выключение звука по значку на вкладке", "Клик по значку динамика выключает и включает звук вкладки, пункт есть и в меню вкладки. Выключено — значок только показывает, что вкладка играет."],
+  ["tabsSection", "freezeTabs", "Заморозка фоновых вкладок", "Экономит память и процессор: вкладка в фоне приостанавливается, потом выгружается и загружается снова по клику. Не замораживаются вкладки со звуком, терминал и сайты работающих проектов."],
+  ["engine", "gpu", "Видеокарта", "Страницы рисует видеокарта. Выключать только если на старом компьютере или драйвере страницы мерцают или рисуются с ошибками: без видеокарты всё рисует процессор, браузер заметно медленнее и сильнее нагружает процессор. Движок перезапустится."],
+];
+const settingBoxes = {};
+for (const [where, key, name, what] of SETTINGS) {
+  const label = document.createElement("label");
+  label.className = "item";
+  const text = document.createElement("span");
+  text.className = "text";
+  const n = document.createElement("div");
+  n.className = "name";
+  n.textContent = name;
+  const w = document.createElement("div");
+  w.className = "muted";
+  w.textContent = what;
+  text.append(n, w);
+  const box = document.createElement("input");
+  box.type = "checkbox";
+  box.addEventListener("change", () => {
+    if (key === "gpu" && !confirm(box.checked
+        ? "Включить видеокарту? Движок браузера перезапустится: вкладки перезагрузятся, открытые терминалы закроются."
+        : "Выключить видеокарту? Браузер станет медленнее и сильнее нагрузит процессор; это нужно только при мерцании и ошибках рисования. Движок перезапустится: вкладки перезагрузятся, открытые терминалы закроются.")) {
+      box.checked = !box.checked;
+      return;
+    }
+    label.classList.toggle("off", !box.checked);
+    post({ type: "setting", key, value: box.checked });
+  });
+  const track = document.createElement("span");
+  track.className = "track";
+  label.append(text, box, track);
+  $(where).append(label);
+  settingBoxes[key] = box;
+}
+for (const id of ["suspendAfter", "unloadAfter"])
+  $(id).addEventListener("change", () => {
+    const n = Math.round(Number($(id).value));
+    const min = id === "suspendAfter" ? 1 : 0;
+    if (!(n >= min && n <= 1440)) return;
+    post({ type: "setting", key: id, value: n });
+  });
+$("theme").addEventListener("change", () => post({ type: "setting", key: "theme", value: $("theme").value }));
+$("perms").addEventListener("click", () => post({ type: "permsOpen" }));
 $("allOn").addEventListener("click", () => post({ type: "devReset" }));
 $("defaults").addEventListener("click", () => post({ type: "settingsReset" }));
 
@@ -164,6 +237,16 @@ window.chrome.webview.addEventListener("message", e => {
   const m = e.data;
   if (!m || m.type !== "net") return;
   if (m.lang) $("lang").value = language = m.lang;
+  const set = m.settings || {};
+  for (const key in settingBoxes) {
+    settingBoxes[key].checked = !!set[key];
+    settingBoxes[key].closest("label").classList.toggle("off", !set[key]);
+  }
+  // A field being typed in is not overwritten
+  for (const id of ["suspendAfter", "unloadAfter"])
+    if (document.activeElement !== $(id) && set[id] !== undefined) $(id).value = set[id];
+  $("timing").classList.toggle("off", !set.freezeTabs);
+  if (set.theme) $("theme").value = set.theme;
   const off = m.off || [];
   for (const id in boxes) {
     boxes[id].checked = !off.includes(id);

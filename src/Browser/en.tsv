@@ -228,7 +228,7 @@ PowerShell не отвечает: следующая команда запуст
 # Куда сразу уходит всё остальное. Пусто = браузер, который открывает файлы .html	# Where everything else goes at once. Empty = the browser that opens .html files
 # Куда уходит текст из адресной строки, если это не адрес	# Where text from the address bar goes when it is not an address
 # Обновлять страницу на экране, когда меняется файл в папке её проекта (или в папке открытого файла)	# Reload the page on screen when a file changes in its project folder (or in the folder of the open file)
-# Оформление: auto = как «Режим приложения» в Windows, dark = тёмное, light = светлое	# Look: auto = as the Windows app mode, dark, light
+# Оформление: dark = тёмное, light = светлое, auto = как «Режим приложения» в Windows	# Appearance: dark, light, auto = as the app mode in Windows
 # Переключатель справа на стартовой странице меняет эту строку.	# The switch on the right of the start page changes this line.
 # После установки выключены инструменты разработчика:	# After installation the developer tools are off:
 # Пример:	# Example:
@@ -380,7 +380,7 @@ _ на плитках)	_ on tiles)
 Терминал в папке проекта открывается из консоли проекта.	A terminal in the project folder opens from the project console.
 Эмуляция устройства и сети	Device and network emulation
 Эту страницу выключить нельзя: она всегда открывается кнопкой у правого края стартовой страницы и кнопкой на странице журнала сети.	This page cannot be switched off: it always opens with the button at the right edge of the start page and with the button on the network log page.
-и разрешённые сайты, журнал сети, CORS, удаление cookies при выходе, обновление при изменении файлов, выключенное на этой странице	and allowed sites, network log, CORS, deleting cookies on exit, reload on file changes, what is switched off on this page
+и разрешённые сайты, журнал сети, CORS, удаление cookies при выходе, обновление при изменении файлов, защита, вкладки, видеокарта, выключенное на этой странице	and allowed sites, network log, CORS, deleting cookies on exit, reload on file changes, protection, tabs, graphics card, what is switched off on this page
 и строки settings.ini. Плитки проектов, заглушки, cookies и входы на сайты не трогаются. Перед сбросом браузер спросит подтверждение.	and the settings.ini lines. Project tiles, mocks, cookies and site logins are not touched. The browser asks before resetting.
 + Добавить ссылку	+ Add link
 . CORS не проверяется	. CORS is not checked
@@ -617,5 +617,60 @@ LiteBro: только localhost	LiteBro: localhost only
 Включить звук вкладки	Unmute tab
 Выключить звук вкладки	Mute tab
 Клик по значку звука на вкладке	Click on the speaker of a tab
-Выключить и снова включить звук вкладки (также в меню правого клика по вкладке)	Mute and unmute the tab (also in the tab right-click menu)
+Выключить и снова включить звук вкладки (также в меню вкладки); включается на странице «Для разработчика»	Mute and unmute the tab (also in the tab menu); switched on on the “For developers” page
 Выйти из полноэкранного режима видео или игры	Leave the full screen of a video or a game
+Движок браузера перезапускается	The browser engine is restarting
+# Строгая защита от трекеров: блокируется больше счётчиков и рекламы, изредка ломается вход через другой сайт	# Strict tracking prevention: more trackers and ads are blocked, signing in through another site occasionally breaks
+Микрофон	Microphone
+Камера	Camera
+Местоположение	Location
+Уведомления	Notifications
+Датчики движения	Motion sensors
+Чтение буфера обмена	Clipboard read
+Несколько загрузок подряд	Multiple automatic downloads
+Чтение и запись файлов	File read and write
+Автовоспроизведение	Autoplay
+Шрифты компьютера	Local fonts
+MIDI-устройства	MIDI devices
+Окна на нескольких экранах	Window management
+Общий	Shared
+Проект «	Project «
+Защита	Protection
+Строгая защита от трекеров	Strict tracking prevention
+Как «Строгая» в Edge: блокируется больше счётчиков, рекламы и сторонних cookies. Изредка ломается вход через другой сайт или встроенное видео; тогда выключите. Выключено — «Сбалансированная», как в Edge по умолчанию.	As Strict in Edge: more trackers, ads and third-party cookies are blocked. Signing in through another site or an embedded video occasionally breaks; then switch it off. Off means Balanced, the Edge default.
+Разрешения сайтов	Site permissions
+Камера, микрофон, местоположение, уведомления: что разрешено или запрещено сайтам, с отменой.	Camera, microphone, location, notifications: what sites are allowed or refused, and undoing it.
+Сайты пока ничего не спрашивали, или все выборы уже забыты.	Sites have not asked for anything yet, or every choice has been forgotten.
+Разрешено	Allowed
+Запрещено	Blocked
+Спрашивать	Ask
+# Доверять сертификатам серверов на этом компьютере (localhost, *.localhost, 127.x, ::1)	# Trust certificates of servers on this computer (localhost, *.localhost, 127.x, ::1)
+# --- Вкладки ---	# --- Tabs ---
+# Клик по значку звука на вкладке выключает её звук	# A click on the speaker of a tab mutes it
+# Фоновые вкладки: приостановить через SuspendAfter минут, выгрузить из памяти через UnloadAfter (0 = не выгружать)	# Background tabs: pause after SuspendAfter minutes, unload from memory after UnloadAfter (0 = never)
+Вкладки	Tabs
+Приостановить через	Pause after
+мин	min
+выгрузить из памяти через	unload from memory after
+мин (0 — не выгружать)	min (0 means never)
+Оформление и движок	Appearance and engine
+Тёмное	Dark
+Светлое	Light
+Как в Windows	As in Windows
+Окна и страницы браузера; сайты тоже получают этот выбор.	The browser windows and pages; sites get this choice too.
+Доверять сертификатам localhost	Trust localhost certificates
+Локальный сервер на https со своим сертификатом (vite --https, dotnet dev-certs) открывается без предупреждения. Только localhost, *.localhost, 127.x и ::1. Выключение действует после перезапуска браузера для уже открытых адресов.	A local https server with its own certificate (vite --https, dotnet dev-certs) opens without a warning. Only localhost, *.localhost, 127.x and ::1. Switching it off applies to addresses already opened after the browser restarts.
+Выключение звука по значку на вкладке	Mute with the speaker on a tab
+Клик по значку динамика выключает и включает звук вкладки, пункт есть и в меню вкладки. Выключено — значок только показывает, что вкладка играет.	A click on the speaker mutes and unmutes the tab; the item is in the tab menu too. Off means the icon only shows that the tab plays sound.
+Заморозка фоновых вкладок	Freeze background tabs
+Экономит память и процессор: вкладка в фоне приостанавливается, потом выгружается и загружается снова по клику. Не замораживаются вкладки со звуком, терминал и сайты работающих проектов.	Saves memory and CPU: a background tab is paused, then unloaded and loaded again on click. Tabs playing sound, the terminal and sites of running projects are not frozen.
+Видеокарта	Graphics card
+Страницы рисует видеокарта. Выключать только если на старом компьютере или драйвере страницы мерцают или рисуются с ошибками: без видеокарты всё рисует процессор, браузер заметно медленнее и сильнее нагружает процессор. Движок перезапустится.	Pages are drawn by the graphics card. Switch it off only if pages flicker or draw wrong on an old computer or driver: without it the CPU draws everything, and the browser is noticeably slower and loads the CPU more. The engine restarts.
+Включить видеокарту? Движок браузера перезапустится: вкладки перезагрузятся, открытые терминалы закроются.	Switch the graphics card on? The browser engine restarts: tabs reload, open terminals close.
+Выключить видеокарту? Браузер станет медленнее и сильнее нагрузит процессор; это нужно только при мерцании и ошибках рисования. Движок перезапустится: вкладки перезагрузятся, открытые терминалы закроются.	Switch the graphics card off? The browser gets slower and loads the CPU more; this is needed only for flicker and drawing errors. The engine restarts: tabs reload, open terminals close.
+Разрешения сайта: камера, микрофон, местоположение	Site permissions: camera, microphone, location
+Разрешения сайта	Site permissions
+Все сайты во всех профилях	All sites in all profiles
+Все сайты	All sites
+Этот сайт ещё ничего не спрашивал.	This site has not asked for anything yet.
+Пункт меню «Инструменты» (разрешения открытого сайта). Окно со всеми сайтами открывается кнопкой в разделе «Защита» выше.	The “Tools” menu item (permissions of the open site). The window with all sites opens with the button in the Protection section above.

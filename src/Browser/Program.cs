@@ -166,13 +166,31 @@ sealed class App : ApplicationContext
     readonly HashSet<string> usedProfiles = new() { "" };
 
     /// <summary>A WebView in the shared profile ("") or in a project's own.</summary>
-    public async Task<CoreWebView2Controller> CreateControllerAsync(CoreWebView2Environment env, IntPtr window, string profile)
+    public async Task<CoreWebView2Controller> CreateControllerAsync(CoreWebView2Environment env, IntPtr window, string profile, bool pages = true)
     {
-        usedProfiles.Add(profile);
+        if (pages) usedProfiles.Add(profile);
         if (profile.Length == 0) return await env.CreateCoreWebView2ControllerAsync(window);
         var options = env.CreateCoreWebView2ControllerOptions();
         options.ProfileName = profile;
         return await env.CreateCoreWebView2ControllerAsync(window, options);
+    }
+
+    /// <summary>
+    /// Runs something on a profile's settings (its permissions): through a tab already in it, else a hidden WebView
+    /// made for the purpose and closed after. Such a WebView shows no page: the profile is not one to clear on exit for it.
+    /// </summary>
+    public async Task<T> WithProfileAsync<T>(string profile, IntPtr window, Func<CoreWebView2Profile, Task<T>> use)
+    {
+        foreach (var form in forms)
+            if (form.CoreIn(profile) is { } core) return await use(core.Profile);
+        if (Env is not { } env) throw new InvalidOperationException(L.T("Движок браузера перезапускается"));
+        var c = await CreateControllerAsync(env, window, profile, pages: false);
+        try
+        {
+            c.IsVisible = false;
+            return await use(c.CoreWebView2.Profile);
+        }
+        finally { c.Close(); }
     }
 
     /// <summary>The last window is closing and cookies and cache are to go with it (ClearOnExit).</summary>
@@ -401,6 +419,36 @@ sealed class App : ApplicationContext
         foreach (var form in forms.ToList()) form.ApplyLanguage();
         if (Env != null && EngineKey() != engineKey) restart ??= RestartEngineAsync();
         else foreach (var form in forms.ToList()) form.ApplyNet(); // the same language: the pages get the choice back
+    }
+
+    /// <summary>
+    /// A setting of the «Для разработчика» page (Защита, Вкладки, Оформление): saved, then applied everywhere.
+    /// GPU is an engine flag: its change restarts the engine. Values the page could not have sent are ignored.
+    /// </summary>
+    public void SetSetting(string key, object value)
+    {
+        bool on = value is true;
+        int minutes = value is int n ? n : -1;
+        switch (key)
+        {
+            case "strictTracking": S.Change(s => s.StrictTracking = on); break;
+            case "trustLocalCerts": S.Change(s => s.TrustLocalCerts = on); break;
+            case "tabMute": S.Change(s => s.TabMute = on); break;
+            case "freezeTabs": S.Change(s => s.FreezeTabs = on); break;
+            case "suspendAfter" when minutes >= 1 && minutes <= Settings.MaxMinutes: S.Change(s => s.SuspendAfter = minutes); break;
+            case "unloadAfter" when minutes >= 0 && minutes <= Settings.MaxMinutes: S.Change(s => s.UnloadAfter = minutes); break;
+            case "theme" when value is "dark" or "light" or "auto":
+                S.Change(s => s.Theme = (string)value);
+                Theme.Init(S.Theme);
+                foreach (var form in forms.ToList()) form.ApplyTheme();
+                break;
+            case "gpu":
+                S.Change(s => s.Gpu = on);
+                if (Env != null && EngineKey() != engineKey) restart ??= RestartEngineAsync();
+                break;
+            default: return;
+        }
+        ApplyDev();
     }
 
     /// <summary>A switch of the «Для разработчика» page: every window's toolbar, menus and pages follow it.</summary>

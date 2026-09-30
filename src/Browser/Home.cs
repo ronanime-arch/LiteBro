@@ -24,7 +24,6 @@ static class Home
     /// browser after an engine restart (no tiles, no switches); a site's window.open is handled in OnNewWindowRequested.
     /// </summary>
     public const string Isolation = "Cross-Origin-Resource-Policy: same-origin";
-    static byte[]? html;
 
     public static bool Is(string? uri) =>
         Uri.TryCreate(uri, UriKind.Absolute, out var u) && u.Scheme == Uri.UriSchemeHttps
@@ -33,17 +32,7 @@ static class Home
     /// <summary>The page with the tiles itself, not another page of this host (the journal, a console, a terminal).</summary>
     public static bool IsTiles(string? uri) => Is(uri) && new Uri(uri!).AbsolutePath == "/";
 
-    public static Stream Page()
-    {
-        if (html == null)
-        {
-            using var stream = typeof(Home).Assembly.GetManifestResourceStream("home.html");
-            using var copy = new MemoryStream();
-            stream.CopyTo(copy);
-            html = copy.ToArray();
-        }
-        return new MemoryStream(html, writable: false);
-    }
+    public static Stream Page() => L.Stream("home.html");
 
     /// <summary>What the page shows: the tiles and which of their programs run.</summary>
     public static string State(IEnumerable<string> running) => ProjectStore.Json.Serialize(new Dictionary<string, object>
@@ -64,7 +53,7 @@ static class Icons
         [".png"] = "image/png", [".jpg"] = "image/jpeg", [".jpeg"] = "image/jpeg", [".gif"] = "image/gif",
         [".webp"] = "image/webp", [".bmp"] = "image/bmp", [".ico"] = "image/x-icon", [".svg"] = "image/svg+xml",
     };
-    public const string Filter = "Картинки|*.png;*.jpg;*.jpeg;*.gif;*.webp;*.bmp;*.ico;*.svg";
+    public static string Filter => L.T("Картинки") + "|*.png;*.jpg;*.jpeg;*.gif;*.webp;*.bmp;*.ico;*.svg";
     // An svg opened by itself would run its scripts with the start page's rights: none, then
     public const string Headers = "Content-Security-Policy: default-src 'none'; style-src 'unsafe-inline'; sandbox";
 
@@ -81,9 +70,9 @@ static class Icons
     /// <summary>Checks a picked image; null when it will do, else why not.</summary>
     public static string? Problem(string path)
     {
-        if (ContentType(path) == null) return "Нужна картинка: png, jpg, gif, webp, bmp, ico или svg.";
-        try { return new FileInfo(path).Length > MaxBytes ? "Картинка больше 2 МБ." : null; }
-        catch (Exception e) when (e is IOException || e is UnauthorizedAccessException) { return "Файл не читается."; }
+        if (ContentType(path) == null) return L.T("Нужна картинка: png, jpg, gif, webp, bmp, ico или svg.");
+        try { return new FileInfo(path).Length > MaxBytes ? L.T("Картинка больше 2 МБ.") : null; }
+        catch (Exception e) when (e is IOException || e is UnauthorizedAccessException) { return L.T("Файл не читается."); }
     }
 
     /// <summary>The picture as a data: address, for the dialog to show before it is saved.</summary>
@@ -156,24 +145,24 @@ static class Icons
 /// <summary>The pages shown while a project's program starts, or after it failed to.</summary>
 static class Pages
 {
-    public static string Starting(Project p, string address, Launcher launcher) => Page("Запускаю " + p.Name + "…", spinner: true,
-        "<p>Адрес <code>" + H(address) + "</code> пока не отвечает. LiteBro запустил программу проекта и ждёт.</p>" +
-        "<p class=muted>Программа: <code>" + H(p.Exe + " " + p.Args) + "</code><br>" +
-        "Папка: <code>" + H(launcher.WorkDir) + "</code><br>" +
-        "Лог: <code>" + H(launcher.LogPath) + "</code> · <a href=\"" + H(ProgramLog.Url(p)) + "\">вывод программы</a></p>");
+    public static string Starting(Project p, string address, Launcher launcher) => Page(L.T("Запускаю ") + p.Name + "…", spinner: true,
+        L.T("<p>Адрес <code>") + H(address) + L.T("</code> пока не отвечает. LiteBro запустил программу проекта и ждёт.</p>") +
+        L.T("<p class=muted>Программа: <code>") + H(p.Exe + " " + p.Args) + "</code><br>" +
+        L.T("Папка: <code>") + H(launcher.WorkDir) + "</code><br>" +
+        L.T("Лог: <code>") + H(launcher.LogPath) + "</code> · <a href=\"" + H(ProgramLog.Url(p)) + L.T("\">вывод программы</a></p>"));
 
-    public static string Failed(Project p, string error, string logTail) => Page(p.Name + " не запустился", spinner: false,
+    public static string Failed(Project p, string error, string logTail) => Page(p.Name + L.T(" не запустился"), spinner: false,
         "<p>" + H(error) + "</p>" +
-        (logTail.Length > 0 ? "<pre>" + H(logTail) + "</pre><p><a href=\"" + H(ProgramLog.Url(p)) + "\">Весь вывод программы</a></p>" : "") +
-        "<p class=muted>F5 — попробовать ещё раз. Параметры запуска меняются на стартовой странице: правый клик по плитке.</p>");
+        (logTail.Length > 0 ? "<pre>" + H(logTail) + "</pre><p><a href=\"" + H(ProgramLog.Url(p)) + L.T("\">Весь вывод программы</a></p>") : "") +
+        L.T("<p class=muted>F5 — попробовать ещё раз. Параметры запуска меняются на стартовой странице: правый клик по плитке.</p>"));
 
     /// <summary>A site that does not answer; for a project's site, how to start its program.</summary>
-    public static string Unreachable(string url, Project? p) => Page("Сайт не отвечает", spinner: false,
-        "<p>Адрес <code>" + H(url) + "</code> не отвечает: сервер выключен, адрес неверный или нет сети.</p>" +
+    public static string Unreachable(string url, Project? p) => Page(L.T("Сайт не отвечает"), spinner: false,
+        L.T("<p>Адрес <code>") + H(url) + L.T("</code> не отвечает: сервер выключен, адрес неверный или нет сети.</p>") +
         (p != null && p.Exe.Trim().Length > 0
-            ? "<p>Это сайт проекта «" + H(p.Name) + "». Чтобы запустить его программу, откройте плитку проекта на стартовой странице (Alt+Home).</p>"
+            ? L.T("<p>Это сайт проекта «") + H(p.Name) + L.T("». Чтобы запустить его программу, откройте плитку проекта на стартовой странице (Alt+Home).</p>")
             : "") +
-        "<p><a href=\"" + H(url) + "\">Попробовать ещё раз</a> <span class=muted>(F5)</span></p>");
+        "<p><a href=\"" + H(url) + L.T("\">Попробовать ещё раз</a> <span class=muted>(F5)</span></p>"));
 
     static string H(string s) => WebUtility.HtmlEncode(s);
 
@@ -197,7 +186,7 @@ static class Pickers
 {
     public static string? Picture(IWin32Window owner)
     {
-        using var dialog = new OpenFileDialog { Title = "Картинка для плитки", Filter = Icons.Filter };
+        using var dialog = new OpenFileDialog { Title = L.T("Картинка для плитки"), Filter = Icons.Filter };
         return dialog.ShowDialog(owner) == DialogResult.OK ? dialog.FileName : null;
     }
 
@@ -205,8 +194,8 @@ static class Pickers
     {
         using var dialog = new OpenFileDialog
         {
-            Title = "Программа проекта",
-            Filter = "Программы (*.exe; *.cmd; *.bat)|*.exe;*.cmd;*.bat|Все файлы|*.*",
+            Title = L.T("Программа проекта"),
+            Filter = L.T("Программы (*.exe; *.cmd; *.bat)|*.exe;*.cmd;*.bat|Все файлы|*.*"),
         };
         var path = Environment.ExpandEnvironmentVariables(current.Trim().Trim('"'));
         try
@@ -225,7 +214,7 @@ static class Pickers
         {
             dialog.GetOptions(out var options);
             dialog.SetOptions(options | PickFolders | ForceFileSystem);
-            dialog.SetTitle("Папка, в которой запускать программу");
+            dialog.SetTitle(L.T("Папка, в которой запускать программу"));
             var path = Environment.ExpandEnvironmentVariables(current.Trim().Trim('"'));
             if (path.Length > 0 && Directory.Exists(path)
                 && SHCreateItemFromParsingName(path, IntPtr.Zero, typeof(IShellItem).GUID, out var folder) == 0)

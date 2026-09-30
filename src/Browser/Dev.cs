@@ -63,17 +63,5 @@ static class Dev
 
     public static bool Is(string? uri) => Home.Is(uri) && new Uri(uri!).AbsolutePath == Path;
 
-    static byte[]? html;
-
-    public static Stream Html()
-    {
-        if (html == null)
-        {
-            using var stream = typeof(Dev).Assembly.GetManifestResourceStream("dev.html");
-            using var copy = new MemoryStream();
-            stream.CopyTo(copy);
-            html = copy.ToArray();
-        }
-        return new MemoryStream(html, writable: false);
-    }
+    public static Stream Html() => L.Stream("dev.html");
 }

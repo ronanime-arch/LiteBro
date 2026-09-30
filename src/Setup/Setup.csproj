@@ -20,6 +20,8 @@
   <ItemGroup>
     <Reference Include="System.IO.Compression" />
     <Compile Include="..\Browser\Associations.cs" Link="Associations.cs" />
+    <Compile Include="..\Browser\Lang.cs" Link="Lang.cs" />
+    <EmbeddedResource Include="..\Browser\en.tsv" LogicalName="en.tsv" />
     <!-- build.ps1 zips the browser build into this file before building the installer -->
     <EmbeddedResource Include="..\..\build\payload.zip" LogicalName="payload.zip" />
     <EmbeddedResource Include="..\Browser\app.ico" LogicalName="app.ico" />

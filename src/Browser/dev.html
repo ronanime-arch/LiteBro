@@ -34,6 +34,7 @@ label.item:hover { background: rgba(127, 127, 127, .06); }
 .item input:focus-visible + .track { outline: 2px solid var(--accent); outline-offset: 2px; }
 button { font: 13px var(--text); padding: 4px 12px; border: 1px solid var(--line); border-radius: 6px; background: transparent; color: inherit; cursor: pointer; }
 button:hover { background: rgba(127, 127, 127, .15); }
+select { font: 13px var(--text); padding: 4px 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--card); color: inherit; }
 button:disabled { opacity: .45; cursor: default; background: transparent; }
 </style>
 </head>
@@ -42,6 +43,16 @@ button:disabled { opacity: .45; cursor: default; background: transparent; }
   <h1>Для разработчика</h1>
   <p class="muted">Выключенное пропадает из интерфейса во всех окнах сразу и остаётся выключенным после перезапуска (строка Disabled в settings.ini). После установки инструменты разработчика выключены, остальное включено.
     Эту страницу выключить нельзя: она всегда открывается кнопкой у правого края стартовой страницы и кнопкой на странице журнала сети.</p>
+  <h2 id="langTitle"></h2>
+  <div class="row">
+    <select id="lang">
+      <option value="auto" id="langAuto"></option>
+      <option value="ru" id="langRu"></option>
+      <option value="en">English</option>
+    </select>
+    <span class="muted">Меняет язык браузера и его страниц. Движок перезапустится: вкладки перезагрузятся, открытые терминалы закроются.</span>
+  </div>
+  <h2>Кнопки и инструменты</h2>
   <div class="row">
     <button id="allOn" disabled>Включить всё</button>
     <span class="muted" id="count"></span>
@@ -132,12 +143,27 @@ for (const [title, note, items] of GROUPS) {
   $("groups").append(row);
 }
 
+// In both languages whatever the page is in (escapes: the translation of the page does not touch them)
+$("langTitle").textContent = "Language \u00b7 \u042f\u0437\u044b\u043a";
+$("langRu").textContent = "\u0420\u0443\u0441\u0441\u043a\u0438\u0439";
+$("langAuto").textContent = "Auto (Windows) \u00b7 \u041a\u0430\u043a \u0432 Windows";
+let language = "auto";
+$("lang").addEventListener("change", () => {
+  const value = $("lang").value;
+  if (!confirm("Сменить язык? Движок браузера перезапустится: все вкладки перезагрузятся, открытые терминалы закроются. Программы проектов продолжат работать.")) {
+    $("lang").value = language;
+    return;
+  }
+  post({ type: "lang", value });
+});
+
 $("allOn").addEventListener("click", () => post({ type: "devReset" }));
 $("defaults").addEventListener("click", () => post({ type: "settingsReset" }));
 
 window.chrome.webview.addEventListener("message", e => {
   const m = e.data;
   if (!m || m.type !== "net") return;
+  if (m.lang) $("lang").value = language = m.lang;
   const off = m.off || [];
   for (const id in boxes) {
     boxes[id].checked = !off.includes(id);

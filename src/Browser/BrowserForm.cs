@@ -101,18 +101,17 @@ sealed class BrowserForm : Form
         Size = new Size(1100, 800);
         MinimumSize = new Size(480, 320);
 
-        back = MakeButton(GlyphBack, "Назад (Alt+←)", () => Step(-1));
-        forward = MakeButton(GlyphForward, "Вперёд (Alt+→)", () => Step(1));
-        reload = MakeButton(GlyphReload, "Обновить (F5)", ReloadOrStop);
-        reset = MakeButton(GlyphReset, "Сбросить Service Worker и кэш сайта, загрузить заново (Ctrl+Shift+R)", ResetSite);
+        back = MakeButton(GlyphBack, () => Step(-1));
+        forward = MakeButton(GlyphForward, () => Step(1));
+        reload = MakeButton(GlyphReload, ReloadOrStop);
+        reset = MakeButton(GlyphReset, ResetSite);
         reset.Visible = false;
-        home = MakeButton(GlyphHome, "Проекты (Alt+Home). Ctrl+клик или колёсико — в новой вкладке",
-            () => { if (ModifierKeys == Keys.Control) OpenNewTab(null); else GoHome(); });
+        home = MakeButton(GlyphHome, () => { if (ModifierKeys == Keys.Control) OpenNewTab(null); else GoHome(); });
         home.MouseUp += (_, e) => { if (e.Button == MouseButtons.Middle) OpenNewTab(null); };
-        country = MakeButton(GlyphGlobe, "Страна поиска", ShowCountryMenu);
+        country = MakeButton(GlyphGlobe, ShowCountryMenu);
         country.Visible = false;
-        star = MakeButton(GlyphStar, "", ShowFavoriteMenu);
-        emulate = MakeButton(GlyphTools, "Инструменты: эмуляция устройства и сети", ShowToolsMenu);
+        star = MakeButton(GlyphStar, ShowFavoriteMenu);
+        emulate = MakeButton(GlyphTools, ShowToolsMenu);
         emulate.Visible = false;
         countryGlyphFont = country.Font;
 
@@ -152,7 +151,7 @@ sealed class BrowserForm : Form
             LayoutPanes();
         };
         divider.MouseUp += (_, _) => dragFrom = null;
-        tips.SetToolTip(ram, "Память браузера, как в диспетчере задач. Клик — диспетчер процессов (Shift+Esc)");
+        SetTips();
         ram.Click += (_, _) => Core?.OpenTaskManagerWindow();
         address.KeyDown += OnAddressKeyDown;
         address.GotFocus += (_, _) => BeginInvoke(new Action(address.SelectAll));
@@ -243,7 +242,29 @@ sealed class BrowserForm : Form
         };
     }
 
-    ToolButton MakeButton(string glyph, string tip, Action click)
+    /// <summary>The toolbar's hints that do not change with the page (the others are set in ShowState).</summary>
+    void SetTips()
+    {
+        tips.SetToolTip(back, L.T("Назад (Alt+←)"));
+        tips.SetToolTip(forward, L.T("Вперёд (Alt+→)"));
+        tips.SetToolTip(reload, L.T("Обновить (F5)"));
+        tips.SetToolTip(reset, L.T("Сбросить Service Worker и кэш сайта, загрузить заново (Ctrl+Shift+R)"));
+        tips.SetToolTip(home, L.T("Проекты (Alt+Home). Ctrl+клик или колёсико — в новой вкладке"));
+        tips.SetToolTip(country, L.T("Страна поиска"));
+        tips.SetToolTip(emulate, L.T("Инструменты: эмуляция устройства и сети"));
+        tips.SetToolTip(ram, L.T("Память браузера, как в диспетчере задач. Клик — диспетчер процессов (Shift+Esc)"));
+        if (IsHandleCreated) SendMessage(address.Handle, SetCueBanner, (IntPtr)1, L.T("Адрес или поиск"));
+    }
+
+    /// <summary>The interface language changed: the toolbar's words now, the pages when the engine loads them again.</summary>
+    public void ApplyLanguage()
+    {
+        SetTips();
+        if (active != null) ShowState(active, switched: true);
+        strip.Invalidate();
+    }
+
+    ToolButton MakeButton(string glyph, Action click)
     {
         var b = new ToolButton
         {
@@ -257,14 +278,13 @@ sealed class BrowserForm : Form
         };
         b.FlatAppearance.BorderSize = 0;
         b.Click += (_, _) => click();
-        tips.SetToolTip(b, tip);
         return b;
     }
 
     protected override async void OnLoad(EventArgs e)
     {
         base.OnLoad(e);
-        SendMessage(address.Handle, SetCueBanner, (IntPtr)1, "Адрес или поиск");
+        SendMessage(address.Handle, SetCueBanner, (IntPtr)1, L.T("Адрес или поиск"));
         EvenButtons();
         var saved = isMain ? Settings.LoadWindow() : null;
         if (saved is { } w && Screen.AllScreens.Any(s => s.WorkingArea.IntersectsWith(w.Bounds)))
@@ -323,8 +343,8 @@ sealed class BrowserForm : Form
         catch (Exception ex)
         {
             if (!IsDisposed)
-                MessageBox.Show(this, "Не удалось запустить движок WebView2.\n\n" + ex.Message +
-                    "\n\nЕсли меняли settings.ini, закройте все окна LiteBro и откройте снова.",
+                MessageBox.Show(this, L.T("Не удалось запустить движок WebView2.\n\n") + ex.Message +
+                    L.T("\n\nЕсли меняли settings.ini, закройте все окна LiteBro и откройте снова."),
                     "LiteBro", MessageBoxButtons.OK, MessageBoxIcon.Error);
             return false;
         }
@@ -547,7 +567,7 @@ sealed class BrowserForm : Form
         if (tab != active) return;
         Text = tab.Title.Length == 0 ? "LiteBro" : tab.Title + " — LiteBro";
         reload.Text = tab.Loading ? GlyphStop : GlyphReload;
-        tips.SetToolTip(reload, tab.Loading ? "Остановить" : "Обновить (F5)");
+        tips.SetToolTip(reload, tab.Loading ? L.T("Остановить") : L.T("Обновить (F5)"));
         if (switched || !address.Focused) address.Text = AddressOf(tab);
         ShowCountry(tab);
         ShowStar(tab);
@@ -613,8 +633,8 @@ sealed class BrowserForm : Form
             var glyph = tile == null ? GlyphStar : GlyphStarFilled;
             if (star.Text != glyph) star.Text = glyph;
             star.ForeColor = tile == null ? Theme.Text : Color.FromArgb(0xf5, 0xb3, 0x01);
-            tips.SetToolTip(star, tile != null ? "В избранном: плитка «" + tile.Name + "»"
-                : "Добавить в избранное: терминал в этой папке" + (t.Command.Length > 0 ? " с командой " + t.Command : ""));
+            tips.SetToolTip(star, tile != null ? L.T("В избранном: плитка «") + tile.Name + L.T("»")
+                : L.T("Добавить в избранное: терминал в этой папке") + (t.Command.Length > 0 ? L.T(" с командой ") + t.Command : ""));
             return;
         }
         var url = Savable(tab);
@@ -625,8 +645,8 @@ sealed class BrowserForm : Form
         if (star.Text != text) star.Text = text;
         star.ForeColor = saved == null ? Theme.Text : Color.FromArgb(0xf5, 0xb3, 0x01);
         tips.SetToolTip(star, saved is { } s
-            ? "В избранном: " + (s.Link == null ? "плитка «" + s.Project.Name + "»" : "ссылка проекта «" + s.Project.Name + "»")
-            : "Добавить в избранное: плиткой или ссылкой проекта");
+            ? L.T("В избранном: ") + (s.Link == null ? L.T("плитка «") + s.Project.Name + L.T("»") : L.T("ссылка проекта «") + s.Project.Name + L.T("»"))
+            : L.T("Добавить в избранное: плиткой или ссылкой проекта"));
     }
 
     /// <summary>
@@ -648,22 +668,22 @@ sealed class BrowserForm : Form
         if (SavedIn(url) is { } saved)
         {
             menu.Items.Add(new ToolStripMenuItem(saved.Link == null
-                ? "Это адрес плитки «" + saved.Project.Name + "»"
-                : "Ссылка «" + saved.Link.Name + "» проекта «" + saved.Project.Name + "»") { Enabled = false });
+                ? L.T("Это адрес плитки «") + saved.Project.Name + L.T("»")
+                : L.T("Ссылка «") + saved.Link.Name + L.T("» проекта «") + saved.Project.Name + L.T("»")) { Enabled = false });
             if (saved.Link is { } link)
-                menu.Items.Add(new ToolStripMenuItem("Убрать ссылку из проекта", null, (_, _) => RemoveLink(saved.Project, link)));
+                menu.Items.Add(new ToolStripMenuItem(L.T("Убрать ссылку из проекта"), null, (_, _) => RemoveLink(saved.Project, link)));
             menu.Items.Add(new ToolStripSeparator());
         }
         menu.Items.Add(new ToolStripMenuItem(owner != null && owner.Exe.Length > 0
-                ? "Сохранить плиткой (с запуском «" + owner.Name + "»)" : "Сохранить плиткой",
+                ? L.T("Сохранить плиткой (с запуском «") + owner.Name + L.T("»)") : L.T("Сохранить плиткой"),
             null, (_, _) => SaveAsTile(url, name, owner)));
-        var links = new ToolStripMenuItem("Добавить ссылкой в проект");
+        var links = new ToolStripMenuItem(L.T("Добавить ссылкой в проект"));
         // The project the page belongs to comes first
         foreach (var p in ProjectStore.All.OrderBy(p => p == owner ? 0 : 1))
         {
             var item = new ToolStripMenuItem(p.Name, null, (_, _) => AddLink(p, url, name)) { Checked = p == owner };
             if (SameAddress(p.Url, url) || p.Links.Any(l => SameAddress(l.Url, url))) item.Enabled = false;
-            else if (p.Links.Count >= MaxLinks) { item.Enabled = false; item.Text += " (уже " + MaxLinks + " ссылок)"; }
+            else if (p.Links.Count >= MaxLinks) { item.Enabled = false; item.Text += L.T(" (уже ") + MaxLinks + L.T(" ссылок)"); }
             links.DropDownItems.Add(item);
         }
         if (links.DropDownItems.Count == 0) links.Enabled = false;
@@ -691,9 +711,9 @@ sealed class BrowserForm : Form
     {
         var menu = NewMenu();
         if (SavedTerm(dir, command) is { } saved)
-            menu.Items.Add(new ToolStripMenuItem("Это плитка «" + saved.Name + "»") { Enabled = false });
+            menu.Items.Add(new ToolStripMenuItem(L.T("Это плитка «") + saved.Name + L.T("»")) { Enabled = false });
         else
-            menu.Items.Add(new ToolStripMenuItem(command.Length > 0 ? "Сохранить плиткой: " + Short(command) + " в этой папке" : "Сохранить плиткой: терминал в этой папке",
+            menu.Items.Add(new ToolStripMenuItem(command.Length > 0 ? L.T("Сохранить плиткой: ") + Short(command) + L.T(" в этой папке") : L.T("Сохранить плиткой: терминал в этой папке"),
                 null, (_, _) => SaveTermTile(dir, command)));
         menu.Show(star, new Point(0, star.Height));
         static string Short(string s) => s.Length > 40 ? s.Substring(0, 40) + "…" : s;
@@ -788,14 +808,14 @@ sealed class BrowserForm : Form
         if (country.Text == text) return;
         country.Text = text;
         country.Font = picked == null ? countryGlyphFont : countryCodeFont;
-        tips.SetToolTip(country, picked == null ? "Страна поиска" : "Страна поиска: " + picked.Name);
+        tips.SetToolTip(country, picked == null ? L.T("Страна поиска") : L.T("Страна поиска: ") + picked.Name);
     }
 
     void ShowCountryMenu()
     {
         var picked = SearchCountry.Current;
         var menu = NewMenu();
-        menu.Items.Add(new ToolStripMenuItem("Как обычно (без страны)", null, (_, _) => PickCountry(null)) { Checked = picked == null });
+        menu.Items.Add(new ToolStripMenuItem(L.T("Как обычно (без страны)"), null, (_, _) => PickCountry(null)) { Checked = picked == null });
         menu.Items.Add(new ToolStripSeparator());
         foreach (var c in SearchCountry.All)
             menu.Items.Add(new ToolStripMenuItem(c.Name + " (" + c.Code + ")", null, (_, _) => PickCountry(c)) { Checked = c == picked });
@@ -820,14 +840,14 @@ sealed class BrowserForm : Form
     {
         var menu = NewMenu();
         if (active != null && !IsPane(tab) && tab != active && Dev.On("split"))
-            menu.Items.Add(new ToolStripMenuItem("Открыть рядом", null, (_, _) => SplitWith(tab)));
+            menu.Items.Add(new ToolStripMenuItem(L.T("Открыть рядом"), null, (_, _) => SplitWith(tab)));
         if (Split)
         {
-            menu.Items.Add(new ToolStripMenuItem("Синхронная прокрутка", null, (_, _) => SetSyncScroll(!syncScroll)) { Checked = syncScroll });
-            menu.Items.Add(new ToolStripMenuItem("Убрать разделение", null, (_, _) => Unsplit()));
+            menu.Items.Add(new ToolStripMenuItem(L.T("Синхронная прокрутка"), null, (_, _) => SetSyncScroll(!syncScroll)) { Checked = syncScroll });
+            menu.Items.Add(new ToolStripMenuItem(L.T("Убрать разделение"), null, (_, _) => Unsplit()));
         }
         if (menu.Items.Count > 0) menu.Items.Add(new ToolStripSeparator());
-        menu.Items.Add(new ToolStripMenuItem("Закрыть вкладку", null, (_, _) => CloseTab(tab)) { ShortcutKeyDisplayString = tab == active ? "Ctrl+W" : "" });
+        menu.Items.Add(new ToolStripMenuItem(L.T("Закрыть вкладку"), null, (_, _) => CloseTab(tab)) { ShortcutKeyDisplayString = tab == active ? "Ctrl+W" : "" });
         menu.Show(strip, at);
     }
 
@@ -978,20 +998,12 @@ sealed class BrowserForm : Form
         try
         {
             if (!(await core.ExecuteScriptAsync("document.contentType")).Contains("json")) return;
-            jsonView ??= ReadResource("jsonview.js");
-            await core.ExecuteScriptAsync(jsonView);
+            await core.ExecuteScriptAsync(ReadResource("jsonview.js"));
         }
         catch (Exception) { } // the page went on meanwhile
     }
 
-    static string? jsonView;
-
-    static string ReadResource(string name)
-    {
-        using var stream = typeof(BrowserForm).Assembly.GetManifestResourceStream(name);
-        using var reader = new StreamReader(stream, Encoding.UTF8);
-        return reader.ReadToEnd();
-    }
+    static string ReadResource(string name) => L.Text(name);
 
     /// <summary>A PNG of the tab into a file the user picks: the whole page (up to 16384 pixels down) or what is on screen.</summary>
     // How tall the page would be if nothing scrolled: the document, or the viewport grown by what its main scrolling
@@ -1058,13 +1070,13 @@ sealed class BrowserForm : Form
         }
         catch (Exception ex)
         {
-            MessageBox.Show(this, "Не удалось снять страницу.\n\n" + ex.Message, "LiteBro", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            MessageBox.Show(this, L.T("Не удалось снять страницу.\n\n") + ex.Message, "LiteBro", MessageBoxButtons.OK, MessageBoxIcon.Error);
             return;
         }
         var host = Uri.TryCreate(tab.Site, UriKind.Absolute, out var u) && u.Host.Length > 0 ? u.Host : "page";
         using var dialog = new SaveFileDialog
         {
-            Title = full ? "Снимок страницы целиком" : "Снимок видимой части",
+            Title = full ? L.T("Снимок страницы целиком") : L.T("Снимок видимой части"),
             FileName = host + "-" + DateTime.Now.ToString("yyyy-MM-dd-HHmmss") + ".png",
             Filter = "PNG (*.png)|*.png",
             InitialDirectory = Environment.GetFolderPath(Environment.SpecialFolder.MyPictures),
@@ -1073,7 +1085,7 @@ sealed class BrowserForm : Form
         try { File.WriteAllBytes(dialog.FileName, png); }
         catch (Exception ex) when (ex is IOException || ex is UnauthorizedAccessException)
         {
-            MessageBox.Show(this, "Не удалось записать файл.\n\n" + ex.Message, "LiteBro", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            MessageBox.Show(this, L.T("Не удалось записать файл.\n\n") + ex.Message, "LiteBro", MessageBoxButtons.OK, MessageBoxIcon.Error);
         }
     }
 
@@ -1096,27 +1108,27 @@ sealed class BrowserForm : Form
         bool html = mime.Length == 0 || mime.Contains("html");
         if (html)
         {
-            list.Add(new SaveFormat("Веб-страница полностью (*.html)", ".html", CoreWebView2SaveAsKind.Complete));
-            list.Add(new SaveFormat("Веб-страница, только HTML (*.html)", ".html", CoreWebView2SaveAsKind.HtmlOnly));
-            list.Add(new SaveFormat("Веб-архив, один файл (*.mhtml)", ".mhtml", CoreWebView2SaveAsKind.SingleFile));
+            list.Add(new SaveFormat(L.T("Веб-страница полностью (*.html)"), ".html", CoreWebView2SaveAsKind.Complete));
+            list.Add(new SaveFormat(L.T("Веб-страница, только HTML (*.html)"), ".html", CoreWebView2SaveAsKind.HtmlOnly));
+            list.Add(new SaveFormat(L.T("Веб-архив, один файл (*.mhtml)"), ".mhtml", CoreWebView2SaveAsKind.SingleFile));
         }
         else if (mime.Contains("json"))
             list.Add(new SaveFormat("JSON (*.json)", ".json", CoreWebView2SaveAsKind.Default));
         else
         {
             if (ext.Length == 0) ext = ".*";
-            list.Add(new SaveFormat("Файл как есть (*" + ext + ")", ext == ".*" ? "" : ext, CoreWebView2SaveAsKind.Default));
+            list.Add(new SaveFormat(L.T("Файл как есть (*") + ext + ")", ext == ".*" ? "" : ext, CoreWebView2SaveAsKind.Default));
         }
         list.Add(new SaveFormat("PDF (*.pdf)", ".pdf", "pdf"));
-        list.Add(new SaveFormat("Картинка всей страницы PNG (*.png)", ".png", "png"));
-        list.Add(new SaveFormat("Текст (*.txt)", ".txt", "txt"));
+        list.Add(new SaveFormat(L.T("Картинка всей страницы PNG (*.png)"), ".png", "png"));
+        list.Add(new SaveFormat(L.T("Текст (*.txt)"), ".txt", "txt"));
         if (html)
         {
-            list.Add(new SaveFormat("Таблицы страницы CSV для Excel (*.csv)", ".csv", "csv"));
-            list.Add(new SaveFormat("Таблицы страницы JSON (*.json)", ".json", "json"));
+            list.Add(new SaveFormat(L.T("Таблицы страницы CSV для Excel (*.csv)"), ".csv", "csv"));
+            list.Add(new SaveFormat(L.T("Таблицы страницы JSON (*.json)"), ".json", "json"));
         }
         else if (mime.Contains("json"))
-            list.Add(new SaveFormat("Список из JSON в CSV для Excel (*.csv)", ".csv", "csv"));
+            list.Add(new SaveFormat(L.T("Список из JSON в CSV для Excel (*.csv)"), ".csv", "csv"));
         return list;
     }
 
@@ -1147,7 +1159,7 @@ sealed class BrowserForm : Form
                 int last = formats.FindIndex(f => f.Filter == lastSaveFormat);
                 using var dialog = new SaveFileDialog
                 {
-                    Title = "Сохранить как",
+                    Title = L.T("Сохранить как"),
                     FileName = name.Length > 0 ? name : "page",
                     Filter = string.Join("|", formats.Select(f => f.Filter + "|*" + (f.Ext.Length > 0 ? f.Ext : ".*"))),
                     FilterIndex = last >= 0 ? last + 1 : 1,
@@ -1177,8 +1189,6 @@ sealed class BrowserForm : Form
         }));
     }
 
-    static string? savePage;
-
     async Task SaveOwnAsync(Tab tab, CoreWebView2 core, string format, string path)
     {
         try
@@ -1186,18 +1196,17 @@ sealed class BrowserForm : Form
             switch (format)
             {
                 case "pdf":
-                    if (!await core.PrintToPdfAsync(path, null)) throw new IOException("Движок не смог напечатать страницу в PDF.");
+                    if (!await core.PrintToPdfAsync(path, null)) throw new IOException(L.T("Движок не смог напечатать страницу в PDF."));
                     return;
                 case "png":
                     File.WriteAllBytes(path, await FullShotAsync(tab, core));
                     return;
             }
-            savePage ??= ReadResource("savepage.js");
-            var result = await core.ExecuteScriptAsync("(" + savePage + ")(\"" + format + "\")");
+            var result = await core.ExecuteScriptAsync("(" + ReadResource("savepage.js") + ")(\"" + format + "\")");
             var text = ProjectStore.Json.Deserialize<string?>(result);
             if (text == null)
             {
-                MessageBox.Show(this, format == "txt" ? "На странице нет текста." : "На странице нет таблиц, сохранять нечего.",
+                MessageBox.Show(this, format == "txt" ? L.T("На странице нет текста.") : L.T("На странице нет таблиц, сохранять нечего."),
                     "LiteBro", MessageBoxButtons.OK, MessageBoxIcon.Information);
                 return;
             }
@@ -1206,7 +1215,7 @@ sealed class BrowserForm : Form
         }
         catch (Exception ex)
         {
-            MessageBox.Show(this, "Не удалось сохранить.\n\n" + ex.Message, "LiteBro", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            MessageBox.Show(this, L.T("Не удалось сохранить.\n\n") + ex.Message, "LiteBro", MessageBoxButtons.OK, MessageBoxIcon.Error);
         }
     }
 
@@ -1235,28 +1244,28 @@ sealed class BrowserForm : Form
 
         var tools = new List<CoreWebView2ContextMenuItem>
         {
-            Item("Захватить всю страницу…" + (Dev.On("snapshot") ? " (Ctrl+Shift+S)" : ""), () => Snapshot(tab, full: true)),
-            Item("Захватить видимую часть…", () => Snapshot(tab, full: false)),
+            Item(L.T("Захватить всю страницу…") + (Dev.On("snapshot") ? " (Ctrl+Shift+S)" : ""), () => Snapshot(tab, full: true)),
+            Item(L.T("Захватить видимую часть…"), () => Snapshot(tab, full: false)),
         };
         if (SiteOrigin(tab) != null)
-            tools.Add(Item("Сбросить кэш сайта и обновить" + (Dev.On("reset") ? " (Ctrl+Shift+R)" : ""), () => ResetSite(tab)));
+            tools.Add(Item(L.T("Сбросить кэш сайта и обновить") + (Dev.On("reset") ? " (Ctrl+Shift+R)" : ""), () => ResetSite(tab)));
         if (StoragePage.HasSite(core))
-            tools.Add(Item("Хранилище сайта", () => OpenStorage(tab)));
+            tools.Add(Item(L.T("Хранилище сайта"), () => OpenStorage(tab)));
         var radio = CoreWebView2ContextMenuItemKind.Radio;
-        var screens = new List<CoreWebView2ContextMenuItem> { Item("Обычный экран", () => SetEmulation(tab, null, tab.Speed), radio, tab.Device == null) };
+        var screens = new List<CoreWebView2ContextMenuItem> { Item(L.T("Обычный экран"), () => SetEmulation(tab, null, tab.Speed), radio, tab.Device == null) };
         screens.AddRange(Emulation.Devices.Select(d => Item($"{d.Name} ({d.Width}×{d.Height})", () => SetEmulation(tab, d, tab.Speed), radio, tab.Device == d)));
-        var speeds = new List<CoreWebView2ContextMenuItem> { Item("Обычная", () => SetEmulation(tab, tab.Device, null), radio, tab.Speed == null) };
+        var speeds = new List<CoreWebView2ContextMenuItem> { Item(L.T("Обычная"), () => SetEmulation(tab, tab.Device, null), radio, tab.Speed == null) };
         speeds.AddRange(Emulation.Speeds.Select(sp => Item(sp.Name, () => SetEmulation(tab, tab.Device, sp), radio, tab.Speed == sp)));
-        tools.Add(Sub("Устройство" + (tab.Device != null ? ": " + tab.Device.Name : ""), screens));
-        tools.Add(Sub("Сеть" + (tab.Speed != null ? ": " + tab.Speed.Name : ""), speeds));
+        tools.Add(Sub(L.T("Устройство") + (tab.Device != null ? ": " + tab.Device.Name : ""), screens));
+        tools.Add(Sub(L.T("Сеть") + (tab.Speed != null ? ": " + tab.Speed.Name : ""), speeds));
         if (tab.Device != null || tab.Speed != null)
-            tools.Add(Item("Выключить эмуляцию", () => SetEmulation(tab, null, null)));
+            tools.Add(Item(L.T("Выключить эмуляцию"), () => SetEmulation(tab, null, null)));
 
         var into = MoreTools(e.MenuItems);
         if (into == null)
         {
             // No "More tools" in this runtime: a submenu of its own, above "Inspect"
-            var own = Sub("Другие инструменты", tools);
+            var own = Sub(L.T("Другие инструменты"), tools);
             int at = e.MenuItems.Select(i => i.Name).ToList().IndexOf("inspectElement");
             e.MenuItems.Insert(at >= 0 ? at : e.MenuItems.Count, own);
             return;
@@ -1294,9 +1303,9 @@ sealed class BrowserForm : Form
         string? Text(string key) => m.TryGetValue(key, out var v) ? v as string : null;
         try
         {
-            if (site.Closed) throw new InvalidOperationException("Вкладка сайта закрыта.");
-            if (site.Core is not { } core) throw new InvalidOperationException("Вкладка сайта выгружена: откройте её, потом нажмите «Обновить».");
-            if (!StoragePage.HasSite(core)) throw new InvalidOperationException("Во вкладке сейчас не сайт.");
+            if (site.Closed) throw new InvalidOperationException(L.T("Вкладка сайта закрыта."));
+            if (site.Core is not { } core) throw new InvalidOperationException(L.T("Вкладка сайта выгружена: откройте её, потом нажмите «Обновить»."));
+            if (!StoragePage.HasSite(core)) throw new InvalidOperationException(L.T("Во вкладке сейчас не сайт."));
             try { core.Resume(); } catch (Exception) { } // a paused page answers nothing
             site.Suspended = false;
             reply["title"] = site.Title;
@@ -1329,7 +1338,7 @@ sealed class BrowserForm : Form
         emulate.Visible = on || (any && !tab.ShowingInternalPage && !IsInternal(tab.Site) && tab.Term == null);
         emulate.ForeColor = on ? Color.FromArgb(0x1f, 0x9d, 0x55) : Theme.Text;
         var what = string.Join(", ", new[] { tab.Device?.Name, tab.Speed?.Name }.OfType<string>());
-        tips.SetToolTip(emulate, on ? "Инструменты. Эмуляция: " + what : "Инструменты: эмуляция устройства и сети");
+        tips.SetToolTip(emulate, on ? L.T("Инструменты. Эмуляция: ") + what : L.T("Инструменты: эмуляция устройства и сети"));
     }
 
     /// <summary>The tools button's menu: the screen and the network the tab emulates.</summary>
@@ -1342,19 +1351,19 @@ sealed class BrowserForm : Form
         if (Dev.On("snapshot"))
         {
             if (menu.Items.Count > 0) menu.Items.Add(new ToolStripSeparator());
-            menu.Items.Add(new ToolStripMenuItem("Снимок страницы целиком…", null, (_, _) => Snapshot(tab, full: true)) { ShortcutKeyDisplayString = "Ctrl+Shift+S" });
-            menu.Items.Add(new ToolStripMenuItem("Снимок видимой части…", null, (_, _) => Snapshot(tab, full: false)));
+            menu.Items.Add(new ToolStripMenuItem(L.T("Снимок страницы целиком…"), null, (_, _) => Snapshot(tab, full: true)) { ShortcutKeyDisplayString = "Ctrl+Shift+S" });
+            menu.Items.Add(new ToolStripMenuItem(L.T("Снимок видимой части…"), null, (_, _) => Snapshot(tab, full: false)));
         }
         if (Dev.On("storage") && tab.Core is { } core && StoragePage.HasSite(core))
         {
             if (menu.Items.Count > 0 && !Dev.On("snapshot")) menu.Items.Add(new ToolStripSeparator());
-            menu.Items.Add(new ToolStripMenuItem("Хранилище сайта: cookies, localStorage, IndexedDB", null, (_, _) => OpenStorage(tab)));
+            menu.Items.Add(new ToolStripMenuItem(L.T("Хранилище сайта: cookies, localStorage, IndexedDB"), null, (_, _) => OpenStorage(tab)));
         }
         // An emulation left on is always switched off from here, the feature on or not
         if (tab.Device != null || tab.Speed != null)
         {
             if (menu.Items.Count > 0) menu.Items.Add(new ToolStripSeparator());
-            menu.Items.Add(new ToolStripMenuItem("Выключить эмуляцию", null, (_, _) => SetEmulation(tab, null, null)));
+            menu.Items.Add(new ToolStripMenuItem(L.T("Выключить эмуляцию"), null, (_, _) => SetEmulation(tab, null, null)));
         }
         if (menu.Items.Count == 0) return;
         menu.Show(emulate, new Point(0, emulate.Height));
@@ -1362,12 +1371,12 @@ sealed class BrowserForm : Form
 
     void AddEmulationItems(ContextMenuStrip menu, Tab tab)
     {
-        var screen = new ToolStripMenuItem("Устройство" + (tab.Device != null ? ": " + tab.Device.Name : ""));
-        screen.DropDownItems.Add(new ToolStripMenuItem("Обычный экран", null, (_, _) => SetEmulation(tab, null, tab.Speed)) { Checked = tab.Device == null });
+        var screen = new ToolStripMenuItem(L.T("Устройство") + (tab.Device != null ? ": " + tab.Device.Name : ""));
+        screen.DropDownItems.Add(new ToolStripMenuItem(L.T("Обычный экран"), null, (_, _) => SetEmulation(tab, null, tab.Speed)) { Checked = tab.Device == null });
         foreach (var d in Emulation.Devices)
             screen.DropDownItems.Add(new ToolStripMenuItem($"{d.Name} ({d.Width}×{d.Height})", null, (_, _) => SetEmulation(tab, d, tab.Speed)) { Checked = tab.Device == d });
-        var net = new ToolStripMenuItem("Сеть" + (tab.Speed != null ? ": " + tab.Speed.Name : ""));
-        net.DropDownItems.Add(new ToolStripMenuItem("Обычная", null, (_, _) => SetEmulation(tab, tab.Device, null)) { Checked = tab.Speed == null });
+        var net = new ToolStripMenuItem(L.T("Сеть") + (tab.Speed != null ? ": " + tab.Speed.Name : ""));
+        net.DropDownItems.Add(new ToolStripMenuItem(L.T("Обычная"), null, (_, _) => SetEmulation(tab, tab.Device, null)) { Checked = tab.Speed == null });
         foreach (var sp in Emulation.Speeds)
             net.DropDownItems.Add(new ToolStripMenuItem(sp.Name, null, (_, _) => SetEmulation(tab, tab.Device, sp)) { Checked = tab.Speed == sp });
         foreach (var sub in new[] { screen, net })
@@ -1628,15 +1637,15 @@ sealed class BrowserForm : Form
     /// <summary>«Настройки по умолчанию» on the «Для разработчика» page: asked here, so the dialog can say what restarts.</summary>
     void ConfirmResetSettings()
     {
-        var text = "Вернуть все настройки LiteBro к исходным, как после установки?\n\n" +
-            "Сбросятся: тема, страна поиска, «только localhost», разрешённые сайты, журнал сети, CORS, " +
-            "удаление cookies при выходе, обновление при изменении файлов, выключенное на странице «Для разработчика», " +
-            "а также строки settings.ini (поиск, видеокарта, флаги движка, локальные имена, основной браузер).\n\n" +
-            "Останутся: плитки проектов, заглушки, cookies и входы на сайты, логи. " +
-            "Прежний файл сохранится как settings.ini.bak.";
+        var text = L.T("Вернуть все настройки LiteBro к исходным, как после установки?\n\n") +
+            L.T("Сбросятся: тема, страна поиска, «только localhost», разрешённые сайты, журнал сети, CORS, ") +
+            L.T("удаление cookies при выходе, обновление при изменении файлов, выключенное на странице «Для разработчика», ") +
+            L.T("а также строки settings.ini (поиск, видеокарта, флаги движка, локальные имена, основной браузер).\n\n") +
+            L.T("Останутся: плитки проектов, заглушки, cookies и входы на сайты, логи. ") +
+            L.T("Прежний файл сохранится как settings.ini.bak.");
         if (App.Current.ResetRestartsEngine())
-            text += "\n\nДвижок браузера перезапустится: все вкладки перезагрузятся, открытые терминалы закроются. Программы проектов продолжат работать.";
-        if (MessageBox.Show(this, text, "Настройки по умолчанию", MessageBoxButtons.OKCancel, MessageBoxIcon.Question,
+            text += L.T("\n\nДвижок браузера перезапустится: все вкладки перезагрузятся, открытые терминалы закроются. Программы проектов продолжат работать.");
+        if (MessageBox.Show(this, text, L.T("Настройки по умолчанию"), MessageBoxButtons.OKCancel, MessageBoxIcon.Question,
                 MessageBoxDefaultButton.Button2) != DialogResult.OK)
             return;
         App.Current.ResetSettings();
@@ -1813,6 +1822,7 @@ sealed class BrowserForm : Form
                 ["file"] = NetLog.FilePath,
                 ["mocks"] = MockStore.Summary(),
                 ["off"] = Dev.OffList(),
+                ["lang"] = App.Current.S.Language,
             }));
     }
 
@@ -1821,7 +1831,7 @@ sealed class BrowserForm : Form
     {
         using var dialog = new SaveFileDialog
         {
-            Title = "Выгрузить журнал сети",
+            Title = L.T("Выгрузить журнал сети"),
             FileName = "network-" + DateTime.Now.ToString("yyyy-MM-dd-HHmm") + (csv ? ".csv" : ".json"),
             Filter = csv ? "CSV (*.csv)|*.csv" : "JSON (*.json)|*.json",
         };
@@ -1833,7 +1843,7 @@ sealed class BrowserForm : Form
         }
         catch (Exception ex) when (ex is IOException || ex is UnauthorizedAccessException)
         {
-            MessageBox.Show(this, "Не удалось записать файл.\n\n" + ex.Message, "LiteBro", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            MessageBox.Show(this, L.T("Не удалось записать файл.\n\n") + ex.Message, "LiteBro", MessageBoxButtons.OK, MessageBoxIcon.Error);
         }
     }
 
@@ -1865,7 +1875,7 @@ sealed class BrowserForm : Form
         bool page = e.ResourceContext == CoreWebView2WebResourceContext.Document;
         e.Response = env.CreateWebResourceResponse(page ? ProgramLog.Bytes(NetGuard.BlockedPage(url.AbsoluteUri)) : null,
             403, BlockedReason, page ? "Content-Type: text/html; charset=utf-8" : "");
-        NetLog.Add(e.Request.Method, url, "заблокировано", blocked: true, -1, KindOf(e.ResourceContext),
+        NetLog.Add(e.Request.Method, url, L.T("заблокировано"), blocked: true, -1, KindOf(e.ResourceContext),
             page ? "" : tab.Site);
     }
 
@@ -1897,7 +1907,7 @@ sealed class BrowserForm : Form
         e.Response = env.CreateWebResourceResponse(empty ? null : new MemoryStream(body), mock.Status, MockReason,
             "Content-Type: " + mock.Type + "\r\nCache-Control: no-store\r\nX-LiteBro-Mock: 1\r\n" + cors);
         if (NetGuard.Watching)
-            NetLog.Add(method, url, "заглушка " + mock.Status, blocked: false, empty ? 0 : body.Length, KindOf(e.ResourceContext),
+            NetLog.Add(method, url, L.T("заглушка ") + mock.Status, blocked: false, empty ? 0 : body.Length, KindOf(e.ResourceContext),
                 e.ResourceContext == CoreWebView2WebResourceContext.Document ? "" : tab.Site);
         return true;
     }
@@ -1922,20 +1932,20 @@ sealed class BrowserForm : Form
 
     static string KindOf(CoreWebView2WebResourceContext c) => c switch
     {
-        CoreWebView2WebResourceContext.Document => "документ",
-        CoreWebView2WebResourceContext.Stylesheet => "стиль",
-        CoreWebView2WebResourceContext.Image => "картинка",
-        CoreWebView2WebResourceContext.Media => "медиа",
-        CoreWebView2WebResourceContext.Font => "шрифт",
-        CoreWebView2WebResourceContext.Script => "скрипт",
+        CoreWebView2WebResourceContext.Document => L.T("документ"),
+        CoreWebView2WebResourceContext.Stylesheet => L.T("стиль"),
+        CoreWebView2WebResourceContext.Image => L.T("картинка"),
+        CoreWebView2WebResourceContext.Media => L.T("медиа"),
+        CoreWebView2WebResourceContext.Font => L.T("шрифт"),
+        CoreWebView2WebResourceContext.Script => L.T("скрипт"),
         CoreWebView2WebResourceContext.XmlHttpRequest => "XHR",
         CoreWebView2WebResourceContext.Fetch => "fetch",
         CoreWebView2WebResourceContext.EventSource => "EventSource",
         CoreWebView2WebResourceContext.Websocket => "WebSocket",
-        CoreWebView2WebResourceContext.Manifest => "манифест",
+        CoreWebView2WebResourceContext.Manifest => L.T("манифест"),
         CoreWebView2WebResourceContext.Ping => "ping/beacon",
-        CoreWebView2WebResourceContext.CspViolationReport => "отчёт CSP",
-        _ => "другое",
+        CoreWebView2WebResourceContext.CspViolationReport => L.T("отчёт CSP"),
+        _ => L.T("другое"),
     };
 
     /// <summary>What a request was for, from the Sec-Fetch-Dest header the engine adds (https only), else its Accept.</summary>
@@ -1946,19 +1956,19 @@ sealed class BrowserForm : Form
         if (dest != null)
             return dest switch
             {
-                "document" or "iframe" or "frame" => "документ",
-                "script" or "worker" or "sharedworker" or "serviceworker" => "скрипт",
-                "style" => "стиль",
-                "image" => "картинка",
-                "font" => "шрифт",
-                "audio" or "video" or "track" => "медиа",
+                "document" or "iframe" or "frame" => L.T("документ"),
+                "script" or "worker" or "sharedworker" or "serviceworker" => L.T("скрипт"),
+                "style" => L.T("стиль"),
+                "image" => L.T("картинка"),
+                "font" => L.T("шрифт"),
+                "audio" or "video" or "track" => L.T("медиа"),
                 "empty" => "fetch/XHR",
-                "manifest" => "манифест",
+                "manifest" => L.T("манифест"),
                 _ => dest,
             };
         var accept = Get("Accept") ?? "";
-        return accept.StartsWith("text/html") ? "документ" : accept.StartsWith("text/css") ? "стиль"
-            : accept.StartsWith("image/") ? "картинка" : "";
+        return accept.StartsWith("text/html") ? L.T("документ") : accept.StartsWith("text/css") ? L.T("стиль")
+            : accept.StartsWith("image/") ? L.T("картинка") : "";
     }
 
     /// <summary>A response from the internet: into the journal while it is on (always in «только localhost» mode).</summary>
@@ -1976,7 +1986,7 @@ sealed class BrowserForm : Form
         string kind;
         try { kind = KindOf(e.Request.Headers); }
         catch (Exception) { kind = ""; }
-        NetLog.Add(e.Request.Method, url, r.StatusCode + (NetGuard.LocalOnly ? " (разрешён)" : ""), blocked: false, size, kind, tab.Site);
+        NetLog.Add(e.Request.Method, url, r.StatusCode + (NetGuard.LocalOnly ? L.T(" (разрешён)") : ""), blocked: false, size, kind, tab.Site);
     }
 
     /// <summary>
@@ -2003,10 +2013,10 @@ sealed class BrowserForm : Form
                     NetLog.NoteStack(url.AbsoluteUri, stack);
                     break;
                 case "ws-blocked" when NetGuard.LocalOnly:
-                    NetLog.Add(method, url, "заблокировано", blocked: true, -1, "WebSocket", tab.Site, stack);
+                    NetLog.Add(method, url, L.T("заблокировано"), blocked: true, -1, "WebSocket", tab.Site, stack);
                     break;
                 case "ws":
-                    NetLog.Add(method, url, "соединение" + (NetGuard.LocalOnly ? " (разрешён)" : ""), blocked: false, -1, "WebSocket", tab.Site, stack);
+                    NetLog.Add(method, url, L.T("соединение") + (NetGuard.LocalOnly ? L.T(" (разрешён)") : ""), blocked: false, -1, "WebSocket", tab.Site, stack);
                     break;
             }
         }
@@ -2383,7 +2393,7 @@ sealed class BrowserForm : Form
         ["net"] = new[] { "home", "net" }, ["netOpen"] = new[] { "home", "dev" }, ["devOpen"] = new[] { "home", "net" },
         ["netClear"] = new[] { "net" }, ["netExport"] = new[] { "net" }, ["mockFrom"] = new[] { "net" }, ["mockOpen"] = new[] { "net" },
         ["mockSave"] = new[] { "net" }, ["mockOn"] = new[] { "net" }, ["mockDelete"] = new[] { "net" },
-        ["dev"] = new[] { "dev" }, ["devReset"] = new[] { "dev" }, ["settingsReset"] = new[] { "dev" },
+        ["dev"] = new[] { "dev" }, ["lang"] = new[] { "dev" }, ["devReset"] = new[] { "dev" }, ["settingsReset"] = new[] { "dev" },
         ["storage"] = new[] { "storage" },
         ["termStart"] = new[] { "term" }, ["termIn"] = new[] { "term" }, ["termSize"] = new[] { "term" },
     };
@@ -2458,7 +2468,7 @@ sealed class BrowserForm : Form
                 };
                 if (MockStore.Problem(mock) is { } problem)
                 {
-                    BeginInvoke(new Action(() => MessageBox.Show(this, problem, "Заглушка не сохранена", MessageBoxButtons.OK, MessageBoxIcon.Warning)));
+                    BeginInvoke(new Action(() => MessageBox.Show(this, problem, L.T("Заглушка не сохранена"), MessageBoxButtons.OK, MessageBoxIcon.Warning)));
                     break;
                 }
                 MockStore.Save(mock);
@@ -2487,6 +2497,10 @@ sealed class BrowserForm : Form
                 break;
             case "dev" when Dev.Is(e.Source) && Text("id") is { } devId:
                 if (Dev.Set(devId, Flag("on"))) BeginInvoke(new Action(App.Current.ApplyDev));
+                break;
+            case "lang" when Dev.Is(e.Source) && Text("value") is "auto" or "ru" or "en":
+                var language = Text("value")!;
+                BeginInvoke(new Action(() => App.Current.SetLanguage(language)));
                 break;
             case "settingsReset" when Dev.Is(e.Source):
                 BeginInvoke(new Action(ConfirmResetSettings));
@@ -2651,7 +2665,7 @@ sealed class BrowserForm : Form
             else
             {
                 try { reply["preview"] = Icons.Preview(path); }
-                catch (Exception ex) when (ex is IOException || ex is UnauthorizedAccessException) { reply["error"] = "Файл не читается."; }
+                catch (Exception ex) when (ex is IOException || ex is UnauthorizedAccessException) { reply["error"] = L.T("Файл не читается."); }
             }
         }
         core.PostWebMessageAsJson(ProjectStore.Json.Serialize(reply));
@@ -2862,7 +2876,7 @@ sealed class BrowserForm : Form
             foreach (var info in env.GetProcessInfos()) bytes += Memory.PrivateWorkingSet(info.ProcessId);
         }
         catch (Exception) { return; }
-        ram.Text = $"{bytes >> 20} МБ";
+        ram.Text = L.T($"{bytes >> 20} МБ");
     }
 
     /// <summary>Asks Chromium to drop caches, garbage and graphics memory; the App trims the rest.</summary>

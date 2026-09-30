@@ -70,7 +70,7 @@ sealed class Tab
         : Core?.Source is { } source && !(source == "about:blank" && Address.Length > 0) ? source : Address;
 
     public string Label => Title.Length > 0 ? Title
-        : Site.Length > 0 && !Site.StartsWith("about:") ? Site : "Новая вкладка";
+        : Site.Length > 0 && !Site.StartsWith("about:") ? Site : L.T("Новая вкладка");
 }
 
 /// <summary>The row of tabs above the toolbar, drawn by hand: a click brings a tab forward, its cross or a middle click closes it.</summary>
@@ -288,9 +288,9 @@ sealed class TabStrip : Control
         hover = h;
         overClose = close;
         Invalidate();
-        var text = h == tabs.Count ? "Новая вкладка (Ctrl+T)"
+        var text = h == tabs.Count ? L.T("Новая вкладка (Ctrl+T)")
             : h < 0 ? ""
-            : close ? "Закрыть вкладку (Ctrl+W)"
+            : close ? L.T("Закрыть вкладку (Ctrl+W)")
             : Tip(tabs[h]);
         if (text == tipText) return;
         tipText = text;
@@ -301,7 +301,7 @@ sealed class TabStrip : Control
     {
         var text = tab.Label;
         if (tab.Site.StartsWith("http") && !Home.Is(tab.Site) && tab.Site != text) text += "\n" + tab.Site;
-        if (tab.Ctl == null) text += "\nВыгружена из памяти, загрузится по клику";
+        if (tab.Ctl == null) text += L.T("\nВыгружена из памяти, загрузится по клику");
         return text;
     }
 

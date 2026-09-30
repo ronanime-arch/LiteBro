@@ -1,0 +1,616 @@
+## Russian	English: every Russian phrase of the program and its pages (L.T). Keep out ' " ` < > { } |
+основной браузер	main browser
+(разрешён)	(allowed)
+(уже	(already
+» проекта «	” of project “
+Адрес или поиск	Address or search
+В избранном:	In favorites:
+В избранном: плитка «	In favorites: tile “
+Веб-архив, один файл (*.mhtml)	Web archive, single file (*.mhtml)
+Веб-страница полностью (*.html)	Web page, complete (*.html)
+Веб-страница, только HTML (*.html)	Web page, HTML only (*.html)
+Вернуть все настройки LiteBro к исходным, как после установки?	Reset all LiteBro settings to their defaults, as after installation?
+Вкладка сайта выгружена: откройте её, потом нажмите «Обновить».	The site’s tab is unloaded: open it, then click “Reload”.
+Вкладка сайта закрыта.	The site’s tab is closed.
+Во вкладке сейчас не сайт.	The tab is not showing a site now.
+Вперёд (Alt+→)	Forward (Alt+→)
+Выгрузить журнал сети	Export network log
+Выключить эмуляцию	Turn off emulation
+Движок браузера перезапустится: все вкладки перезагрузятся, открытые терминалы закроются. Программы проектов продолжат работать.	The browser engine will restart: all tabs will reload, open terminals will close. Project programs keep running.
+Движок не смог напечатать страницу в PDF.	The engine could not print the page to PDF.
+Добавить в избранное: плиткой или ссылкой проекта	Add to favorites: as a tile or a project link
+Добавить в избранное: терминал в этой папке	Add to favorites: terminal in this folder
+Добавить ссылкой в проект	Add as a link to a project
+Другие инструменты	More tools
+Если меняли settings.ini, закройте все окна LiteBro и откройте снова.	If you edited settings.ini, close all LiteBro windows and open it again.
+Заглушка не сохранена	Mock not saved
+Закрыть вкладку	Close tab
+Захватить видимую часть…	Capture visible part…
+Захватить всю страницу…	Capture full page…
+Инструменты. Эмуляция:	Tools. Emulating:
+Инструменты: эмуляция устройства и сети	Tools: device and network emulation
+Как обычно (без страны)	As usual (no country)
+Картинка всей страницы PNG (*.png)	Image of the whole page PNG (*.png)
+МБ	MB
+На странице нет таблиц, сохранять нечего.	The page has no tables, nothing to save.
+На странице нет текста.	The page has no text.
+Назад (Alt+←)	Back (Alt+←)
+Настройки по умолчанию	Default settings
+Не удалось записать файл.	Could not write the file.
+Не удалось запустить движок WebView2.	Could not start the WebView2 engine.
+Не удалось снять страницу.	Could not capture the page.
+Не удалось сохранить.	Could not save.
+Обновить (F5)	Reload (F5)
+Обычная	Normal
+Обычный экран	Normal screen
+Остановить	Stop
+Останутся: плитки проектов, заглушки, cookies и входы на сайты, логи.	Kept: project tiles, mocks, cookies and site logins, logs.
+Открыть рядом	Open side by side
+Память браузера, как в диспетчере задач. Клик — диспетчер процессов (Shift+Esc)	Browser memory, as in Task Manager. Click for the process manager (Shift+Esc)
+Прежний файл сохранится как settings.ini.bak.	The old file is kept as settings.ini.bak.
+Проекты (Alt+Home). Ctrl+клик или колёсико — в новой вкладке	Projects (Alt+Home). Ctrl+click or middle click opens a new tab
+Сбросить Service Worker и кэш сайта, загрузить заново (Ctrl+Shift+R)	Clear the service worker and site cache, load again (Ctrl+Shift+R)
+Сбросить кэш сайта и обновить	Clear site cache and reload
+Сбросятся: тема, страна поиска, «только localhost», разрешённые сайты, журнал сети, CORS,	Reset: theme, search country, “localhost only”, allowed sites, network log, CORS,
+Сеть	Network
+Синхронная прокрутка	Synchronized scrolling
+Снимок видимой части	Snapshot of the visible part
+Снимок видимой части…	Snapshot of the visible part…
+Снимок страницы целиком	Full page snapshot
+Снимок страницы целиком…	Full page snapshot…
+Сохранить как	Save as
+Сохранить плиткой	Save as a tile
+Сохранить плиткой (с запуском «	Save as a tile (launching “
+Сохранить плиткой:	Save as a tile:
+Сохранить плиткой: терминал в этой папке	Save as a tile: terminal in this folder
+Список из JSON в CSV для Excel (*.csv)	List from JSON to CSV for Excel (*.csv)
+Ссылка «	Link “
+Страна поиска	Search country
+Страна поиска:	Search country:
+Таблицы страницы CSV для Excel (*.csv)	Page tables, CSV for Excel (*.csv)
+Таблицы страницы JSON (*.json)	Page tables, JSON (*.json)
+Текст (*.txt)	Text (*.txt)
+Убрать разделение	Unsplit
+Убрать ссылку из проекта	Remove the link from the project
+Устройство	Device
+Файл как есть (*	File as is (*
+Файл не читается.	The file cannot be read.
+Хранилище сайта	Site storage
+Хранилище сайта: cookies, localStorage, IndexedDB	Site storage: cookies, localStorage, IndexedDB
+Это адрес плитки «	This is the address of tile “
+Это плитка «	This is tile “
+а также строки settings.ini (поиск, видеокарта, флаги движка, локальные имена, основной браузер).	and the settings.ini lines (search, GPU, engine flags, local names, main browser).
+в этой папке	in this folder
+документ	document
+другое	other
+заблокировано	blocked
+заглушка	mock
+картинка	image
+манифест	manifest
+медиа	media
+отчёт CSP	CSP report
+плитка «	tile “
+с командой	with command
+скрипт	script
+соединение	connection
+ссылка проекта «	project link “
+ссылок)	links)
+стиль	style
+удаление cookies при выходе, обновление при изменении файлов, выключенное на странице «Для разработчика»,	deleting cookies on exit, reload on file changes, what is switched off on the “For developers” page,
+шрифт	font
+Быстрая 3G	Fast 3G
+Медленная 3G	Slow 3G
+Ноутбук 1366×768	Laptop 1366×768
+Офлайн	Offline
+заблокировано шлюзом	blocked by the gateway
+соединение разорвано	connection closed
+шлюз	gateway
+F5 — попробовать ещё раз. Параметры запуска меняются на стартовой странице: правый клик по плитке.	F5 — try again. Launch settings are changed on the start page: right-click the tile.
+». Чтобы запустить его программу, откройте плитку проекта на стартовой странице (Alt+Home).	”. To start its program, open the project tile on the start page (Alt+Home).
+Адрес	Address
+Весь вывод программы	All program output
+Все файлы	All files
+Запускаю	Starting
+Картинка больше 2 МБ.	The picture is larger than 2 MB.
+Картинка для плитки	Picture for the tile
+Картинки	Images
+Лог:	Log:
+Нужна картинка: png, jpg, gif, webp, bmp, ico или svg.	A picture is needed: png, jpg, gif, webp, bmp, ico or svg.
+Папка, в которой запускать программу	Folder to run the program in
+Папка:	Folder:
+Попробовать ещё раз	Try again
+Программа проекта	Project program
+Программа:	Program:
+Программы (*.exe; *.cmd; *.bat)	Programs (*.exe; *.cmd; *.bat)
+Сайт не отвечает	The site is not responding
+Это сайт проекта «	This is the site of project “
+вывод программы	program output
+не запустился	did not start
+не отвечает: сервер выключен, адрес неверный или нет сети.	is not responding: the server is off, the address is wrong or there is no network.
+пока не отвечает. LiteBro запустил программу проекта и ждёт.	is not responding yet. LiteBro has started the project program and is waiting.
+Адрес должен начинаться с http:// или https:// и не содержать пробелов.	The address must start with http:// or https:// and have no spaces.
+Заглушек уже	Mock limit reached:
+Код ответа — число от 100 до 599.	The response code is a number from 100 to 599.
+Метод — слово вроде GET или POST.	The method is a word like GET or POST.
+Ответ длиннее 5 МБ.	The response is longer than 5 MB.
+Тип содержимого — одна строка.	The content type is a single line.
+LiteBro не пустил страницу в интернет:	LiteBro did not let the page reach the internet:
+Заблокировано	Blocked
+Заблокировано режимом «только localhost»	Blocked by “localhost only” mode
+Режим выключается переключателем справа на стартовой странице. Там же, в журнале сети, можно добавить сайт в разрешённые.	The mode is turned off with the switch on the right of the start page. There, in the network log, you can also add the site to the allowed ones.
+адрес	address
+время	time
+время;метод;результат;заблокировано;размер;инициатор;домен;IP;адрес;страница;стек	time;method;result;blocked;size;initiator;domain;IP;address;page;stack
+да	yes
+домен	domain
+инициатор	initiator
+метод	method
+нет	no
+размер	size
+результат	result
+стек	stack
+страница	page
+PowerShell в папке команд: работают claude, vim и другие программы с экраном. Ctrl+клик или колёсико — в новой вкладке	PowerShell in the command folder: claude, vim and other full-screen programs work. Ctrl+click or middle click opens a new tab
+Команда	Command
+Команда PowerShell, например: Get-ChildItem, git status, winget list	PowerShell command, for example: Get-ChildItem, git status, winget list
+Команда выполняется: следующая встанет в очередь	A command is running: the next one will be queued
+Команда выполняется: строка уйдёт ей на ввод	A command is running: the line goes to its input
+Команда, например: git status, npm install, dir	Command, for example: git status, npm install, dir
+Консоль:	Console:
+Остановить программу	Stop program
+Очистить экран	Clear screen
+Папка команд: исправьте и нажмите Enter, Esc — отменить	Command folder: edit it and press Enter, Esc to cancel
+Папку можно сменить, когда команда закончится	The folder can be changed when the command finishes
+Прервать команду	Stop command
+Программа не запущена	The program is not running
+Программе	To program
+Строка выполняется в cmd в папке ниже; cd меняет папку. Нажмите, чтобы писать программе проекта	The line runs in cmd in the folder below; cd changes the folder. Click to write to the project program
+Строка для программы, Enter — отправить	Line for the program, Enter to send
+Строка уходит на ввод программе проекта. Нажмите, чтобы выполнять команды	The line goes to the project program’s input. Click to run commands
+Терминал	Terminal
+программа остановлена	program stopped
+● команда выполняется	● command running
+● программа работает	● program running
+(папка:	(folder:
+, так и не открыв порт	, without ever opening port
+PowerShell не отвечает: следующая команда запустит его заново.	PowerShell is not responding: the next command will start it again.
+[PowerShell завершился: переменные сброшены, следующая команда запустит его заново]	[PowerShell exited: variables are reset, the next command will start it again]
+[PowerShell закрыт]	[PowerShell closed]
+[код выхода	[exit code
+[прервано: PowerShell перезапустится со следующей командой, переменные сброшены]	[stopped: PowerShell will restart with the next command, variables are reset]
+[прервано]	[stopped]
+За 2 минуты программа так и не открыла порт	In 2 minutes the program never opened port
+Не найдена программа:	Program not found:
+Не найдена рабочая папка:	Working folder not found:
+Не удалось запустить PowerShell:	Could not start PowerShell:
+Не удалось запустить cmd:	Could not start cmd:
+Не удалось запустить программу:	Could not start the program:
+Неверный путь:	Invalid path:
+Нет такой папки:	No such folder:
+Папку можно сменить, когда команда закончится.	The folder can be changed when the command finishes.
+Программа завершилась с кодом	The program exited with code
+Программа остановлена.	The program is stopped.
+Австралия	Australia
+Беларусь	Belarus
+Бразилия	Brazil
+Великобритания	United Kingdom
+Германия	Germany
+Грузия	Georgia
+Израиль	Israel
+Индия	India
+Испания	Spain
+Италия	Italy
+Казахстан	Kazakhstan
+Канада	Canada
+Китай	China
+Литва	Lithuania
+Мексика	Mexico
+Нидерланды	Netherlands
+Польша	Poland
+Россия	Russia
+США	USA
+Турция	Turkey
+Украина	Ukraine
+Франция	France
+Чехия	Czechia
+Швеция	Sweden
+Южная Корея	South Korea
+Япония	Japan
+# --- Движок (Edge WebView2) ---	# --- Engine (Edge WebView2) ---
+# --- Для разработчика ---	# --- For developers ---
+# --- Сеть ---	# --- Network ---
+# --- Ссылки из других программ ---	# --- Links from other programs ---
+# LiteBro. Файл читается при запуске: правь, когда все окна браузера закрыты.	# LiteBro. The file is read at startup: edit it while all browser windows are closed.
+# false = рисовать без видеокарты; нужно только при проблемах с драйвером	# false = draw without the graphics card; needed only for driver problems
+# Дополнительные флаги Chromium через пробел, к встроенным флагам экономии памяти	# Extra Chromium flags separated by spaces, added to the built-in memory saving flags
+# Журнал запросов в интернет (logs\network.log) и при выключенном режиме; при включённом пишется всегда	# Log internet requests (logs\network.log) with the mode off too; with the mode on it is always written
+# Здесь открываются: localhost, *.localhost, 127.x.x.x, [::1] и имена, которые файл hosts	# Opened here: localhost, *.localhost, 127.x.x.x, [::1] and names that the hosts file
+# Куда сразу уходит всё остальное. Пусто = браузер, который открывает файлы .html	# Where everything else goes at once. Empty = the browser that opens .html files
+# Куда уходит текст из адресной строки, если это не адрес	# Where text from the address bar goes when it is not an address
+# Обновлять страницу на экране, когда меняется файл в папке её проекта (или в папке открытого файла)	# Reload the page on screen when a file changes in its project folder (or in the folder of the open file)
+# Оформление: auto = как «Режим приложения» в Windows, dark = тёмное, light = светлое	# Look: auto = as the Windows app mode, dark, light
+# Переключатель справа на стартовой странице меняет эту строку.	# The switch on the right of the start page changes this line.
+# После установки выключены инструменты разработчика:	# After installation the developer tools are off:
+# Пример:	# Example:
+# Проекты стартовой страницы (кнопка ⌂ и Alt+Home) хранятся рядом, в projects.json	# Start page projects (the ⌂ button and Alt+Home) are stored next to it, in projects.json
+# Пусто = как обычно. Кнопка сама меняет эту строку.	# Empty = as usual. The button changes this line itself.
+# Режим «только localhost»: страницы не ходят в интернет, только на этот компьютер и в локальную сеть.	# “Localhost only” mode: pages do not reach the internet, only this computer and the local network.
+# Саму страницу выключить нельзя.	# The page itself cannot be switched off.
+# Свои имена через пробел, можно со звёздочкой, например: *.test 192.168.1.*	# Your own names separated by spaces, wildcards allowed, for example: *.test 192.168.1.*
+# Страна поиска Google: код из кнопки справа в адресной строке (DE, US…), добавляет к поиску gl и hl.	# Google search country: a code from the button on the right of the address bar (DE, US…), adds gl and hl to searches.
+# Только вместе с LocalOnly: браузер не проверяет CORS и same-origin (флаг --disable-web-security)	# Only together with LocalOnly: the browser does not check CORS and same-origin (flag --disable-web-security)
+# Удалять cookies и кэш, когда закрывается последнее окно (кроме проектов с «Не удалять при выходе»)	# Delete cookies and cache when the last window closes (except projects with “Do not delete on exit”)
+# Что выключено на странице «Для разработчика» (кнопка у правого края стартовой страницы), через пробел.	# What is switched off on the “For developers” page (button at the right edge of the start page), separated by spaces.
+# Что пропускать в режиме «только localhost», через пробел, например: fonts.googleapis.com fonts.gstatic.com	# What to let through in “localhost only” mode, separated by spaces, for example: fonts.googleapis.com fonts.gstatic.com
+# Язык: auto = как в Windows, ru = русский, en = английский. Меняется на странице «Для разработчика».	# Language: auto = as in Windows, ru = Russian, en = English. Changed on the “For developers” page.
+# направляет на 127.0.0.1. Адрес 0.0.0.0 открывается как 127.0.0.1.	# points to 127.0.0.1. The address 0.0.0.0 opens as 127.0.0.1.
+. Пусто = всё включено.	. Empty = everything on.
+(у каждого пользователя свои)	(each user has their own)
+, своё окно не открывая.	, without opening its own window.
+. Если	. If
+1. Нажмите на плитку под заголовком HTTP (вероятно, сейчас там	1. Click the tile under the HTTP heading (probably showing
+1. Нажмите на плитку под заголовком HTTP (сейчас там LiteBro).	1. Click the tile under the HTTP heading (LiteBro is there now).
+2. В открывшемся окне выберите	2. In the window that opens, choose
+2. В открывшемся окне выберите LiteBro.	2. In the window that opens, choose LiteBro.
+3. Нажмите «Задать по умолчанию».	3. Click “Set default”.
+: три клика в Параметрах, подсказка откроется сама.	: three clicks in Settings, a hint will open by itself.
+LiteBro удаляется, а ссылки http и https пока назначены ему. Выбрать для них программу	LiteBro is being removed, but http and https links are still assigned to it. Choosing a program for them is something
+LiteBro удалён.	LiteBro removed.
+LiteBrowser теперь называется LiteBro. Старая программа будет удалена, а проекты, значки,	LiteBrowser is now called LiteBro. The old program will be removed, and projects, icons,
+Windows вернёт	Windows will give back to
+Windows запомнила выбор для ссылок под старым именем, поэтому их нужно один раз	Windows remembered the choice for links under the old name, so once more they need to be given
+Windows отдаст LiteBro и HTTP, и HTTPS: локальные адреса он откроет сам, остальные сразу передаст	Windows will give LiteBro both HTTP and HTTPS: it will open local addresses itself and pass the rest straight
+Windows разрешает только вам. В открывшемся окне Параметров:	Windows lets only you do. In the Settings window that opens:
+Будут удалены программа, ярлыки и запись в списке установленных приложений.	The program, its shortcuts and its entry in the installed apps list will be removed.
+Выбрать программу для ссылок Windows разрешает только вам. В открывшемся окне Параметров:	Windows lets only you choose the program for links. In the Settings window that opens:
+Готово	Done
+Готово: ссылки идут через LiteBro.	Done: links go through LiteBro.
+Готово: ссылки снова у	Done: links are back with
+Данные в	Data in
+Для удаления используйте «Установленные приложения» в параметрах Windows.	To uninstall, use “Installed apps” in Windows Settings.
+Жду вашего выбора…	Waiting for your choice…
+Запустить LiteBro после установки	Start LiteBro after installation
+Затем ссылки нужно будет вернуть	Then the links will need to be given back to
+Локальные адреса открываются в нём, остальные ссылки — в	Local addresses open in it, other links go to
+Лёгкий браузер для локальных проектов	A light browser for local projects
+Лёгкий браузер для локальных проектов на движке Edge WebView2.	A light browser for local projects on the Edge WebView2 engine.
+Лёгкий браузер для локальных проектов: localhost и 127.0.0.1 открываются в нём, остальные ссылки — в основном браузере.	A light browser for local projects: localhost and 127.0.0.1 open in it, other links in the main browser.
+Настройки и данные остались в	Settings and data are left in
+Настройки и данные:	Settings and data:
+Не всё удалось удалить:	Could not delete everything:
+Не найден Microsoft Edge WebView2 Runtime, без него браузер не запустится.	Microsoft Edge WebView2 Runtime was not found; the browser will not start without it.
+Недопустимый путь в архиве:	Invalid path in the archive:
+Остальные ссылки он сразу передаёт в	It passes other links straight to
+Открывать в LiteBro ссылки на localhost и 127.0.0.1.	Open links to localhost and 127.0.0.1 in LiteBro.
+Открыть Параметры	Open Settings
+Отмена	Cancel
+Ошибка:	Error:
+Позже	Later
+Последний шаг: вернуть ссылки	Last step: give the links back
+Последний шаг: ссылки	Last step: links
+Программы проектов, которые он запустил (например, dsh), тоже остановятся, а текущая задача агента прервётся.	Project programs it started (dsh, for example) will stop too, and the agent’s current task will be interrupted.
+Ссылки http и https всё ещё назначены LiteBro, которого больше нет. Выберите для них браузер	http and https links are still assigned to LiteBro, which is gone. Choose a browser for them
+Ссылки из других программ уже идут через LiteBro.	Links from other programs already go through LiteBro.
+Удаление LiteBro	Uninstall LiteBro
+Удалить	Delete
+Удалить LiteBro?	Uninstall LiteBro?
+Удалить также мои настройки и данные браузера:	Also delete my browser settings and data:
+Установите его с developer.microsoft.com/microsoft-edge/webview2.	Install it from developer.microsoft.com/microsoft-edge/webview2.
+Установить	Install
+Установка LiteBro	LiteBro Setup
+Чтобы ссылки открывались в нём: Параметры → Приложения по умолчанию → LiteBro → HTTP → LiteBro.	To open links in it: Settings → Default apps → LiteBro → HTTP → LiteBro.
+Ярлык на рабочем столе	Desktop shortcut
+в	to
+в Параметрах → Приложения по умолчанию: в поле поиска введите http.	in Settings → Default apps: type http in the search box.
+готово. Теперь то же самое для плитки	done. Now the same for the tile
+запущен. Закрыть его и продолжить?	is running. Close it and continue?
+запущен: закройте его и повторите.	is running: close it and try again.
+и HTTP, и HTTPS.	both HTTP and HTTPS.
+иначе он заберёт ссылки обратно.	otherwise it will take the links back.
+логи и входы на сайты LiteBro перенесёт к себе при первом запуске.	logs and site logins will be moved over by LiteBro on its first start.
+не закрылся. Закройте его вручную и повторите.	did not close. Close it manually and try again.
+останутся, если не отметить пункт ниже.	will stay unless you check the box below.
+отдать LiteBro заново: после установки откроется подсказка.	to LiteBro again: a hint will open after installation.
+потом предложит стать браузером по умолчанию, откажитесь:	later offers to become the default browser, decline:
+проекты, cookies, settings.ini	projects, cookies, settings.ini
+установлен в	installed in
+Домен cookie должен быть доменом этого сайта:	The cookie domain must be the domain of this site:
+Имя cookie не может быть пустым и содержать ; = , или пробелы.	The cookie name cannot be empty or contain ; = , or spaces.
+Срок — дата вида 2027-01-31 12:00 или пусто (до закрытия браузера).	Expires: a date like 2027-01-31 12:00, or empty (until the browser closes).
+ошибка страницы	page error
+Выгружена из памяти, загрузится по клику	Unloaded from memory, loads on click
+Закрыть вкладку (Ctrl+W)	Close tab (Ctrl+W)
+Новая вкладка	New tab
+Новая вкладка (Ctrl+T)	New tab (Ctrl+T)
+Windows не дал создать терминал (нужна Windows 10 1809 или новее), код	Windows did not allow creating a terminal (Windows 10 1809 or newer is needed), code
+Не удалось запустить	Could not start
+Не удалось подключить терминал:	Could not connect the terminal:
+Не удалось создать каналы:	Could not create pipes:
+Alt+Home и новая вкладка (Ctrl+T) открывают плитки.	Alt+Home and a new tab (Ctrl+T) open the tiles.
+Alt+← работает.	Alt+← works.
+Alt+→ работает.	Alt+→ works.
+F5 и Ctrl+R работают.	F5 and Ctrl+R work.
+_ на плитках)	_ on tiles)
+Вернуть настройки по умолчанию…	Restore default settings…
+Включить всё	Turn all on
+Вперёд	Forward
+Все настройки браузера — как после установки, без переустановки: тема, страна поиска, режим «только localhost»	All browser settings as after installation, without reinstalling: theme, search country, “localhost only” mode
+Всё включено	Everything is on
+Выключение снимает эмуляцию во всех вкладках (страница с эмуляцией экрана перезагрузится).	Turning it off removes emulation in all tabs (a page with an emulated screen reloads).
+Выключенное пропадает из интерфейса во всех окнах сразу и остаётся выключенным после перезапуска (строка Disabled в settings.ini). После установки инструменты разработчика выключены, остальное включено.	What is switched off disappears from the interface in all windows at once and stays off after a restart (the Disabled line in settings.ini). After installation the developer tools are off, the rest is on.
+Выключено:	Switched off:
+Две вкладки рядом	Two tabs side by side
+Диспетчер процессов открывается по Shift+Esc.	The process manager opens with Shift+Esc.
+Для разработчика	For developers
+Журнал открывается и кнопкой ниже.	The log also opens with the button below.
+Журнал сети	Network log
+Заглушки	Mocks
+Запросы снова идут на сервер, раздел на странице журнала сети скрыт. Сами заглушки сохраняются.	Requests go to the server again, the section on the network log page is hidden. The mocks themselves are kept.
+Избранное (звёздочка)	Favorites (star)
+Инструменты	Tools
+Кнопка на странице поиска и параметры gl/hl. Выбранная страна запомнится и вернётся при включении.	The button on the search page and the gl/hl parameters. The chosen country is remembered and comes back when switched on.
+Кнопка с ластиком. Ctrl+Shift+R и Ctrl+F5 тогда делают обычную перезагрузку без кэша, как в других браузерах.	The eraser button. Ctrl+Shift+R and Ctrl+F5 then do a normal reload without cache, as in other browsers.
+Кнопки и инструменты	Buttons and tools
+Консоль открывается и со страниц запуска и ошибки проекта.	The console also opens from the project launch and error pages.
+Консоль проекта (	Project console (
+Меняет язык браузера и его страниц. Движок перезапустится: вкладки перезагрузятся, открытые терминалы закроются.	Changes the language of the browser and its pages. The engine restarts: tabs reload, open terminals close.
+Назад	Back
+Обновить	Reload
+Ответы API в формате JSON показываются простым текстом.	JSON API responses are shown as plain text.
+Открыть журнал сети	Open network log
+Память браузера справа	Browser memory on the right
+Панель инструментов	Toolbar
+Переключатель «только localhost»	“Localhost only” switch
+Плитки и ссылки проекта по-прежнему добавляются на стартовой странице.	Tiles and project links can still be added on the start page.
+Проекты (домик)	Projects (house)
+Пропадает только кнопка: её горячие клавиши работают.	Only the button disappears: its keyboard shortcuts work.
+Пропадает только кнопка; кнопку «Для разработчика» выключить нельзя.	Only the button disappears; the “For developers” button cannot be switched off.
+Пропадают вместе с пунктами меню и горячими клавишами. Инструменты разработчика (сброс сайта, эмуляция, снимок, хранилище, JSON, заглушки) после установки выключены. Когда выключены эмуляция, снимок и хранилище, пропадает и кнопка «Инструменты» (гаечный ключ).	They disappear together with their menu items and keyboard shortcuts. The developer tools (site reset, emulation, snapshot, storage, JSON, mocks) are off after installation. When emulation, snapshot and storage are off, the “Tools” button (wrench) disappears too.
+Просмотр JSON деревом	JSON tree view
+Пункт «Открыть рядом» в меню вкладки. Уже открытое разделение убирается как обычно.	The “Open side by side” item in the tab menu. A split already open is removed as usual.
+Пункт меню «Инструменты». Уже открытая вкладка хранилища продолжит работать.	The “Tools” menu item. A storage tab already open keeps working.
+Пункты меню «Инструменты» и Ctrl+Shift+S.	The “Tools” menu items and Ctrl+Shift+S.
+Режим остаётся как был; переключается на странице журнала сети.	The mode stays as it was; it is switched on the network log page.
+Сброс сайта	Site reset
+Сменить язык? Движок браузера перезапустится: все вкладки перезагрузятся, открытые терминалы закроются. Программы проектов продолжат работать.	Change the language? The browser engine will restart: all tabs will reload, open terminals will close. Project programs keep running.
+Снимок страницы	Page snapshot
+Стартовая страница	Start page
+Страна поиска Google	Google search country
+Терминал (фиолетовая кнопка слева)	Terminal (purple button on the left)
+Терминал в папке проекта открывается из консоли проекта.	A terminal in the project folder opens from the project console.
+Эмуляция устройства и сети	Device and network emulation
+Эту страницу выключить нельзя: она всегда открывается кнопкой у правого края стартовой страницы и кнопкой на странице журнала сети.	This page cannot be switched off: it always opens with the button at the right edge of the start page and with the button on the network log page.
+и разрешённые сайты, журнал сети, CORS, удаление cookies при выходе, обновление при изменении файлов, выключенное на этой странице	and allowed sites, network log, CORS, deleting cookies on exit, reload on file changes, what is switched off on this page
+и строки settings.ini. Плитки проектов, заглушки, cookies и входы на сайты не трогаются. Перед сбросом браузер спросит подтверждение.	and the settings.ini lines. Project tiles, mocks, cookies and site logins are not touched. The browser asks before resetting.
++ Добавить ссылку	+ Add link
+. CORS не проверяется	. CORS is not checked
+. Переключение перезапускает движок: вкладки перезагрузятся, терминалы закроются	. Switching restarts the engine: tabs reload, terminals close
+. С включением отключится CORS	. Turning it on disables CORS
+_ — консоль проекта.	_ — project console.
+Аргументы	Arguments
+Буквы	Letters
+Буквы на плитке	Letters on the tile
+В отдельном профиле проект не видит входы и данные других сайтов, а они — его. После включения или выключения на сайт проекта придётся войти заново. Удаление при выходе включается на странице «Сеть».	In a separate profile the project does not see the logins and data of other sites, and they do not see its. After turning this on or off you will have to log in to the project site again. Deleting on exit is turned on on the “Network” page.
+Включить	Turn on
+Выключить	Turn off
+Данные сайта	Site data
+Для разработчика: включить и выключить кнопки и инструменты браузера. Ctrl+клик или колёсико — в новой вкладке	For developers: switch browser buttons and tools on and off. Ctrl+click or middle click opens a new tab
+Добавить	Add
+Добавить проект	Add project
+Добавьте первый проект: адрес локального сайта и, если нужно, программу, которая его запускает.	Add your first project: the address of a local site and, if needed, the program that starts it.
+Ещё ссылки проекта	More project links
+Ещё ссылки проекта и «Открыть всё»	More project links and “Open all”
+Журнал запросов в интернет и разрешённые сайты. Ctrl+клик или колёсико — в новой вкладке	Log of internet requests and allowed sites. Ctrl+click or middle click opens a new tab
+Запуск программы, если адрес не отвечает	Start the program if the address does not respond
+Запускать в папке	Run in folder
+Запущено	Running
+Запущено. Нажмите, чтобы остановить программу	Running. Click to stop the program
+Значок сайта появится сам: сразу, если сайт уже работает, или когда LiteBro его откроет.	The site icon appears by itself: right away if the site is already running, or when LiteBro opens it.
+Изменить проект	Edit project
+Клик — открыть · Ctrl+клик или средняя кнопка — в новой вкладке · Shift+клик — в новом окне · правый клик — изменить · перетащить — поменять порядок · клик по зелёной точке — остановить программу ·	Click to open · Ctrl+click or middle button for a new tab · Shift+click for a new window · right-click to edit · drag to reorder · click the green dot to stop the program ·
+Консоль проекта: вывод программы и команды в папке проекта (Ctrl+клик или колёсико — в новой вкладке)	Project console: program output and commands in the project folder (Ctrl+click or middle click opens a new tab)
+Название	Name
+Например, Mantella	For example, Mantella
+Например, бэкенд или документация API. Они в меню плитки, а «Открыть всё» откроет их вместе с проектом.	For example, the backend or API docs. They are in the tile menu, and “Open all” opens them together with the project.
+Например: dsh, npm, python или путь к .exe	For example: dsh, npm, python or a path to an .exe
+Например: web --no-open	For example: web --no-open
+Не удалять cookies и кэш при выходе	Do not delete cookies and cache on exit
+Новый проект	New project
+Обзор…	Browse…
+Отдельный профиль: свои cookies, хранилище и разрешения	Separate profile: own cookies, storage and permissions
+Открыть адрес, который напишет программа (со входным токеном)	Open the address the program prints (with its login token)
+Открыть всё	Open all
+Папка проекта: в ней программа работает с файлами.	Project folder: the program works with files in it.
+Программа	Program
+Проект в этой вкладке, остальные ссылки — в новых вкладках за ней. Ctrl+клик — всё в новых вкладках	The project in this tab, the other links in new tabs behind it. Ctrl+click opens everything in new tabs
+Проекты	Projects
+Пусто — папка программы	Empty means the program folder
+Работает без окна и закрывается вместе с LiteBro. В путях можно писать %LOCALAPPDATA% и другие переменные.	Runs without a window and closes together with LiteBro. Paths may use %LOCALAPPDATA% and other variables.
+Режим «только localhost»: включён, запросы в интернет блокируются. Щелчок выключит	“Localhost only” mode: on, internet requests are blocked. Click to turn off
+Режим «только localhost»: выключен. Щелчок включит блокировку запросов в интернет	“Localhost only” mode: off. Click to block internet requests
+С сайта	From site
+Своя…	Custom…
+Сохранить	Save
+Терминал PowerShell (claude, git, npm...). Ctrl+клик или колёсико — в новой вкладке	PowerShell terminal (claude, git, npm...). Ctrl+click or middle click opens a new tab
+Только localhost	Localhost only
+Точно удалить?	Delete for sure?
+Убрать ссылку	Remove link
+Цвет плитки, пока у неё нет картинки	Tile color while it has no picture
+авто	auto
+режим «только localhost»?	“localhost only” mode?
+Б	B
+Дерево	Tree
+КБ	KB
+Копировать	Copy
+Не удалось	Failed
+Развернуть всё	Expand all
+Свернуть всё	Collapse all
+Скопировано	Copied
+Текст	Text
+Текст с отступами	Indented text
+ключ	key
+ключа	keys
+ключей	keys
+элемент	item
+элемента	items
+элементов	items
+(пусто)	(empty)
+100 КБ – 1 МБ	100 KB – 1 MB
+10–100 КБ	10–100 KB
+1–10 КБ	1–10 KB
+Ctrl+C с выделением	Ctrl+C with a selection
+Ctrl+V, правый клик	Ctrl+V, right-click
+Ctrl+Плюс, Ctrl+Минус, Ctrl+0	Ctrl+Plus, Ctrl+Minus, Ctrl+0
+Ctrl+клик, колёсико по терминалу, журналу, «Для разработчика»,	Ctrl+click, middle click on the terminal, log, “For developers”,
+Ctrl+клик, средний клик	Ctrl+click, middle click
+Shift+клик	Shift+click
+Адресная строка	Address bar
+Быстрые команды	Quick commands
+В режиме «только localhost» журнал ведётся всегда	In “localhost only” mode the log is always kept
+Вернуть адрес страницы и уйти из строки	Restore the page address and leave the bar
+Вести журнал и без режима	Keep the log without the mode too
+Вкладки и окна	Tabs and windows
+Включена	On
+Включить и выключить кнопки и инструменты браузера	Switch browser buttons and tools on and off
+Включить и выключить кнопки и инструменты браузера; сама кнопка не выключается (ещё одна — вверху этой страницы)	Switch browser buttons and tools on and off; the button itself cannot be switched off (another one is at the top of this page)
+Время	Time
+Время:	Time:
+Все	All
+Все горячие клавиши и приёмы браузера с описанием	All browser keyboard shortcuts and tricks with descriptions
+Вставить	Paste
+Выбрать пункт меню ссылок, закрыть меню	Pick an item in the links menu, close the menu
+Выгрузить CSV	Export CSV
+Выгрузить JSON	Export JSON
+Выровнять JSON отступами	Indent JSON
+Гаечный ключ в адресной строке	The wrench in the address bar
+Диспетчер процессов браузера (также клик по памяти справа)	Browser process manager (also a click on the memory on the right)
+Домен	Domain
+Заглушка	Mock
+Заглушки (	Mocks (
+Зажать и тащить плитку	Hold and drag a tile
+Закрыть	Close
+Закрыть вкладку (вместо последней откроется стартовая страница)	Close tab (the last one is replaced by the start page)
+Закрыть фильтр или это окно	Close the filter or this window
+Записи под фильтром в файл CSV (для Excel, через точку с запятой)	Filtered entries to a CSV file (for Excel, semicolon separated)
+Записи под фильтром в файл JSON	Filtered entries to a JSON file
+Запрос на адрес заглушки получает её ответ от самого LiteBro и не уходит на сервер, в том числе в режиме «только localhost». Сделать заглушку из запроса — кнопка в подробностях строки журнала. * в адресе — любые символы; адрес без ? подходит с любыми параметрами.	A request to a mock address gets its response from LiteBro itself and never reaches the server, in “localhost only” mode too. To make a mock from a request, use the button in the details of a log row. * in the address means any characters; an address without ? matches any parameters.
+Запросов в интернет пока нет.	No internet requests yet.
+Игнорировать CORS	Ignore CORS
+Изменить	Edit
+Инициатор	Initiator
+Инструменты разработчика (DevTools)	Developer tools (DevTools)
+Инструменты: эмуляция телефона, планшета, медленной сети или офлайна для этой вкладки, хранилище сайта	Tools: emulation of a phone, tablet, slow network or offline for this tab, site storage
+Клик по названию колонки	Click on a column name
+Клик по плитке	Click on a tile
+Клик по строке	Click on a row
+Кнопка у правого края стартовой страницы	The button at the right edge of the start page
+Когда закрывается последнее окно LiteBro. Хранилище сайтов (localStorage, IndexedDB) остаётся. Проекты с галочкой «Не удалять cookies и кэш при выходе» (в настройках плитки) сохраняют свои.	When the last LiteBro window closes. Site storage (localStorage, IndexedDB) stays. Projects with “Do not delete cookies and cache on exit” checked (in the tile settings) keep theirs.
+Код ответа	Response code
+Консоль проекта	Project console
+Копировать (без выделения — прервать команду)	Copy (without a selection, stop the command)
+Масштаб: крупнее, мельче, как было	Zoom: larger, smaller, as it was
+Метод	Method
+Назад и вперёд	Back and forward
+Название колонки — сортировка, стрелка рядом — фильтр.	Column name sorts, the arrow next to it filters.
+Найти значение	Find a value
+Найти на странице	Find on page
+Например:&#10;fonts.googleapis.com&#10;fonts.gstatic.com	For example:&#10;fonts.googleapis.com&#10;fonts.gstatic.com
+Не JSON:	Not JSON:
+Нет значений.	No values.
+Ни одного	None
+Новая вкладка со стартовой страницей	New tab with the start page
+Новая заглушка	New mock
+Новое окно	New window
+Обновить; во время загрузки — остановить	Reload; while loading, stop
+Обновлять страницу при изменении файлов	Reload the page when files change
+Ответ	Response
+Ответ на этот адрес будет отдавать сам LiteBro. Для GET ответ сервера подставится, если сервер доступен.	LiteBro itself will answer this address. For GET the server response is filled in if the server is reachable.
+Отключает проверки CORS и same-origin во всех вкладках: любая открытая страница сможет читать другие сайты, в том числе ваши локальные. Работает только в режиме «только localhost». При переключении движок перезапускается: вкладки перезагрузятся, терминалы закроются.	Turns off CORS and same-origin checks in all tabs: any open page can read other sites, including your local ones. Works only in “localhost only” mode. Switching restarts the engine: tabs reload, terminals close.
+Отключить CORS и same-origin во всех вкладках? Любая открытая страница сможет читать другие сайты, в том числе ваши локальные.	Turn off CORS and same-origin in all tabs? Any open page will be able to read other sites, including your local ones.
+Открыть адрес или искать текст	Open an address or search for text
+Открыть в новой вкладке	Open in a new tab
+Открыть в новой вкладке (просто клик — в этой)	Open in a new tab (a plain click opens it in this one)
+Открыть в новом окне	Open in a new window
+Открыть проект (и запустить его программу, если адрес не отвечает)	Open the project (and start its program if the address does not respond)
+Открыть рядом, убрать разделение, синхронная прокрутка	Open side by side, unsplit, synchronized scrolling
+Очистить журнал	Clear log
+Перейти в адресную строку	Go to the address bar
+Печать	Print
+По одному на строку. *.example.com пропускает сам сайт и все его поддомены. Уже открытые страницы получат список после обновления.	One per line. *.example.com lets through the site itself and all its subdomains. Pages already open get the list after a reload.
+Под фильтр ничего не подходит.	Nothing matches the filter.
+Подробности: полный адрес, страница, стек вызова, кнопка «Сделать заглушку»	Details: full address, page, call stack, the “Make a mock” button
+Поменять порядок плиток (Esc — отменить)	Reorder tiles (Esc cancels)
+Правый клик по вкладке	Right-click on a tab
+Предыдущие введённые команды	Previous commands
+Размер	Size
+Разрешённые сайты (	Allowed sites (
+Результат	Result
+Сбросить Service Worker и кэш сайта и загрузить заново (cookies остаются)	Clear the service worker and site cache and load again (cookies stay)
+Сбросить фильтры	Reset filters
+Сбросить фильтры (	Reset filters (
+Сделать заглушку	Make a mock
+Следующая и предыдущая вкладка	Next and previous tab
+Снимок страницы целиком в файл PNG (снимок видимой части — в меню «Инструменты» и в правом клике «Другие инструменты»)	Full page snapshot to a PNG file (the visible part is in the “Tools” menu and in the right-click “More tools”)
+Снова проверять CORS?	Check CORS again?
+Сортировать	Sort
+Сортировка: по возрастанию, по убыванию, снова новые сверху	Sorting: ascending, descending, newest on top again
+Сохранить как: HTML, MHTML, PDF, PNG всей страницы, текст, таблицы страницы в CSV или JSON	Save as: HTML, MHTML, PDF, PNG of the whole page, text, page tables as CSV or JSON
+Средний клик по вкладке	Middle click on a tab
+Стартовая страница с плитками	Start page with tiles
+Стек:	Stack:
+Страница	Page
+Страница на экране загружается заново, когда в папке её проекта (из настроек плитки) или в папке открытого файла сохраняют файл. node_modules, .git, bin, obj, логи и временные файлы не считаются. Проектам на Vite, Next и подобных это не нужно: они обновляют страницу сами.	The page on screen loads again when a file is saved in its project folder (from the tile settings) or in the folder of the open file. node_modules, .git, bin, obj, logs and temporary files do not count. Vite, Next and similar projects do not need this: they refresh the page themselves.
+Страница:	Page:
+Страницы ходят только на этот компьютер, в локальную сеть и на разрешённые сайты	Pages reach only this computer, the local network and allowed sites
+Стрелка ▾ у названия	The ▾ arrow by the name
+Телеметрии нет: LiteBro ничего не отправляет, у движка выключены фоновые запросы, отчёты о сбоях и проверка адресов SmartScreen. Стек вызова есть у fetch, XHR, sendBeacon, EventSource и веб-сокетов из самой страницы; у картинок, стилей, скриптов из разметки и запросов воркеров его нет.	No telemetry: LiteBro sends nothing, the engine has background requests, crash reports and SmartScreen address checks turned off. The call stack is known for fetch, XHR, sendBeacon, EventSource and web sockets of the page itself; images, styles and scripts from the markup and worker requests have none.
+Тип содержимого	Content type
+Только localhost: блокировать запросы в интернет	Localhost only: block internet requests
+Только заблокированные	Blocked only
+Только найденные	Found only
+Удалить заглушку?	Delete the mock?
+Удалять cookies и кэш при выходе	Delete cookies and cache on exit
+Уходят оболочке, а не браузеру	They go to the shell, not the browser
+Фильтр	Filter
+Фильтр по значениям колонки (время — по минутам, размер — по диапазонам)	Filter by column values (time by minutes, size by ranges)
+Форматировать JSON	Format JSON
+больше 1 МБ	over 1 MB
+до 1 КБ	up to 1 KB
+любой	any
+нет данных	no data
+↑, ↓ в строке команды	↑, ↓ in the command line
+↑, ↓, Esc в меню плитки	↑, ↓, Esc in the tile menu
+LiteBro: только localhost	LiteBro: localhost only
+Заблокировано режимом «только localhost»:	Blocked by “localhost only” mode:
+база занята другой вкладкой	the database is held by another tab
+байт]	bytes]
+неизвестная операция	unknown operation
+отменено	cancelled
+База и хранилище объектов	Database and object store
+Все cookies этого сайта и его родительских доменов, со всеми путями.	All cookies of this site and its parent domains, with all paths.
+Значение	Value
+Значение не JSON (двоичные данные, Map, слишком длинное): только просмотр и удаление.	The value is not JSON (binary data, Map, too long): view and delete only.
+Имя	Name
+Истекает	Expires
+Ключ	Key
+Ключ (JSON)	Key (JSON)
+Ключ берётся из значения:	The key is taken from the value:
+Ключ и значение — JSON.	Key and value are JSON.
+Найти	Find
+Ничего не найдено.	Nothing found.
+Новая запись:	New entry:
+Очистить всё	Clear all
+Очистить хранилище	Clear storage
+Показаны первые	Showing the first
+Прочитать заново (F5 тоже)	Read again (F5 too)
+Пусто.	Empty.
+Путь	Path
+У сайта нет баз IndexedDB.	The site has no IndexedDB databases.
+Удалить все записи	Delete all entries
+Удалить все записи хранилища	Delete all storage entries
+Хранилище —	Storage —
+из	of
+пусто — до закрытия браузера	empty means until the browser closes
+сеанс	session
+этого сайта?	of this site?
+\x1b[90m[Процесс завершён. Enter — запустить снова]\x1b[0m	\x1b[90m[Process exited. Enter to start again]\x1b[0m

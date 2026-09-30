@@ -92,7 +92,7 @@ static class Associations
     public static string? OtherBrowserCommand() => MainBrowser()?.Command;
 
     /// <summary>Name of the main browser, "Google Chrome" for one.</summary>
-    public static string OtherBrowserName() => MainBrowser()?.Name is { Length: > 0 } name ? name : "основной браузер";
+    public static string OtherBrowserName() => MainBrowser()?.Name is { Length: > 0 } name ? name : L.T("основной браузер");
 
     /// <summary>
     /// Windows hands LiteBro http and https together, but the main browser keeps .html files, so it is

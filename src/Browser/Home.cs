@@ -122,6 +122,29 @@ static class Icons
         return name;
     }
 
+    /// <summary>A program's own icon as PNG, or null when the file has none of its own.</summary>
+    public static byte[]? FromProgram(string exe)
+    {
+        if (!exe.EndsWith(".exe", StringComparison.OrdinalIgnoreCase)) return null;
+        // S_FALSE: no icon in the file; the size asked is 128 px
+        if (SHDefExtractIcon(exe, 0, 0, out var large, IntPtr.Zero, 128) != 0 || large == IntPtr.Zero) return null;
+        try
+        {
+            using var icon = System.Drawing.Icon.FromHandle(large);
+            using var picture = icon.ToBitmap();
+            using var png = new MemoryStream();
+            picture.Save(png, System.Drawing.Imaging.ImageFormat.Png);
+            return png.ToArray();
+        }
+        catch (Exception e) when (e is ArgumentException || e is System.Runtime.InteropServices.ExternalException) { return null; }
+        finally { DestroyIcon(large); }
+    }
+
+    [DllImport("shell32.dll", CharSet = CharSet.Unicode)]
+    static extern int SHDefExtractIcon(string file, int index, uint flags, out IntPtr large, IntPtr small, uint size);
+
+    [DllImport("user32.dll")] static extern bool DestroyIcon(IntPtr icon);
+
     public static void Delete(string name)
     {
         if (name.Length == 0 || name != Path.GetFileName(name)) return;

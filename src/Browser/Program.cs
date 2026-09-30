@@ -85,6 +85,7 @@ sealed class App : ApplicationContext
     public CoreWebView2Environment? Env { get; private set; }
     Task<CoreWebView2Environment>? envTask;
     readonly List<BrowserForm> forms = new();
+    public IReadOnlyList<BrowserForm> Forms => forms;
     readonly Dictionary<string, Launcher> launchers = new();
     readonly HashSet<string> iconClaims = new();
     SynchronizationContext ui = null!;

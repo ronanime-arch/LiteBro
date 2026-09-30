@@ -111,6 +111,41 @@
       await ended;
       return "{}";
     }
+    case "idbCreate": {
+      // A new object store is made in a version change: the base's version goes up by one
+      const known = indexedDB.databases ? (await indexedDB.databases()).find(d => d.name === op.db) : null;
+      await new Promise((ok, bad) => {
+        const r = known ? indexedDB.open(op.db, known.version + 1) : indexedDB.open(op.db);
+        r.onupgradeneeded = () => {
+          const db = r.result;
+          if (db.objectStoreNames.contains(op.store)) { r.transaction.abort(); return; }
+          db.createObjectStore(op.store, { keyPath: op.keyPath === "" ? null : op.keyPath, autoIncrement: !!op.autoIncrement });
+        };
+        r.onsuccess = () => { r.result.close(); ok(); };
+        r.onerror = () => bad(r.error && r.error.name === "AbortError" ? new Error("такое хранилище уже есть") : r.error);
+        // The site's page keeps the base open and does not let it go: the change waits for it
+        r.onblocked = () => bad(new Error("база открыта страницей сайта: хранилище появится, когда сайт её отпустит (обновите страницу сайта)"));
+      });
+      return "{}";
+    }
+    case "clearAll": {
+      localStorage.clear();
+      sessionStorage.clear();
+      const names = indexedDB.databases ? await indexedDB.databases() : [];
+      for (const d of names) {
+        let db;
+        try { db = await open(d.name); } catch (e) { continue; }
+        const list = [...db.objectStoreNames];
+        if (!list.length) { db.close(); continue; }
+        const t = db.transaction(list, "readwrite");
+        for (const name of list) t.objectStore(name).clear();
+        await new Promise((ok, bad) => {
+          t.oncomplete = () => { db.close(); ok(); };
+          t.onerror = t.onabort = () => { db.close(); bad(t.error || new Error("отменено")); };
+        });
+      }
+      return "{}";
+    }
   }
   throw new Error("неизвестная операция");
 })(__OP__)

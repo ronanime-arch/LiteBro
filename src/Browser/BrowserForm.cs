@@ -112,8 +112,8 @@ sealed class BrowserForm : Form
         reload = MakeButton(GlyphReload, ReloadOrStop);
         reset = MakeButton(GlyphReset, ResetSite);
         reset.Visible = false;
-        home = MakeButton(GlyphHome, () => { if (ModifierKeys == Keys.Control) OpenNewTab(null); else GoHome(); });
-        home.MouseUp += (_, e) => { if (e.Button == MouseButtons.Middle) OpenNewTab(null); };
+        home = MakeButton(GlyphHome, () => { if (ModifierKeys == Keys.Control) OpenNewTab(null, active); else GoHome(); });
+        home.MouseUp += (_, e) => { if (e.Button == MouseButtons.Middle) OpenNewTab(null, active); };
         country = MakeButton(GlyphGlobe, ShowCountryMenu);
         country.Visible = false;
         star = MakeButton(GlyphStar, ShowFavoriteMenu);
@@ -322,6 +322,7 @@ sealed class BrowserForm : Form
         freezeTimer.Start();
         // A window that opened behind others never gets a Deactivate to start the countdown
         if (ActiveForm != this) backgroundTimer.Start();
+        await RestorePinnedAsync();
     }
 
     /// <param name="url">What to open; null for a popup the opening page fills in itself.</param>
@@ -409,7 +410,11 @@ sealed class BrowserForm : Form
         // A new WebView (another profile, loaded again) keeps the tab's emulation
         if (tab.Device != null || tab.Speed != null) _ = Emulation.ApplyAsync(core, tab.Device, tab.Speed, RoomOf(tab));
         core.WebMessageReceived += (_, e) => OnWebMessage(tab, e);
-        core.FaviconChanged += (_, _) => TakeSiteIcon(tab);
+        core.FaviconChanged += (_, _) =>
+        {
+            TakeSiteIcon(tab);
+            if (tab.Pinned) TakeTabIcon(tab);
+        };
 
         core.DocumentTitleChanged += (_, _) =>
         {
@@ -426,6 +431,7 @@ sealed class BrowserForm : Form
             if (tab.TermDir != null && !TermPage.Is(core.Source)) tab.TermDir = tab.TermCommand = null;
             tab.Address = core.Source;
             ShowState(tab);
+            if (tab.Pinned) SavePinned();
         };
         core.HistoryChanged += async (_, _) =>
         {
@@ -909,10 +915,36 @@ sealed class BrowserForm : Form
         return menu;
     }
 
-    /// <summary>A tab's right-click menu: side by side with the tab in front, back to one, close.</summary>
+    /// <summary>A tab's right-click menu: reload, duplicate, pin, share; side by side with the tab in front, back to one; close.</summary>
     void ShowTabMenu(Tab tab, Point at)
     {
         var menu = NewMenu();
+        // A terminal's page loaded again would start its shell anew: F5 there goes to the shell too
+        if (!TermPage.Is(tab.Site))
+            menu.Items.Add(new ToolStripMenuItem(L.T("Перезагрузить"), null, (_, _) => ReloadTab(tab)) { ShortcutKeyDisplayString = tab == active ? "F5" : "" });
+        if (CanDuplicate(tab))
+            menu.Items.Add(new ToolStripMenuItem(L.T("Дублировать"), null, (_, _) => Duplicate(tab)));
+        if (tab.Pinned || CanPin(tab))
+            menu.Items.Add(new ToolStripMenuItem(tab.Pinned ? L.T("Открепить") : L.T("Закрепить"), null, (_, _) => SetPinned(tab, !tab.Pinned)));
+        if (ShareUrl(tab) is { } shared)
+        {
+            var share = new ToolStripMenuItem(L.T("Поделиться"));
+            share.DropDownItems.Add(new ToolStripMenuItem(L.T("Копировать ссылку"), null, (_, _) => CopyText(shared)));
+            share.DropDownItems.Add(new ToolStripMenuItem(L.T("Копировать ссылку с названием (Markdown)"), null,
+                (_, _) => CopyText("[" + ShareTitle(tab).Replace("[", "\\[").Replace("]", "\\]") + "](" + shared.Replace(")", "%29") + ")")));
+            share.DropDownItems.Add(new ToolStripMenuItem(L.T("Отправить по почте…"), null, (_, _) => Mail(tab, shared)));
+            if (Theme.Dark)
+            {
+                share.DropDown.Renderer = menu.Renderer;
+                share.DropDown.ForeColor = Theme.Text;
+            }
+            menu.Items.Add(share);
+        }
+        void Separate()
+        {
+            if (menu.Items.Count > 0 && menu.Items[menu.Items.Count - 1] is not ToolStripSeparator) menu.Items.Add(new ToolStripSeparator());
+        }
+        Separate();
         if (active != null && !IsPane(tab) && tab != active && Dev.On("split"))
             menu.Items.Add(new ToolStripMenuItem(L.T("Открыть рядом"), null, (_, _) => SplitWith(tab)));
         if (Split)
@@ -920,12 +952,227 @@ sealed class BrowserForm : Form
             menu.Items.Add(new ToolStripMenuItem(L.T("Синхронная прокрутка"), null, (_, _) => SetSyncScroll(!syncScroll)) { Checked = syncScroll });
             menu.Items.Add(new ToolStripMenuItem(L.T("Убрать разделение"), null, (_, _) => Unsplit()));
         }
-        if (menu.Items.Count > 0) menu.Items.Add(new ToolStripSeparator());
+        Separate();
         if (App.Current.S.TabMute)
             menu.Items.Add(new ToolStripMenuItem(tab.Muted ? L.T("Включить звук вкладки") : L.T("Выключить звук вкладки"), null,
                 (_, _) => ToggleMute(tab)));
         menu.Items.Add(new ToolStripMenuItem(L.T("Закрыть вкладку"), null, (_, _) => CloseTab(tab)) { ShortcutKeyDisplayString = tab == active ? "Ctrl+W" : "" });
         menu.Show(strip, at);
+    }
+
+    static string UserFolder => Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+
+    /// <summary>A storage page needs its site's tab, the rest only an address.</summary>
+    static bool CanDuplicate(Tab tab) =>
+        StoragePage.Is(tab.Site) ? tab.StorageOf is { Closed: false } : IsPage(tab.Site);
+
+    /// <summary>What can be opened again at the next start: an address or a terminal, not a storage page.</summary>
+    static bool CanPin(Tab tab) => PinnedLine(tab) != null;
+
+    static string[]? PinnedLine(Tab tab)
+    {
+        if (TermPage.Is(tab.Site)) return tab.TermDir != null || tab.TermCwd != null ? new[] { "term", tab.TermCwd ?? tab.TermDir! } : null;
+        var url = tab.Site;
+        return IsPage(url) && !StoragePage.Is(url) && url.IndexOfAny(new[] { '\t', '\r', '\n' }) < 0 ? new[] { url } : null;
+    }
+
+    int PinnedCount => tabs.TakeWhile(t => t.Pinned).Count();
+
+    /// <summary>The next start takes the pinned tabs from pinned.txt once; until they are in, nothing is written over it.</summary>
+    static bool pinsTaken, pinsReady;
+
+    /// <summary>Pins a tab to the strip's left end (after the pinned ones), or puts it back right after them.</summary>
+    void SetPinned(Tab tab, bool on)
+    {
+        if (tab.Closed || tab.Pinned == on || (on && !CanPin(tab))) return;
+        tabs.Remove(tab);
+        tab.Pinned = on;
+        tab.OpenedFrom = null;
+        tabs.Insert(PinnedCount, tab);
+        if (on) TakeTabIcon(tab);
+        else
+        {
+            tab.Icon?.Dispose();
+            tab.Icon = null;
+        }
+        SetTabs();
+        SavePinned();
+    }
+
+    /// <summary>Writes the pinned tabs of every window to pinned.txt, in the strip's order.</summary>
+    static void SavePinned()
+    {
+        if (!pinsReady) return;
+        var list = new List<string[]>();
+        foreach (var form in App.Current.Forms)
+            foreach (var t in form.tabs)
+                if (t.Pinned && !t.Closed && PinnedLine(t) is { } line) list.Add(line);
+        Settings.SavePinned(list);
+    }
+
+    /// <summary>The first window of a start opens the pinned tabs in the background, at the strip's left end.</summary>
+    async Task RestorePinnedAsync()
+    {
+        if (pinsTaken) return;
+        pinsTaken = true;
+        try
+        {
+            foreach (var pin in Settings.LoadPinned())
+            {
+                bool term = pin.Length >= 2 && pin[0] == "term";
+                var url = pin[0].Trim();
+                if (!term && !Uri.TryCreate(url, UriKind.Absolute, out _)) continue;
+                var tab = await CreateTabAsync(term ? null : url);
+                if (IsDisposed) return;
+                if (tab == null) continue;
+                tab.Pinned = true;
+                if (term) tab.TermDir = Directory.Exists(pin[1]) ? pin[1] : UserFolder;
+                Add(tab, front: false);
+                if (term) tab.Core?.Navigate(TermPage.Url);
+            }
+        }
+        finally { pinsReady = true; }
+    }
+
+    /// <summary>The site's icon for a pinned tab, from the engine; none leaves the first letter of its name.</summary>
+    async void TakeTabIcon(Tab tab)
+    {
+        if (tab.Core is not { } core) return;
+        Image? image = null;
+        try
+        {
+            using var stream = await core.GetFaviconAsync(CoreWebView2FaviconImageFormat.Png);
+            if (stream != null)
+            {
+                using var copy = new MemoryStream();
+                await stream.CopyToAsync(copy);
+                if (copy.Length > 0)
+                {
+                    copy.Position = 0;
+                    using var read = Image.FromStream(copy);
+                    image = new Bitmap(read); // free of the stream
+                }
+            }
+        }
+        catch (Exception) { }
+        if (tab.Closed || !tab.Pinned || tab.Core != core)
+        {
+            image?.Dispose();
+            return;
+        }
+        tab.Icon?.Dispose();
+        tab.Icon = image;
+        strip.Invalidate();
+    }
+
+    /// <summary>
+    /// The same page in a new tab in front, right after it: the same profile, project, emulation and history
+    /// (back and forward). A terminal opens a new shell in its folder, a storage page shows the same site.
+    /// </summary>
+    async void Duplicate(Tab tab)
+    {
+        if (StoragePage.Is(tab.Site))
+        {
+            if (tab.StorageOf is { Closed: false } site) OpenStorage(site, tab);
+            return;
+        }
+        if (TermPage.Is(tab.Site))
+        {
+            OpenTerminal(tab.TermCwd ?? tab.TermDir ?? UserFolder, tab);
+            return;
+        }
+        var here = tab.Site;
+        var history = tab.Core is { } source ? await HistoryOf(source) : null;
+        var copy = await CreateTabAsync(null, tab.Profile);
+        if (copy?.Core is not { } core) return;
+        if (tab.Closed)
+        {
+            copy.Closed = true;
+            copy.Ctl?.Close();
+            copy.Ctl = null;
+            return;
+        }
+        copy.Title = tab.Title;
+        copy.LastProject = tab.LastProject;
+        copy.Before.AddRange(tab.Before);
+        copy.Ahead.AddRange(tab.Ahead);
+        if (history is { } h)
+        {
+            var (urls, _, at) = h;
+            for (int i = Math.Max(0, tab.Floor); i < at && i < urls.Length; i++)
+                if (IsPage(urls[i]) && urls[i] != here) copy.Before.Add(urls[i]);
+            // The nearest page ahead goes last, as Step takes them
+            for (int i = urls.Length - 1; i > at; i--)
+                if (IsPage(urls[i]) && urls[i] != here) copy.Ahead.Add(urls[i]);
+        }
+        Add(copy, front: true, tab);
+        if (tab.Device != null || tab.Speed != null)
+        {
+            copy.Device = tab.Device;
+            copy.Speed = tab.Speed;
+            _ = Emulation.ApplyAsync(core, copy.Device, copy.Speed, RoomOf(copy));
+        }
+        if (tab.ShowingInternalPage && tab.FailedUrl == null && tab.LastProject != null) OpenProject(copy, tab.LastProject, tab.LastLink);
+        else
+        {
+            copy.Stepping = true; // keeps Ahead
+            core.Navigate(here.Length > 0 ? here : Home.Url);
+        }
+    }
+
+    /// <summary>Reloads a tab, in front or not; one unloaded from memory loads its page in the background.</summary>
+    void ReloadTab(Tab tab)
+    {
+        if (tab.Closed) return;
+        if (tab == active && !tab.Loading)
+        {
+            ReloadOrStop();
+            return;
+        }
+        if (tab.Core is not { } core)
+        {
+            _ = LoadAsync(tab, tab.Address.Length > 0 ? tab.Address : Home.Url);
+            return;
+        }
+        if (tab.Suspended)
+        {
+            tab.Suspended = false;
+            try { core.Resume(); }
+            catch (Exception) { }
+        }
+        if (tab.ShowingInternalPage && tab.FailedUrl != null) core.Navigate(tab.FailedUrl);
+        else if (tab.ShowingInternalPage && tab.LastProject != null) OpenProject(tab, tab.LastProject, tab.LastLink);
+        else if (tab.ShowingInternalPage) core.Navigate(Home.Url);
+        else core.Reload();
+    }
+
+    /// <summary>The address «Поделиться» gives: a site's or a file's, not a page of this browser.</summary>
+    static string? ShareUrl(Tab tab)
+    {
+        var url = tab.Site;
+        return Uri.TryCreate(url, UriKind.Absolute, out var u) && (u.Scheme == "http" || u.Scheme == "https" || u.Scheme == "file")
+            && !Home.Is(url) ? url : null;
+    }
+
+    static string ShareTitle(Tab tab) => tab.Title.Length > 0 ? tab.Title : tab.Site;
+
+    void CopyText(string text)
+    {
+        try { Clipboard.SetText(text); }
+        catch (ExternalException) { } // another program holds the clipboard
+    }
+
+    /// <summary>A new letter in the mail program Windows opens mailto: links with: the page's name and address.</summary>
+    void Mail(Tab tab, string url)
+    {
+        var mailto = "mailto:?subject=" + Uri.EscapeDataString(ShareTitle(tab)) + "&body=" + Uri.EscapeDataString(url);
+        try { System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(mailto) { UseShellExecute = true }); }
+        catch (Exception)
+        {
+            CopyText(url);
+            MessageBox.Show(this, L.T("В Windows не выбрана почтовая программа. Ссылка скопирована в буфер обмена."),
+                "LiteBro", MessageBoxButtons.OK, MessageBoxIcon.Information);
+        }
     }
 
     /// <summary>Puts a tab beside the one in front, on the right; in a split it takes the place of the tab beside.</summary>
@@ -1375,12 +1622,12 @@ sealed class BrowserForm : Form
     }
 
     /// <summary>The storage page of a site's tab, in a new tab in front.</summary>
-    async void OpenStorage(Tab site)
+    async void OpenStorage(Tab site, Tab? from = null)
     {
         var tab = await CreateTabAsync(null);
         if (tab?.Core is not { } core) return;
         tab.StorageOf = site;
-        Add(tab, front: true);
+        Add(tab, front: true, from ?? site);
         core.Navigate(StoragePage.Url);
     }
 
@@ -1413,6 +1660,13 @@ sealed class BrowserForm : Form
                     break;
                 case "cookieDelete":
                     StoragePage.DeleteCookie(core, Text("name") ?? "", Text("domain") ?? "", Text("path") ?? "/");
+                    break;
+                case "cookieClear":
+                    await StoragePage.ClearCookiesAsync(core);
+                    break;
+                case "clearAll":
+                    await StoragePage.ClearCookiesAsync(core);
+                    await StoragePage.RunAsync(core, m);
                     break;
                 default:
                     await StoragePage.RunAsync(core, m);
@@ -1629,10 +1883,21 @@ sealed class BrowserForm : Form
         ShowState(tab);
     }
 
-    /// <summary>Puts a tab at the end of the strip, in front or in the background.</summary>
-    void Add(Tab tab, bool front)
+    /// <summary>
+    /// Puts a tab into the strip, in front or in the background: right after the tab it was opened from
+    /// (after the ones opened from it before, so they keep their order), else at the end; never among the pinned.
+    /// </summary>
+    void Add(Tab tab, bool front, Tab? from = null)
     {
-        tabs.Add(tab);
+        int pinned = PinnedCount, at = tabs.Count;
+        if (tab.Pinned) at = pinned;
+        else if (from != null && tabs.IndexOf(from) >= 0)
+        {
+            tab.OpenedFrom = from;
+            at = tabs.IndexOf(from) + 1;
+            while (at < tabs.Count && tabs[at].OpenedFrom == from) at++;
+        }
+        tabs.Insert(Math.Max(at, tab.Pinned ? 0 : pinned), tab);
         if (front) SelectTab(tab);
         else
         {
@@ -1722,6 +1987,10 @@ sealed class BrowserForm : Form
         tab.Closed = true;
         StopTerm(tab);
         tabs.RemoveAt(i);
+        foreach (var t in tabs) if (t.OpenedFrom == tab) t.OpenedFrom = null;
+        if (tab.Pinned) SavePinned();
+        tab.Icon?.Dispose();
+        tab.Icon = null;
         App.Current.ShellMaybeUnused();
         var c = tab.Ctl;
         tab.Ctl = null;
@@ -1829,11 +2098,11 @@ sealed class BrowserForm : Form
         return true;
     }
 
-    /// <summary>Opens an address, or the start page, in a new tab in front.</summary>
-    public async void OpenNewTab(string? url)
+    /// <summary>Opens an address, or the start page, in a new tab in front: beside the tab it is opened from, else at the end.</summary>
+    public async void OpenNewTab(string? url, Tab? from = null)
     {
         var tab = await CreateTabAsync(url ?? Home.Url);
-        if (tab != null) Add(tab, front: true);
+        if (tab != null) Add(tab, front: true, from);
     }
 
     /// <summary>The network switches changed: every tab follows, and the start pages and /net show them.</summary>
@@ -2244,12 +2513,12 @@ sealed class BrowserForm : Form
     }
 
     /// <summary>A terminal tab in front with PowerShell in the folder.</summary>
-    async void OpenTerminal(string dir)
+    async void OpenTerminal(string dir, Tab? from = null)
     {
         var tab = await CreateTabAsync(null);
         if (tab?.Core is not { } core) return;
         tab.TermDir = dir;
-        Add(tab, front: true);
+        Add(tab, front: true, from);
         core.Navigate(TermPage.Url);
     }
 
@@ -2264,7 +2533,7 @@ sealed class BrowserForm : Form
 
     void OpenHereOrNew(Tab tab, string url, bool newTab)
     {
-        if (newTab || tab.Core is not { } core) OpenNewTab(url);
+        if (newTab || tab.Core is not { } core) OpenNewTab(url, tab);
         else core.Navigate(url);
     }
 
@@ -2344,12 +2613,12 @@ sealed class BrowserForm : Form
     }
 
     /// <param name="link">One of the project's links; null for its own address.</param>
-    async Task OpenProjectInNewTabAsync(Project p, bool front, string? link = null)
+    async Task OpenProjectInNewTabAsync(Project p, bool front, string? link = null, Tab? from = null)
     {
         var tab = await CreateTabAsync(null, p.Profile);
         if (tab == null) return;
         tab.Title = link == null ? p.Name : p.Links.FirstOrDefault(l => l.Url == link)?.Name ?? p.Name;
-        Add(tab, front);
+        Add(tab, front, from);
         OpenProject(tab, p, link);
     }
 
@@ -2359,9 +2628,9 @@ sealed class BrowserForm : Form
     /// </summary>
     async void OpenAll(Tab tab, Project p, bool newTab)
     {
-        if (newTab) await OpenProjectInNewTabAsync(p, front: false);
+        if (newTab) await OpenProjectInNewTabAsync(p, front: false, from: tab);
         else OpenProject(tab, p);
-        foreach (var link in p.Links.ToList()) await OpenProjectInNewTabAsync(p, front: false, link.Url);
+        foreach (var link in p.Links.ToList()) await OpenProjectInNewTabAsync(p, front: false, link.Url, tab);
     }
 
     /// <summary>
@@ -2742,7 +3011,7 @@ sealed class BrowserForm : Form
                 var link = Text("link");
                 if (link != null && !project.Links.Any(l => l.Url == link)) break;
                 if (Flag("newWindow")) App.Current.OpenProjectInNewWindow(project, link);
-                else if (Flag("newTab")) _ = OpenProjectInNewTabAsync(project, front: false, link);
+                else if (Flag("newTab")) _ = OpenProjectInNewTabAsync(project, front: false, link, tab);
                 else OpenProject(tab, project, link);
                 break;
             case "openAll" when project != null:
@@ -2750,7 +3019,7 @@ sealed class BrowserForm : Form
                 break;
             case "log" when console != null:
                 // The console of the project (its program's output), or PowerShell's: always a tab of its own
-                if (Flag("newTab") || ProgramLog.IsShell(console)) OpenNewTab(ProgramLog.Url(console));
+                if (Flag("newTab") || ProgramLog.IsShell(console)) OpenNewTab(ProgramLog.Url(console), tab);
                 else tab.Core?.Navigate(ProgramLog.Url(console));
                 break;
             case "terminal":
@@ -2758,7 +3027,7 @@ sealed class BrowserForm : Form
                 // in this tab, or a new one on Ctrl+click or the mouse wheel
                 var termDir = console != null ? App.Current.LauncherFor(console).CommandDir
                     : Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
-                if (Flag("newTab")) OpenTerminal(termDir);
+                if (Flag("newTab")) OpenTerminal(termDir, tab);
                 else OpenTerminalHere(tab, termDir);
                 break;
             case "termStart" when TermPage.Is(e.Source):
@@ -3065,7 +3334,8 @@ sealed class BrowserForm : Form
         {
             e.Handled = true;
             var target = e.Uri;
-            BeginInvoke(new Action(() => OpenNewTab(target)));
+            var from = tabs.FirstOrDefault(t => t.Core == sender);
+            BeginInvoke(new Action(() => OpenNewTab(target, from)));
             return;
         }
         var deferral = e.GetDeferral();
@@ -3090,7 +3360,7 @@ sealed class BrowserForm : Form
                 tab.Ctl = null;
                 return;
             }
-            Add(tab, front);
+            Add(tab, front, opener);
         }
         finally
         {

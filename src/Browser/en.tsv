@@ -674,3 +674,29 @@ MIDI-устройства	MIDI devices
 Все сайты	All sites
 Этот сайт ещё ничего не спрашивал.	This site has not asked for anything yet.
 Пункт меню «Инструменты» (разрешения открытого сайта). Окно со всеми сайтами открывается кнопкой в разделе «Защита» выше.	The “Tools” menu item (permissions of the open site). The window with all sites opens with the button in the Protection section above.
+Перезагрузить	Reload
+Дублировать	Duplicate
+Открепить	Unpin
+Закрепить	Pin
+Поделиться	Share
+Копировать ссылку	Copy link
+Копировать ссылку с названием (Markdown)	Copy link with title (Markdown)
+Отправить по почте…	Send by email…
+В Windows не выбрана почтовая программа. Ссылка скопирована в буфер обмена.	No email app is set in Windows. The link was copied to the clipboard.
+Очистить	Clear
+Cookies, localStorage, sessionStorage и все хранилища IndexedDB этого сайта	Cookies, localStorage, sessionStorage and all IndexedDB stores of this site
+Новое хранилище IndexedDB	New IndexedDB store
+База	Database
+Хранилище объектов	Object store
+Ключ из поля значения (keyPath)	Key from a field of the value (keyPath)
+пусто — ключ задаётся отдельно	empty: the key is given separately
+Автоматический ключ (autoIncrement)	Automatic key (autoIncrement)
+Создать	Create
++ Новое хранилище…	+ New store…
+Новое хранилище	New store
+Удалить все cookies этого сайта и его родительских доменов?	Delete all cookies of this site and its parent domains?
+Удалить всё хранилище сайта: cookies, localStorage, sessionStorage и записи всех хранилищ IndexedDB?	Delete all storage of the site: cookies, localStorage, sessionStorage and the records of all IndexedDB stores?
+Сайт, скорее всего, попросит войти заново.	The site will most likely ask you to sign in again.
+Нужны имя базы и имя хранилища.	Both the database name and the store name are needed.
+такое хранилище уже есть	such a store already exists
+база открыта страницей сайта: хранилище появится, когда сайт её отпустит (обновите страницу сайта)	the site page keeps the database open: the store will appear once the site lets it go (reload the site page)

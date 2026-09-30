@@ -112,7 +112,7 @@ const GROUPS = [
     ["json", "Просмотр JSON деревом", "Ответы API в формате JSON показываются простым текстом."],
     ["mocks", "Заглушки", "Запросы снова идут на сервер, раздел на странице журнала сети скрыт. Сами заглушки сохраняются."],
     ["split", "Две вкладки рядом", "Пункт «Открыть рядом» в меню вкладки. Уже открытое разделение убирается как обычно."],
-    ["perms", "Разрешения сайтов", "Пункт меню «Инструменты». Страница открывается и кнопкой в разделе «Защита» выше."],
+    ["perms", "Разрешения сайтов", "Пункт меню «Инструменты» (разрешения открытого сайта). Окно со всеми сайтами открывается кнопкой в разделе «Защита» выше."],
   ]],
   ["Стартовая страница", "Пропадает только кнопка; кнопку «Для разработчика» выключить нельзя.", [
     ["shell", "Терминал (фиолетовая кнопка слева)", "Терминал в папке проекта открывается из консоли проекта."],
@@ -229,8 +229,7 @@ for (const id of ["suspendAfter", "unloadAfter"])
     post({ type: "setting", key: id, value: n });
   });
 $("theme").addEventListener("change", () => post({ type: "setting", key: "theme", value: $("theme").value }));
-$("perms").addEventListener("click", e => post({ type: "permsOpen", newTab: e.ctrlKey }));
-$("perms").addEventListener("auxclick", e => { if (e.button === 1) { e.preventDefault(); post({ type: "permsOpen", newTab: true }); } });
+$("perms").addEventListener("click", () => post({ type: "permsOpen" }));
 $("allOn").addEventListener("click", () => post({ type: "devReset" }));
 $("defaults").addEventListener("click", () => post({ type: "settingsReset" }));
 

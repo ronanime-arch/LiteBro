@@ -1328,37 +1328,11 @@ sealed class BrowserForm : Form
         core.Navigate(StoragePage.Url);
     }
 
-    /// <summary>
-    /// The permissions page's request: a choice changed (or back to «ask»), then the settings of every profile read anew.
-    /// A choice goes only to a profile there is: the shared one or a project's own.
-    /// </summary>
-    async void PermsOp(Tab page, Dictionary<string, object>? set)
+    /// <summary>The permissions window: of the tab's site in its profile, or of every site (from «Для разработчика»).</summary>
+    void ShowPermissions(Tab? tab, Point at)
     {
-        var reply = new Dictionary<string, object> { ["type"] = "perms" };
-        var profiles = PermsPage.Profiles();
-        try
-        {
-            if (set != null)
-            {
-                var profile = set.TryGetValue("profile", out var p) ? p as string : null;
-                var origin = set.TryGetValue("origin", out var o) ? o as string : null;
-                if (profile == null || !profiles.Any(x => x.Profile == profile) || string.IsNullOrEmpty(origin)
-                    || !PermsPage.TryParse(set.TryGetValue("kind", out var k) ? k as string : null,
-                        set.TryGetValue("state", out var st) ? st as string : null, out var kind, out var state))
-                    return;
-                await App.Current.WithProfileAsync(profile, Handle, async data =>
-                {
-                    await data.SetPermissionStateAsync(kind, origin, state);
-                    return true;
-                });
-            }
-            var rows = new List<Dictionary<string, object>>();
-            foreach (var (profile, name) in profiles)
-                rows.AddRange(await App.Current.WithProfileAsync(profile, Handle, data => PermsPage.RowsAsync(data, profile, name)));
-            reply["items"] = rows;
-        }
-        catch (Exception ex) { reply["error"] = ex.Message; }
-        if (page.Core is { } c && PermsPage.Is(c.Source)) c.PostWebMessageAsJson(ProjectStore.Json.Serialize(reply));
+        var origin = tab != null ? SitePermissions.OriginOf(tab.Site) : null;
+        new PermsPopup(Handle, origin != null ? tab!.Profile : null, origin).ShowAt(this, at);
     }
 
     /// <summary>A storage page's request: done in the site's page (or its cookie manager), then the storage read anew.</summary>
@@ -1428,7 +1402,8 @@ sealed class BrowserForm : Form
         {
             if (menu.Items.Count > 0 && !Dev.On("snapshot") && !(Dev.On("storage") && tab.Core is { } c && StoragePage.HasSite(c)))
                 menu.Items.Add(new ToolStripSeparator());
-            menu.Items.Add(new ToolStripMenuItem(L.T("Разрешения сайтов: камера, микрофон, местоположение"), null, (_, _) => OpenNewTab(PermsPage.Url)));
+            menu.Items.Add(new ToolStripMenuItem(L.T("Разрешения сайта: камера, микрофон, местоположение"), null,
+                (_, _) => ShowPermissions(tab, emulate.PointToScreen(new Point(0, emulate.Height)))));
         }
         // An emulation left on is always switched off from here, the feature on or not
         if (tab.Device != null || tab.Speed != null)
@@ -2516,7 +2491,7 @@ sealed class BrowserForm : Form
         var path = new Uri(e.Request.Uri).AbsolutePath;
         // Only the pages themselves open anywhere (a frame of another site included, which frame-ancestors then refuses);
         // their data (a console's text, the journal, icons) goes to the browser's own pages alone
-        bool document = path is "/" or NetPage.Path or Dev.Path or StoragePage.Path or PermsPage.Path or "/term"
+        bool document = path is "/" or NetPage.Path or Dev.Path or StoragePage.Path or "/term"
             || (ProgramLog.Parse(path, out bool isText) != null && !isText);
         if (!(sender is CoreWebView2 asker && Home.Is(asker.Source))
             && (e.ResourceContext != CoreWebView2WebResourceContext.Document || !document))
@@ -2545,8 +2520,6 @@ sealed class BrowserForm : Form
             e.Response = env.CreateWebResourceResponse(Dev.Html(), 200, "OK", ProgramLog.Headers);
         else if (path == StoragePage.Path)
             e.Response = env.CreateWebResourceResponse(StoragePage.Html(), 200, "OK", ProgramLog.Headers);
-        else if (path == PermsPage.Path)
-            e.Response = env.CreateWebResourceResponse(PermsPage.Html(), 200, "OK", ProgramLog.Headers);
         else if (path == NetPage.Path + "/log")
         {
             var m = Regex.Match(new Uri(e.Request.Uri).Query, @"[?&]after=(\d+)");
@@ -2570,7 +2543,6 @@ sealed class BrowserForm : Form
         if (path == NetPage.Path) return "net";
         if (path == Dev.Path) return "dev";
         if (path == StoragePage.Path) return "storage";
-        if (path == PermsPage.Path) return "perms";
         if (path == "/term") return "term";
         return ProgramLog.Parse(path, out bool text) != null && !text ? "console" : "";
     }
@@ -2586,7 +2558,7 @@ sealed class BrowserForm : Form
         ["netClear"] = new[] { "net" }, ["netExport"] = new[] { "net" }, ["mockFrom"] = new[] { "net" }, ["mockOpen"] = new[] { "net" },
         ["mockSave"] = new[] { "net" }, ["mockOn"] = new[] { "net" }, ["mockDelete"] = new[] { "net" },
         ["dev"] = new[] { "dev" }, ["lang"] = new[] { "dev" }, ["devReset"] = new[] { "dev" }, ["settingsReset"] = new[] { "dev" },
-        ["storage"] = new[] { "storage" }, ["perms"] = new[] { "perms" }, ["permsOpen"] = new[] { "dev" }, ["setting"] = new[] { "dev" },
+        ["storage"] = new[] { "storage" }, ["permsOpen"] = new[] { "dev" }, ["setting"] = new[] { "dev" },
         ["termStart"] = new[] { "term" }, ["termIn"] = new[] { "term" }, ["termSize"] = new[] { "term" },
     };
 
@@ -2688,10 +2660,8 @@ sealed class BrowserForm : Form
                 OpenHereOrNew(tab, Dev.Url, Flag("newTab"));
                 break;
             case "permsOpen":
-                OpenHereOrNew(tab, PermsPage.Url, Flag("newTab"));
-                break;
-            case "perms" when PermsPage.Is(e.Source):
-                PermsOp(tab, Text("op") == "set" ? m : null);
+                // Every site, in the window under the toolbar's right end
+                BeginInvoke(new Action(() => ShowPermissions(null, PointToScreen(new Point(ClientSize.Width - Font.Height * 26, bar.Bottom)))));
                 break;
             case "setting" when Dev.Is(e.Source) && Text("key") is { } key && m.TryGetValue("value", out var value):
                 // Not from inside the WebView's own event: GPU restarts the engine, closing this WebView too

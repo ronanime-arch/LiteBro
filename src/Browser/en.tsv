@@ -621,7 +621,6 @@ LiteBro: только localhost	LiteBro: localhost only
 Выйти из полноэкранного режима видео или игры	Leave the full screen of a video or a game
 Движок браузера перезапускается	The browser engine is restarting
 # Строгая защита от трекеров: блокируется больше счётчиков и рекламы, изредка ломается вход через другой сайт	# Strict tracking prevention: more trackers and ads are blocked, signing in through another site occasionally breaks
-Разрешения сайтов: камера, микрофон, местоположение	Site permissions: camera, microphone, location
 Микрофон	Microphone
 Камера	Camera
 Местоположение	Location
@@ -641,13 +640,10 @@ MIDI-устройства	MIDI devices
 Как «Строгая» в Edge: блокируется больше счётчиков, рекламы и сторонних cookies. Изредка ломается вход через другой сайт или встроенное видео; тогда выключите. Выключено — «Сбалансированная», как в Edge по умолчанию.	As Strict in Edge: more trackers, ads and third-party cookies are blocked. Signing in through another site or an embedded video occasionally breaks; then switch it off. Off means Balanced, the Edge default.
 Разрешения сайтов	Site permissions
 Камера, микрофон, местоположение, уведомления: что разрешено или запрещено сайтам, с отменой.	Camera, microphone, location, notifications: what sites are allowed or refused, and undoing it.
-Пункт меню «Инструменты». Страница открывается и кнопкой в разделе «Защита» выше.	The “Tools” menu item. The page also opens with the button in the Protection section above.
-Что сайты получили или что им запрещено: камера, микрофон, местоположение, уведомления и другое. Спрашивать — забыть выбор, сайт спросит снова. У проектов со своим профилем разрешения свои. Разрешение открывать внешние программы (ссылки mailto: и т. п.) здесь не показывается: его хранит сам движок.	What sites were given or refused: camera, microphone, location, notifications and more. Ask forgets the choice, and the site asks again. Projects with their own profile have their own permissions. Permission to open external programs (mailto: links and the like) is not shown here: the engine keeps it itself.
 Сайты пока ничего не спрашивали, или все выборы уже забыты.	Sites have not asked for anything yet, or every choice has been forgotten.
 Разрешено	Allowed
 Запрещено	Blocked
 Спрашивать	Ask
-Записей:	Entries:
 # Доверять сертификатам серверов на этом компьютере (localhost, *.localhost, 127.x, ::1)	# Trust certificates of servers on this computer (localhost, *.localhost, 127.x, ::1)
 # --- Вкладки ---	# --- Tabs ---
 # Клик по значку звука на вкладке выключает её звук	# A click on the speaker of a tab mutes it
@@ -672,3 +668,9 @@ MIDI-устройства	MIDI devices
 Страницы рисует видеокарта. Выключать только если на старом компьютере или драйвере страницы мерцают или рисуются с ошибками: без видеокарты всё рисует процессор, браузер заметно медленнее и сильнее нагружает процессор. Движок перезапустится.	Pages are drawn by the graphics card. Switch it off only if pages flicker or draw wrong on an old computer or driver: without it the CPU draws everything, and the browser is noticeably slower and loads the CPU more. The engine restarts.
 Включить видеокарту? Движок браузера перезапустится: вкладки перезагрузятся, открытые терминалы закроются.	Switch the graphics card on? The browser engine restarts: tabs reload, open terminals close.
 Выключить видеокарту? Браузер станет медленнее и сильнее нагрузит процессор; это нужно только при мерцании и ошибках рисования. Движок перезапустится: вкладки перезагрузятся, открытые терминалы закроются.	Switch the graphics card off? The browser gets slower and loads the CPU more; this is needed only for flicker and drawing errors. The engine restarts: tabs reload, open terminals close.
+Разрешения сайта: камера, микрофон, местоположение	Site permissions: camera, microphone, location
+Разрешения сайта	Site permissions
+Все сайты во всех профилях	All sites in all profiles
+Все сайты	All sites
+Этот сайт ещё ничего не спрашивал.	This site has not asked for anything yet.
+Пункт меню «Инструменты» (разрешения открытого сайта). Окно со всеми сайтами открывается кнопкой в разделе «Защита» выше.	The “Tools” menu item (permissions of the open site). The window with all sites opens with the button in the Protection section above.

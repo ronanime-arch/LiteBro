@@ -33,7 +33,8 @@ html, body { margin: 0; background: var(--bg); color: var(--fg); }
 a.lb-s { text-decoration: underline; }`;
 
   const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; };
-  const plural = (n, one, few, many) => n + " " + (n % 10 === 1 && n % 100 !== 11 ? one : n % 10 >= 2 && n % 10 <= 4 && (n % 100 < 12 || n % 100 > 14) ? few : many);
+  // Russian forms; in English (few and many alike) one is for 1 only
+  const plural = (n, one, few, many) => n + " " + (few === many ? (n === 1 ? one : many) : n % 10 === 1 && n % 100 !== 11 ? one : n % 10 >= 2 && n % 10 <= 4 && (n % 100 < 12 || n % 100 > 14) ? few : many);
   const count = v => Array.isArray(v) ? plural(v.length, "элемент", "элемента", "элементов") : plural(Object.keys(v).length, "ключ", "ключа", "ключей");
 
   function value(v) {

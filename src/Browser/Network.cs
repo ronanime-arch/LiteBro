@@ -96,7 +96,6 @@ static class NetGuard
 
     public static bool ShouldBlock(Uri u) => LocalOnly && IsOutside(u) && !IsAllowed(u);
 
-    static string? pageScript;
 
     /// <summary>
     /// The script of netpage.js with the current rules: stacks of fetch, XHR, sendBeacon and EventSource to outside
@@ -104,12 +103,6 @@ static class NetGuard
     /// </summary>
     public static string PageScript()
     {
-        if (pageScript == null)
-        {
-            using var stream = typeof(NetGuard).Assembly.GetManifestResourceStream("netpage.js");
-            using var reader = new StreamReader(stream, Encoding.UTF8);
-            pageScript = reader.ReadToEnd();
-        }
         var config = ProjectStore.Json.Serialize(new Dictionary<string, object>
         {
             ["names"] = Router.LocalNames().Concat(Patterns(App.Current.S.LocalHosts)).ToArray(),
@@ -117,16 +110,16 @@ static class NetGuard
             ["block"] = LocalOnly,
             ["trace"] = Watching,
         });
-        return pageScript.Replace("__CONFIG__", config);
+        return L.Text("netpage.js").Replace("__CONFIG__", config);
     }
 
     /// <summary>What a blocked page shows in place of itself.</summary>
     public static string BlockedPage(string url) =>
-        "<!doctype html><meta charset=utf-8><title>Заблокировано</title><style>:root{color-scheme:light dark}" +
+        L.T("<!doctype html><meta charset=utf-8><title>Заблокировано</title><style>:root{color-scheme:light dark}") +
         "body{font:15px 'Segoe UI',sans-serif;max-width:640px;margin:15vh auto;padding:0 24px}h1{font-size:22px;font-weight:600}" +
-        "code{word-break:break-all}</style><h1>Заблокировано режимом «только localhost»</h1>" +
-        "<p>LiteBro не пустил страницу в интернет:</p><p><code>" + WebUtility.HtmlEncode(url) + "</code></p>" +
-        "<p>Режим выключается переключателем справа на стартовой странице. Там же, в журнале сети, можно добавить сайт в разрешённые.</p>";
+        L.T("code{word-break:break-all}</style><h1>Заблокировано режимом «только localhost»</h1>") +
+        L.T("<p>LiteBro не пустил страницу в интернет:</p><p><code>") + WebUtility.HtmlEncode(url) + "</code></p>" +
+        L.T("<p>Режим выключается переключателем справа на стартовой странице. Там же, в журнале сети, можно добавить сайт в разрешённые.</p>");
 }
 
 /// <summary>
@@ -240,7 +233,7 @@ static class NetLog
                 }
                 bool header = !File.Exists(FilePath);
                 using var w = new StreamWriter(FilePath, append: true, new UTF8Encoding(false));
-                if (header) w.WriteLine("время\tметод\tрезультат\tразмер\tинициатор\tдомен\tIP\tадрес\tстраница\tстек");
+                if (header) w.WriteLine(L.T("время\tметод\tрезультат\tразмер\tинициатор\tдомен\tIP\tадрес\tстраница\tстек"));
                 w.WriteLine(string.Join("\t", e.Time, e.Method, e.Result, e.Size < 0 ? "" : e.Size.ToString(), e.Kind,
                     e.Host, e.Ip, e.Url, e.Page, e.Stack.Replace("\r", "").Replace("\n", " ⏎ ").Replace("\t", " ")));
             }
@@ -315,9 +308,9 @@ static class NetLog
                 ["stack"] = e.Stack,
             }).ToList());
         // Excel with Russian settings splits on semicolons
-        var sb = new StringBuilder("время;метод;результат;заблокировано;размер;инициатор;домен;IP;адрес;страница;стек\r\n");
+        var sb = new StringBuilder(L.T("время;метод;результат;заблокировано;размер;инициатор;домен;IP;адрес;страница;стек\r\n"));
         foreach (var e in list)
-            sb.Append(string.Join(";", new[] { e.Time, e.Method, e.Result, e.Blocked ? "да" : "нет", e.Size < 0 ? "" : e.Size.ToString(),
+            sb.Append(string.Join(";", new[] { e.Time, e.Method, e.Result, e.Blocked ? L.T("да") : L.T("нет"), e.Size < 0 ? "" : e.Size.ToString(),
                 e.Kind, e.Host, e.Ip, e.Url, e.Page, e.Stack }.Select(Cell))).Append("\r\n");
         return sb.ToString();
     }
@@ -348,17 +341,5 @@ static class NetPage
     public const string Url = "https://" + Home.Host + Path;
 
     public static bool Is(string? uri) => Home.Is(uri) && new Uri(uri!).AbsolutePath == Path;
-    static byte[]? html;
-
-    public static Stream Html()
-    {
-        if (html == null)
-        {
-            using var stream = typeof(NetPage).Assembly.GetManifestResourceStream("net.html");
-            using var copy = new MemoryStream();
-            stream.CopyTo(copy);
-            html = copy.ToArray();
-        }
-        return new MemoryStream(html, writable: false);
-    }
+    public static Stream Html() => L.Stream("net.html");
 }

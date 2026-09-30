@@ -54,6 +54,8 @@ sealed class Settings
     public string SearchUrl = "https://www.google.com/search?q=";
     public string SearchCountry = "";
     public string Theme = "auto";
+    /// <summary>The interface language: auto (as Windows), ru, en.</summary>
+    public string Language = "auto";
     public bool Gpu = true;
     public string ExtraBrowserArgs = "";
     public string LocalHosts = "";
@@ -75,7 +77,7 @@ sealed class Settings
 
     static readonly string[] Keys =
     {
-        "searchurl", "searchcountry", "theme", "gpu", "extrabrowserargs", "localhosts", "otherbrowser", "localonly", "netjournal", "allowhosts", "ignorecors", "clearonexit", "autoreload", "disabled",
+        "searchurl", "searchcountry", "theme", "language", "gpu", "extrabrowserargs", "localhosts", "otherbrowser", "localonly", "netjournal", "allowhosts", "ignorecors", "clearonexit", "autoreload", "disabled",
     };
 
     public static Settings Load()
@@ -104,6 +106,10 @@ sealed class Settings
                     var t = value.ToLowerInvariant();
                     s.Theme = t is "dark" or "light" ? t : "auto";
                     break;
+                case "language":
+                    var lang = value.ToLowerInvariant();
+                    s.Language = lang is "ru" or "en" ? lang : "auto";
+                    break;
                 case "gpu": s.Gpu = IsTrue(value); break;
                 case "extrabrowserargs": s.ExtraBrowserArgs = value; break;
                 case "localhosts": s.LocalHosts = value; break;
@@ -117,6 +123,7 @@ sealed class Settings
                 case "disabled": s.DevOff = value; break;
             }
         }
+        L.Set(s.Language); // before a rewrite below: its comments are in the language
         // A file from an older version lacks the newer keys or has ones since dropped: rewrite it, keeping the values
         if (!seen.All(Keys.Contains))
         {
@@ -129,6 +136,14 @@ sealed class Settings
     }
 
     /// <summary>Remembers the country of the search button: the file is written anew with the values read at startup.</summary>
+    /// <summary>Remembers the interface language (the developer page).</summary>
+    public void SaveLanguage(string language)
+    {
+        Language = language;
+        L.Set(language);
+        Save();
+    }
+
     public void SaveSearchCountry(string code)
     {
         SearchCountry = code;
@@ -192,53 +207,56 @@ sealed class Settings
     static string Bool(bool b) => b ? "true" : "false";
 
     string DefaultText() => string.Join(Environment.NewLine,
-        "# LiteBro. Файл читается при запуске: правь, когда все окна браузера закрыты.",
+        L.T("# LiteBro. Файл читается при запуске: правь, когда все окна браузера закрыты."),
         "",
-        "# Проекты стартовой страницы (кнопка ⌂ и Alt+Home) хранятся рядом, в projects.json",
+        L.T("# Проекты стартовой страницы (кнопка ⌂ и Alt+Home) хранятся рядом, в projects.json"),
         "",
-        "# Куда уходит текст из адресной строки, если это не адрес",
+        L.T("# Куда уходит текст из адресной строки, если это не адрес"),
         "SearchUrl = " + SearchUrl,
-        "# Страна поиска Google: код из кнопки справа в адресной строке (DE, US…), добавляет к поиску gl и hl.",
-        "# Пусто = как обычно. Кнопка сама меняет эту строку.",
+        L.T("# Страна поиска Google: код из кнопки справа в адресной строке (DE, US…), добавляет к поиску gl и hl."),
+        L.T("# Пусто = как обычно. Кнопка сама меняет эту строку."),
         "SearchCountry = " + SearchCountry,
         "",
-        "# Оформление: auto = как «Режим приложения» в Windows, dark = тёмное, light = светлое",
+        L.T("# Оформление: auto = как «Режим приложения» в Windows, dark = тёмное, light = светлое"),
         "Theme = " + Theme,
         "",
-        "# --- Движок (Edge WebView2) ---",
-        "# false = рисовать без видеокарты; нужно только при проблемах с драйвером",
+        L.T("# Язык: auto = как в Windows, ru = русский, en = английский. Меняется на странице «Для разработчика»."),
+        "Language = " + Language,
+        "",
+        L.T("# --- Движок (Edge WebView2) ---"),
+        L.T("# false = рисовать без видеокарты; нужно только при проблемах с драйвером"),
         "Gpu = " + Bool(Gpu),
-        "# Дополнительные флаги Chromium через пробел, к встроенным флагам экономии памяти",
+        L.T("# Дополнительные флаги Chromium через пробел, к встроенным флагам экономии памяти"),
         "ExtraBrowserArgs = " + ExtraBrowserArgs,
         "",
-        "# --- Ссылки из других программ ---",
-        "# Здесь открываются: localhost, *.localhost, 127.x.x.x, [::1] и имена, которые файл hosts",
-        "# направляет на 127.0.0.1. Адрес 0.0.0.0 открывается как 127.0.0.1.",
-        "# Свои имена через пробел, можно со звёздочкой, например: *.test 192.168.1.*",
+        L.T("# --- Ссылки из других программ ---"),
+        L.T("# Здесь открываются: localhost, *.localhost, 127.x.x.x, [::1] и имена, которые файл hosts"),
+        L.T("# направляет на 127.0.0.1. Адрес 0.0.0.0 открывается как 127.0.0.1."),
+        L.T("# Свои имена через пробел, можно со звёздочкой, например: *.test 192.168.1.*"),
         "LocalHosts = " + LocalHosts,
-        "# Куда сразу уходит всё остальное. Пусто = браузер, который открывает файлы .html",
-        "# Пример: \"C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe\" --single-argument %1",
+        L.T("# Куда сразу уходит всё остальное. Пусто = браузер, который открывает файлы .html"),
+        L.T("# Пример: \"C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe\" --single-argument %1"),
         "OtherBrowser = " + OtherBrowser,
         "",
-        "# --- Сеть ---",
-        "# Режим «только localhost»: страницы не ходят в интернет, только на этот компьютер и в локальную сеть.",
-        "# Переключатель справа на стартовой странице меняет эту строку.",
+        L.T("# --- Сеть ---"),
+        L.T("# Режим «только localhost»: страницы не ходят в интернет, только на этот компьютер и в локальную сеть."),
+        L.T("# Переключатель справа на стартовой странице меняет эту строку."),
         "LocalOnly = " + Bool(LocalOnly),
-        "# Журнал запросов в интернет (logs\\network.log) и при выключенном режиме; при включённом пишется всегда",
+        L.T("# Журнал запросов в интернет (logs\\network.log) и при выключенном режиме; при включённом пишется всегда"),
         "NetJournal = " + Bool(NetJournal),
-        "# Что пропускать в режиме «только localhost», через пробел, например: fonts.googleapis.com fonts.gstatic.com",
+        L.T("# Что пропускать в режиме «только localhost», через пробел, например: fonts.googleapis.com fonts.gstatic.com"),
         "AllowHosts = " + AllowHosts,
-        "# Только вместе с LocalOnly: браузер не проверяет CORS и same-origin (флаг --disable-web-security)",
+        L.T("# Только вместе с LocalOnly: браузер не проверяет CORS и same-origin (флаг --disable-web-security)"),
         "IgnoreCors = " + Bool(IgnoreCors),
-        "# Удалять cookies и кэш, когда закрывается последнее окно (кроме проектов с «Не удалять при выходе»)",
+        L.T("# Удалять cookies и кэш, когда закрывается последнее окно (кроме проектов с «Не удалять при выходе»)"),
         "ClearOnExit = " + Bool(ClearOnExit),
-        "# Обновлять страницу на экране, когда меняется файл в папке её проекта (или в папке открытого файла)",
+        L.T("# Обновлять страницу на экране, когда меняется файл в папке её проекта (или в папке открытого файла)"),
         "AutoReload = " + Bool(AutoReload),
         "",
-        "# --- Для разработчика ---",
-        "# Что выключено на странице «Для разработчика» (кнопка у правого края стартовой страницы), через пробел.",
-        "# После установки выключены инструменты разработчика: " + Dev.DefaultOff + ". Пусто = всё включено.",
-        "# Саму страницу выключить нельзя.",
+        L.T("# --- Для разработчика ---"),
+        L.T("# Что выключено на странице «Для разработчика» (кнопка у правого края стартовой страницы), через пробел."),
+        L.T("# После установки выключены инструменты разработчика: ") + Dev.DefaultOff + L.T(". Пусто = всё включено."),
+        L.T("# Саму страницу выключить нельзя."),
         "Disabled = " + DevOff,
         "");
 

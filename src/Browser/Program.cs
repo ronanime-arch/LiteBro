@@ -154,7 +154,7 @@ sealed class App : ApplicationContext
         if (NetGuard.LocalOnly)
             args += " --proxy-server=http://127.0.0.1:" + Gateway.Start() + " --proxy-bypass-list=" + Gateway.BypassList() +
                 " --force-webrtc-ip-handling-policy=disable_non_proxied_udp";
-        var options = new CoreWebView2EnvironmentOptions(args);
+        var options = new CoreWebView2EnvironmentOptions(args) { Language = L.EngineLanguage };
         // A new WebView starts with the theme's background, not a white flash before its page paints
         var bg = Theme.PageBackground;
         Environment.SetEnvironmentVariable("WEBVIEW2_DEFAULT_BACKGROUND_COLOR", $"FF{bg.R:X2}{bg.G:X2}{bg.B:X2}");
@@ -381,12 +381,26 @@ sealed class App : ApplicationContext
     public void ResetSettings()
     {
         S.ResetDefaults();
+        L.Set(S.Language);
+        foreach (var form in forms.ToList()) form.ApplyLanguage();
         Dev.Reload();
         Theme.Init(S.Theme);
         foreach (var form in forms.ToList()) form.ApplyTheme();
         // Saves the network values again (the same defaults) and restarts the engine if its flags changed
         SetNet(S.LocalOnly, S.NetJournal, S.AllowHosts, S.IgnoreCors);
         ApplyDev();
+    }
+
+    /// <summary>
+    /// The interface language (the developer page): the windows follow at once; the pages and the engine's own
+    /// words (its menus, Accept-Language) with a restart of the engine, which loads the tabs again.
+    /// </summary>
+    public void SetLanguage(string language)
+    {
+        S.SaveLanguage(language);
+        foreach (var form in forms.ToList()) form.ApplyLanguage();
+        if (Env != null && EngineKey() != engineKey) restart ??= RestartEngineAsync();
+        else foreach (var form in forms.ToList()) form.ApplyNet(); // the same language: the pages get the choice back
     }
 
     /// <summary>A switch of the «Для разработчика» page: every window's toolbar, menus and pages follow it.</summary>
@@ -398,8 +412,8 @@ sealed class App : ApplicationContext
     /// <summary>The network flags the running engine was started with.</summary>
     string engineKey = "";
 
-    /// <summary>The engine flags that can change while it runs: the gateway (local mode), CORS, and GPU and extra flags on a reset.</summary>
-    static string EngineKey() => NetGuard.LocalOnly + "|" + NetGuard.CorsOff + "|" + Current.S.Gpu + "|" + Current.S.ExtraBrowserArgs;
+    /// <summary>The engine flags that can change while it runs: the language, the gateway (local mode), CORS, and GPU and extra flags on a reset.</summary>
+    static string EngineKey() => L.Code + "|" + NetGuard.LocalOnly + "|" + NetGuard.CorsOff + "|" + Current.S.Gpu + "|" + Current.S.ExtraBrowserArgs;
 
     /// <summary>
     /// Flags of the engine apply to its whole browser process: every tab is closed (keeping its address), the process

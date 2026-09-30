@@ -202,11 +202,11 @@ sealed class Launcher
                 return null;
             }
             var p = process;
-            if (p == null) return "Программа остановлена.";
-            if (p.HasExited) return $"Программа завершилась с кодом {p.ExitCode}, так и не открыв порт {url.Port}.";
+            if (p == null) return L.T("Программа остановлена.");
+            if (p.HasExited) return L.T($"Программа завершилась с кодом {p.ExitCode}, так и не открыв порт {url.Port}.");
             await Task.Delay(400);
         }
-        return $"За 2 минуты программа так и не открыла порт {url.Port}.";
+        return L.T($"За 2 минуты программа так и не открыла порт {url.Port}.");
     }
 
     /// <summary>What to open: the address the program printed for this port, if asked for, else the project's.</summary>
@@ -225,9 +225,9 @@ sealed class Launcher
     string? Start()
     {
         var exe = ResolveExe(Expand(Project.Exe));
-        if (exe == null) return "Не найдена программа: " + Project.Exe;
+        if (exe == null) return L.T("Не найдена программа: ") + Project.Exe;
         var dir = WorkDir;
-        if (!Directory.Exists(dir)) return "Не найдена рабочая папка: " + dir;
+        if (!Directory.Exists(dir)) return L.T("Не найдена рабочая папка: ") + dir;
         var args = Environment.ExpandEnvironmentVariables(Project.Args.Trim());
 
         var info = new ProcessStartInfo(exe, args)
@@ -252,14 +252,14 @@ sealed class Launcher
         log?.Dispose();
         Directory.CreateDirectory(Path.GetDirectoryName(LogPath)!);
         log = new StreamWriter(new FileStream(LogPath, FileMode.Create, FileAccess.Write, FileShare.ReadWrite)) { AutoFlush = true };
-        log.WriteLine($"[{DateTime.Now:HH:mm:ss}] {exe} {args}   (папка: {dir})");
+        log.WriteLine(L.T($"[{DateTime.Now:HH:mm:ss}] {exe} {args}   (папка: {dir})"));
 
         var p = new Process { StartInfo = info, EnableRaisingEvents = true };
         p.OutputDataReceived += (_, e) => Write(e.Data);
         p.ErrorDataReceived += (_, e) => Write(e.Data);
         p.Exited += (_, _) => changed();
         try { p.Start(); }
-        catch (Exception ex) { return "Не удалось запустить программу: " + ex.Message; }
+        catch (Exception ex) { return L.T("Не удалось запустить программу: ") + ex.Message; }
         job?.Dispose();
         job = KillOnCloseJob.For(p);
         p.BeginOutputReadLine();
@@ -364,7 +364,7 @@ sealed class Launcher
         // A running command would read the change as its own input
         if (CommandRunning)
         {
-            Write("Папку можно сменить, когда команда закончится.");
+            Write(L.T("Папку можно сменить, когда команда закончится."));
             changed();
             return;
         }
@@ -372,11 +372,11 @@ sealed class Launcher
         try { full = Path.GetFullPath(Path.Combine(CommandDir, Environment.ExpandEnvironmentVariables(path))); }
         catch (Exception e) when (e is ArgumentException || e is NotSupportedException || e is IOException)
         {
-            Write("Неверный путь: " + path);
+            Write(L.T("Неверный путь: ") + path);
             changed();
             return;
         }
-        if (!Directory.Exists(full)) Write("Нет такой папки: " + full);
+        if (!Directory.Exists(full)) Write(L.T("Нет такой папки: ") + full);
         // A running PowerShell keeps its own folder: it goes there itself
         else if (ProgramLog.IsShell(Project) && shell is { HasExited: false }) RunInShell("Set-Location -LiteralPath ([Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('" +
             Convert.ToBase64String(Encoding.UTF8.GetBytes(full)) + "')))"); // no quoting: PowerShell has curly quotes too
@@ -431,9 +431,9 @@ sealed class Launcher
             {
                 var full = Path.GetFullPath(Path.Combine(dir, Environment.ExpandEnvironmentVariables(target)));
                 if (Directory.Exists(full)) commandDir = full;
-                else Write("Нет такой папки: " + full);
+                else Write(L.T("Нет такой папки: ") + full);
             }
-            catch (Exception e) when (e is ArgumentException || e is NotSupportedException || e is IOException) { Write("Неверный путь: " + target); }
+            catch (Exception e) when (e is ArgumentException || e is NotSupportedException || e is IOException) { Write(L.T("Неверный путь: ") + target); }
             changed();
             return;
         }
@@ -461,7 +461,7 @@ sealed class Launcher
             try
             {
                 p.WaitForExit(); // the rest of the output first
-                if (p.ExitCode != 0) Write($"[код выхода {p.ExitCode}]");
+                if (p.ExitCode != 0) Write(L.T($"[код выхода {p.ExitCode}]"));
             }
             catch (Exception) { }
             changed();
@@ -469,7 +469,7 @@ sealed class Launcher
         try { p.Start(); }
         catch (Exception ex)
         {
-            Write("Не удалось запустить cmd: " + ex.Message);
+            Write(L.T("Не удалось запустить cmd: ") + ex.Message);
             return;
         }
         commandJob?.Dispose();
@@ -506,7 +506,7 @@ sealed class Launcher
         catch (Exception e) when (e is IOException || e is InvalidOperationException || e is ObjectDisposedException)
         {
             pending = 0;
-            Write("PowerShell не отвечает: следующая команда запустит его заново.");
+            Write(L.T("PowerShell не отвечает: следующая команда запустит его заново."));
         }
         changed();
     }
@@ -544,13 +544,13 @@ sealed class Launcher
             if (shell != p) return; // stopped here
             shell = null;
             pending = 0;
-            Write("[PowerShell завершился: переменные сброшены, следующая команда запустит его заново]");
+            Write(L.T("[PowerShell завершился: переменные сброшены, следующая команда запустит его заново]"));
             changed();
         };
         try { p.Start(); }
         catch (Exception ex)
         {
-            Write("Не удалось запустить PowerShell: " + ex.Message);
+            Write(L.T("Не удалось запустить PowerShell: ") + ex.Message);
             return false;
         }
         shellJob?.Dispose();
@@ -584,7 +584,7 @@ sealed class Launcher
             try { p.Kill(); } catch (Exception) { }
         }
         if (p != null && !quiet)
-            Write(busy ? "[прервано: PowerShell перезапустится со следующей командой, переменные сброшены]" : "[PowerShell закрыт]");
+            Write(busy ? L.T("[прервано: PowerShell перезапустится со следующей командой, переменные сброшены]") : L.T("[PowerShell закрыт]"));
         changed();
     }
 
@@ -607,7 +607,7 @@ sealed class Launcher
         {
             try { p.Kill(); } catch (Exception) { }
         }
-        if (wasRunning) Write("[прервано]");
+        if (wasRunning) Write(L.T("[прервано]"));
         changed();
     }
 

@@ -65,7 +65,7 @@ static class Gateway
             {
                 tunnels.TryRemove(t, out _);
                 t.Close();
-                NetLog.Add("CONNECT", t.Url, "соединение разорвано", blocked: true, -1, "шлюз", "");
+                NetLog.Add("CONNECT", t.Url, L.T("соединение разорвано"), blocked: true, -1, L.T("шлюз"), "");
             }
     }
 
@@ -106,7 +106,7 @@ static class Gateway
             if (NetGuard.LocalOnly && NetGuard.ShouldBlock(url))
             {
                 await ReplyAsync(fromClient, "403 Forbidden").ConfigureAwait(false);
-                NetLog.Add(method, url, "заблокировано шлюзом", blocked: true, -1, "шлюз", "");
+                NetLog.Add(method, url, L.T("заблокировано шлюзом"), blocked: true, -1, L.T("шлюз"), "");
                 return;
             }
             var server = tunnel.Server;

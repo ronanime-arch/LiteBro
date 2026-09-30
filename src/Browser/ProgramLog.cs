@@ -99,7 +99,7 @@ static class ProgramLog
     static string Js(string s) => ProjectStore.Json.Serialize(s).Replace("<", "\\u003c");
 
     public static string Page(Project p) =>
-        "<!doctype html><html><head><meta charset=utf-8><title>Консоль: " + H(p.Name) + "</title><style>" +
+        L.T("<!doctype html><html><head><meta charset=utf-8><title>Консоль: ") + H(p.Name) + "</title><style>" +
         ":root{color-scheme:light dark;--muted:rgba(127,127,127,.9);--line:rgba(127,127,127,.3);--accent:#4d6bfe}" +
         "html,body{margin:0;height:100%;background:Canvas;color:CanvasText;font:14px 'Segoe UI',sans-serif}" +
         "body{display:flex;flex-direction:column}" +
@@ -119,7 +119,7 @@ static class ProgramLog
         "#line:focus{border-color:var(--accent)}#line:disabled{opacity:.5}" +
         "</style></head><body>" +
         "<header><h1>" + H(p.Name) + "</h1><span id=state></span>" +
-        "<button id=stop hidden>Остановить программу</button><button id=halt hidden>Прервать команду</button><button id=clear>Очистить экран</button><button id=term title='PowerShell в папке команд: работают claude, vim и другие программы с экраном. Ctrl+клик или колёсико — в новой вкладке'>Терминал</button>" +
+        L.T("<button id=stop hidden>Остановить программу</button><button id=halt hidden>Прервать команду</button><button id=clear>Очистить экран</button><button id=term title='PowerShell в папке команд: работают claude, vim и другие программы с экраном. Ctrl+клик или колёсико — в новой вкладке'>Терминал</button>") +
         "<span id=path title='" + H(LogPath(p.Id)) + "'>" + H(LogPath(p.Id)) + "</span></header>" +
         "<pre id=out></pre>" +
         "<form id=send><button type=button id=mode></button><input id=prompt autocomplete=off spellcheck=false><span id=gt>&gt;</span>" +
@@ -129,19 +129,19 @@ static class ProgramLog
         "let from=-1,running=false,busy=false,cmd=true,command=false,dir='',typed=[],back=0;" +
         "const post=m=>window.chrome.webview.postMessage(m);" +
         // Two ways to type: a command for cmd in the console's folder, or a line to the running program
-        "function modeShow(){mode.textContent=cmd?'Команда':'Программе';mode.className=cmd?'cmd':'';" +
-        "mode.title=cmd?'Строка выполняется в cmd в папке ниже; cd меняет папку. Нажмите, чтобы писать программе проекта':'Строка уходит на ввод программе проекта. Нажмите, чтобы выполнять команды';" +
+        L.T("function modeShow(){mode.textContent=cmd?'Команда':'Программе';mode.className=cmd?'cmd':'';") +
+        L.T("mode.title=cmd?'Строка выполняется в cmd в папке ниже; cd меняет папку. Нажмите, чтобы писать программе проекта':'Строка уходит на ввод программе проекта. Нажмите, чтобы выполнять команды';") +
         "promptEl.hidden=!cmd;if(document.activeElement!==promptEl)promptEl.value=dir;promptEl.disabled=command&&!shell;" +
-        "promptEl.title=promptEl.disabled?'Папку можно сменить, когда команда закончится':'Папка команд: исправьте и нажмите Enter, Esc — отменить';" +
-        "line.placeholder=cmd?(command?'Команда выполняется: строка уйдёт ей на ввод':'Команда, например: git status, npm install, dir'):(running?'Строка для программы, Enter — отправить':'Программа не запущена');" +
-        "line.disabled=!cmd&&!running;mode.hidden=shell;if(shell)line.placeholder=command?'Команда выполняется: следующая встанет в очередь':'Команда PowerShell, например: Get-ChildItem, git status, winget list';}" +
+        L.T("promptEl.title=promptEl.disabled?'Папку можно сменить, когда команда закончится':'Папка команд: исправьте и нажмите Enter, Esc — отменить';") +
+        L.T("line.placeholder=cmd?(command?'Команда выполняется: строка уйдёт ей на ввод':'Команда, например: git status, npm install, dir'):(running?'Строка для программы, Enter — отправить':'Программа не запущена');") +
+        L.T("line.disabled=!cmd&&!running;mode.hidden=shell;if(shell)line.placeholder=command?'Команда выполняется: следующая встанет в очередь':'Команда PowerShell, например: Get-ChildItem, git status, winget list';}") +
         "mode.addEventListener('click',()=>{cmd=!cmd;modeShow();line.focus();});" +
         // The folder is edited in place: Enter goes there, Esc or leaving the field puts the current one back
         "promptEl.addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();const v=promptEl.value.trim();" +
         "if(v&&v!==dir){post({type:'cd',id,dir:v});setTimeout(poll,150);}line.focus();}" +
         "else if(e.key==='Escape'){e.preventDefault();promptEl.value=dir;line.focus();}});" +
         "promptEl.addEventListener('blur',()=>{promptEl.value=dir;});" +
-        "function show(d){running=d.running;command=d.command;dir=d.dir;state.textContent=shell?(command?'● команда выполняется':''):running?'● программа работает':'программа остановлена';state.className=running?'on':'';" +
+        L.T("function show(d){running=d.running;command=d.command;dir=d.dir;state.textContent=shell?(command?'● команда выполняется':''):running?'● программа работает':'программа остановлена';state.className=running?'on':'';") +
         "stopBtn.hidden=!running;halt.hidden=!command;modeShow();}" +
         "async function poll(){if(busy)return;busy=true;try{" +
         "const r=await fetch(location.pathname+'/text?from='+from,{cache:'no-store'});const d=await r.json();" +

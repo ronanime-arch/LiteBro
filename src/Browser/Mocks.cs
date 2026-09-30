@@ -93,12 +93,12 @@ static class MockStore
     {
         if (!(m.Url.StartsWith("http://", StringComparison.OrdinalIgnoreCase) || m.Url.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
             || m.Url.Length > 2000 || m.Url.Any(char.IsWhiteSpace))
-            return "Адрес должен начинаться с http:// или https:// и не содержать пробелов.";
-        if (m.Status < 100 || m.Status > 599) return "Код ответа — число от 100 до 599.";
-        if (m.Body.Length > MaxBody) return "Ответ длиннее 5 МБ.";
-        if (m.Method.Length > 16 || m.Method.Any(c => !char.IsLetter(c))) return "Метод — слово вроде GET или POST.";
-        if (m.Type.IndexOfAny(new[] { '\r', '\n' }) >= 0 || m.Type.Length > 200) return "Тип содержимого — одна строка.";
-        if (m.Id.Length == 0 && All.Count >= MaxMocks) return "Заглушек уже " + MaxMocks + ".";
+            return L.T("Адрес должен начинаться с http:// или https:// и не содержать пробелов.");
+        if (m.Status < 100 || m.Status > 599) return L.T("Код ответа — число от 100 до 599.");
+        if (m.Body.Length > MaxBody) return L.T("Ответ длиннее 5 МБ.");
+        if (m.Method.Length > 16 || m.Method.Any(c => !char.IsLetter(c))) return L.T("Метод — слово вроде GET или POST.");
+        if (m.Type.IndexOfAny(new[] { '\r', '\n' }) >= 0 || m.Type.Length > 200) return L.T("Тип содержимого — одна строка.");
+        if (m.Id.Length == 0 && All.Count >= MaxMocks) return L.T("Заглушек уже ") + MaxMocks + ".";
         return null;
     }
 

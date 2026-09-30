@@ -113,14 +113,14 @@ sealed class Terminal : IDisposable
         {
             if (!CreatePipe(out inRead, out inWrite, IntPtr.Zero, 0) || !CreatePipe(out outRead, out outWrite, IntPtr.Zero, 0))
             {
-                error = "Не удалось создать каналы: " + Marshal.GetLastWin32Error();
+                error = L.T("Не удалось создать каналы: ") + Marshal.GetLastWin32Error();
                 return null;
             }
             int hr = CreatePseudoConsole(Size(columns, rows), inRead, outWrite, 0, out pc);
             if (hr != 0)
             {
                 // Before Windows 10 1809 there is no pseudo console
-                error = "Windows не дал создать терминал (нужна Windows 10 1809 или новее), код " + hr;
+                error = L.T("Windows не дал создать терминал (нужна Windows 10 1809 или новее), код ") + hr;
                 return null;
             }
             var size = IntPtr.Zero;
@@ -129,7 +129,7 @@ sealed class Terminal : IDisposable
             if (!InitializeProcThreadAttributeList(list, 1, 0, ref size)
                 || !UpdateProcThreadAttribute(list, 0, PseudoConsoleAttribute, pc, (IntPtr)IntPtr.Size, IntPtr.Zero, IntPtr.Zero))
             {
-                error = "Не удалось подключить терминал: " + Marshal.GetLastWin32Error();
+                error = L.T("Не удалось подключить терминал: ") + Marshal.GetLastWin32Error();
                 return null;
             }
             var info = new StartupInfoEx { lpAttributeList = list };
@@ -137,7 +137,7 @@ sealed class Terminal : IDisposable
             if (!CreateProcess(null, new StringBuilder(commandLine), IntPtr.Zero, IntPtr.Zero, false,
                     ExtendedStartupInfoPresent | CreateUnicodeEnvironment, IntPtr.Zero, directory, ref info, out var pi))
             {
-                error = "Не удалось запустить " + commandLine + ": " + Marshal.GetLastWin32Error();
+                error = L.T("Не удалось запустить ") + commandLine + ": " + Marshal.GetLastWin32Error();
                 return null;
             }
             CloseHandle(pi.hThread);
@@ -247,7 +247,6 @@ static class TermPage
         ["/term/addon-fit.js"] = ("term/addon-fit.js", "text/javascript"),
         ["/term/xterm.css"] = ("term/xterm.css", "text/css"),
     };
-    static readonly Dictionary<string, byte[]> cache = new();
 
     public static bool Is(string? uri) =>
         Home.Is(uri) && new Uri(uri!).AbsolutePath == "/term";
@@ -323,14 +322,7 @@ static class TermPage
     {
         headers = "";
         if (!Files.TryGetValue(path, out var f)) return null;
-        if (!cache.TryGetValue(path, out var bytes))
-        {
-            using var stream = typeof(TermPage).Assembly.GetManifestResourceStream(f.Resource);
-            if (stream == null) return null;
-            using var copy = new MemoryStream();
-            stream.CopyTo(copy);
-            cache[path] = bytes = copy.ToArray();
-        }
+        var bytes = L.Bytes(f.Resource);
         headers = "Content-Type: " + f.Type + "; charset=utf-8\r\n" + Policy + "\r\n" + Home.Isolation;
         return new MemoryStream(bytes, writable: false);
     }

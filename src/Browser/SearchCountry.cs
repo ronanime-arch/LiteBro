@@ -14,14 +14,15 @@ static class SearchCountry
     {
         /// <summary>Two letters, upper case, as the button shows it; gl is its lower case.</summary>
         public readonly string Code;
-        public readonly string Name;
+        readonly string name;
+        public string Name => L.T(name);
         public readonly string Hl;
         public string Gl => Code.ToLowerInvariant();
 
         public Country(string code, string name, string hl)
         {
             Code = code;
-            Name = name;
+            this.name = name;
             Hl = hl;
         }
     }

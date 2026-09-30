@@ -39,9 +39,9 @@ static class Program
     const string PolicyKey = @"SOFTWARE\Policies\Microsoft\Windows\System";
     const string PolicyValue = "DefaultAssociationsConfiguration";
     const string WebView2Client = @"Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}";
-    const string BrowserDescription =
-        "Лёгкий браузер для локальных проектов: localhost и 127.0.0.1 открываются в нём, остальные ссылки — в основном браузере.";
-    const string LinkDescription = "Лёгкий браузер для локальных проектов";
+    static string BrowserDescription =>
+        L.T("Лёгкий браузер для локальных проектов: localhost и 127.0.0.1 открываются в нём, остальные ссылки — в основном браузере.");
+    static string LinkDescription => L.T("Лёгкий браузер для локальных проектов");
 
     static readonly string LocalAppData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
     static readonly string ProgramFiles = Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles);
@@ -77,7 +77,7 @@ static class Program
         }
         catch (Exception e)
         {
-            Report("Ошибка: " + e.Message, MessageBoxIcon.Error);
+            Report(L.T("Ошибка: ") + e.Message, MessageBoxIcon.Error);
             return 1;
         }
     }
@@ -88,7 +88,7 @@ static class Program
     {
         if (IsInside(Assembly.GetExecutingAssembly().Location, InstallDir))
         {
-            Report("Для удаления используйте «Установленные приложения» в параметрах Windows.", MessageBoxIcon.Information);
+            Report(L.T("Для удаления используйте «Установленные приложения» в параметрах Windows."), MessageBoxIcon.Information);
             return 1;
         }
         // Windows lets only the user choose the program for a link type; the checkbox opens that choice
@@ -101,29 +101,29 @@ static class Program
             Associations.OldNameHandles(protocol) || UserChoice(protocol) == Associations.OldProgId);
         if (!silent)
         {
-            var desktopBox = new CheckBox { Text = "Ярлык на рабочем столе", Checked = true, AutoSize = true };
+            var desktopBox = new CheckBox { Text = L.T("Ярлык на рабочем столе"), Checked = true, AutoSize = true };
             var linksBox = new CheckBox
             {
-                Text = "Открывать в LiteBro ссылки на localhost и 127.0.0.1.\n" +
-                    "Остальные ссылки он сразу передаёт в " + Associations.OtherBrowserName() + ", своё окно не открывая.",
+                Text = L.T("Открывать в LiteBro ссылки на localhost и 127.0.0.1.\n") +
+                    L.T("Остальные ссылки он сразу передаёт в ") + Associations.OtherBrowserName() + L.T(", своё окно не открывая."),
                 Checked = true,
                 AutoSize = true,
             };
-            var launchBox = new CheckBox { Text = "Запустить LiteBro после установки", Checked = true, AutoSize = true };
-            var text = "Лёгкий браузер для локальных проектов на движке Edge WebView2.\n\n" +
-                "Программа: " + InstallDir + "\nНастройки и данные: " + DataDir + " (у каждого пользователя свои)";
+            var launchBox = new CheckBox { Text = L.T("Запустить LiteBro после установки"), Checked = true, AutoSize = true };
+            var text = L.T("Лёгкий браузер для локальных проектов на движке Edge WebView2.\n\n") +
+                L.T("Программа: ") + InstallDir + L.T("\nНастройки и данные: ") + DataDir + L.T(" (у каждого пользователя свои)");
             if (Directory.Exists(LiteBrowserDir) || Directory.Exists(LiteBrowserDataDir))
-                text += "\n\nLiteBrowser теперь называется LiteBro. Старая программа будет удалена, а проекты, значки, " +
-                    "логи и входы на сайты LiteBro перенесёт к себе при первом запуске.";
+                text += L.T("\n\nLiteBrowser теперь называется LiteBro. Старая программа будет удалена, а проекты, значки, ") +
+                    L.T("логи и входы на сайты LiteBro перенесёт к себе при первом запуске.");
             if (relink)
-                text += "\n\nWindows запомнила выбор для ссылок под старым именем, поэтому их нужно один раз " +
-                    "отдать LiteBro заново: после установки откроется подсказка.";
-            else if (hasLinks) text += "\n\nСсылки из других программ уже идут через LiteBro.";
+                text += L.T("\n\nWindows запомнила выбор для ссылок под старым именем, поэтому их нужно один раз ") +
+                    L.T("отдать LiteBro заново: после установки откроется подсказка.");
+            else if (hasLinks) text += L.T("\n\nСсылки из других программ уже идут через LiteBro.");
             if (!HasWebView2())
-                text += "\n\nНе найден Microsoft Edge WebView2 Runtime, без него браузер не запустится. " +
-                    "Установите его с developer.microsoft.com/microsoft-edge/webview2.";
+                text += L.T("\n\nНе найден Microsoft Edge WebView2 Runtime, без него браузер не запустится. ") +
+                    L.T("Установите его с developer.microsoft.com/microsoft-edge/webview2.");
             var options = hasLinks ? new[] { desktopBox, launchBox } : new[] { desktopBox, linksBox, launchBox };
-            using var dialog = new Dialog("Установка LiteBro", "LiteBro " + Version, text, "Установить", options);
+            using var dialog = new Dialog(L.T("Установка LiteBro"), "LiteBro " + Version, text, L.T("Установить"), options);
             if (dialog.ShowDialog() != DialogResult.OK) return 1;
             desktop = desktopBox.Checked;
             links = linksBox.Checked && !hasLinks;
@@ -144,7 +144,7 @@ static class Program
             foreach (var entry in zip.Entries.Where(e => e.Name.Length > 0))
             {
                 var target = Path.GetFullPath(Path.Combine(InstallDir, entry.FullName.Replace('/', '\\')));
-                if (!IsInside(target, InstallDir)) throw new InvalidDataException("Недопустимый путь в архиве: " + entry.FullName);
+                if (!IsInside(target, InstallDir)) throw new InvalidDataException(L.T("Недопустимый путь в архиве: ") + entry.FullName);
                 Directory.CreateDirectory(Path.GetDirectoryName(target)!);
                 using (var from = entry.Open())
                 using (var to = File.Create(target))
@@ -197,9 +197,9 @@ static class Program
         if (launch) StartAsUser(exe);
         if (!launch || silent || (links && !hasLinks))
         {
-            Report(AppName + " " + Version + " установлен в " + InstallDir + "." + (hasLinks
-                ? "\nЛокальные адреса открываются в нём, остальные ссылки — в " + Associations.OtherBrowserName() + "."
-                : "\nЧтобы ссылки открывались в нём: Параметры → Приложения по умолчанию → LiteBro → HTTP → LiteBro."),
+            Report(AppName + " " + Version + L.T(" установлен в ") + InstallDir + "." + (hasLinks
+                ? L.T("\nЛокальные адреса открываются в нём, остальные ссылки — в ") + Associations.OtherBrowserName() + "."
+                : L.T("\nЧтобы ссылки открывались в нём: Параметры → Приложения по умолчанию → LiteBro → HTTP → LiteBro.")),
                 MessageBoxIcon.Information);
         }
         return 0;
@@ -431,14 +431,14 @@ static class Program
         {
             var purgeBox = new CheckBox
             {
-                Text = "Удалить также мои настройки и данные браузера:\nпроекты, cookies, settings.ini",
+                Text = L.T("Удалить также мои настройки и данные браузера:\nпроекты, cookies, settings.ini"),
                 AutoSize = true,
             };
-            using var dialog = new Dialog("Удаление LiteBro", "Удалить LiteBro?",
-                "Будут удалены программа, ярлыки и запись в списке установленных приложений.\n" +
-                "Данные в " + DataDir + " останутся, если не отметить пункт ниже." +
-                (hadLinks ? "\n\nЗатем ссылки нужно будет вернуть " + Associations.OtherBrowserName() +
-                    ": три клика в Параметрах, подсказка откроется сама." : ""), "Удалить", purgeBox);
+            using var dialog = new Dialog(L.T("Удаление LiteBro"), L.T("Удалить LiteBro?"),
+                L.T("Будут удалены программа, ярлыки и запись в списке установленных приложений.\n") +
+                L.T("Данные в ") + DataDir + L.T(" останутся, если не отметить пункт ниже.") +
+                (hadLinks ? L.T("\n\nЗатем ссылки нужно будет вернуть ") + Associations.OtherBrowserName() +
+                    L.T(": три клика в Параметрах, подсказка откроется сама.") : ""), L.T("Удалить"), purgeBox);
             if (dialog.ShowDialog() != DialogResult.OK) return 1;
             purge = purgeBox.Checked;
         }
@@ -474,12 +474,12 @@ static class Program
             }
         }
 
-        if (Directory.Exists(InstallDir)) Report("Не всё удалось удалить: " + InstallDir, MessageBoxIcon.Warning);
-        else Report("LiteBro удалён." + (purge ? "" : "\nНастройки и данные остались в " + DataDir), MessageBoxIcon.Information);
+        if (Directory.Exists(InstallDir)) Report(L.T("Не всё удалось удалить: ") + InstallDir, MessageBoxIcon.Warning);
+        else Report(L.T("LiteBro удалён.") + (purge ? "" : L.T("\nНастройки и данные остались в ") + DataDir), MessageBoxIcon.Information);
         if (hadLinks)
         {
-            Report("Ссылки http и https всё ещё назначены LiteBro, которого больше нет. Выберите для них браузер " +
-                "в Параметрах → Приложения по умолчанию: в поле поиска введите http.", MessageBoxIcon.Information);
+            Report(L.T("Ссылки http и https всё ещё назначены LiteBro, которого больше нет. Выберите для них браузер ") +
+                L.T("в Параметрах → Приложения по умолчанию: в поле поиска введите http."), MessageBoxIcon.Information);
             if (!silent) OpenSettings("ms-settings:defaultapps");
         }
         return 0;
@@ -504,18 +504,18 @@ static class Program
         var name = running[0].ProcessName;
         if (silent)
         {
-            Report(name + " запущен: закройте его и повторите.", MessageBoxIcon.Warning);
+            Report(name + L.T(" запущен: закройте его и повторите."), MessageBoxIcon.Warning);
             return false;
         }
         var answer = MessageBox.Show(
-            name + " запущен. Закрыть его и продолжить?\n\n" +
-            "Программы проектов, которые он запустил (например, dsh), тоже остановятся, а текущая задача агента прервётся.",
+            name + L.T(" запущен. Закрыть его и продолжить?\n\n") +
+            L.T("Программы проектов, которые он запустил (например, dsh), тоже остановятся, а текущая задача агента прервётся."),
             name, MessageBoxButtons.OKCancel, MessageBoxIcon.Warning);
         if (answer != DialogResult.OK) return false;
         foreach (var p in running) p.CloseMainWindow();
         if (running.Any(p => !p.WaitForExit(15000)))
         {
-            Report(name + " не закрылся. Закройте его вручную и повторите.", MessageBoxIcon.Warning);
+            Report(name + L.T(" не закрылся. Закройте его вручную и повторите."), MessageBoxIcon.Warning);
             return false;
         }
         Thread.Sleep(1000); // WebView2 processes let go of their files
@@ -585,7 +585,7 @@ sealed class Dialog : Form
         }
 
         var ok = new Button { Text = okText, DialogResult = DialogResult.OK, AutoSize = true, MinimumSize = new Size(100, 30) };
-        var cancel = new Button { Text = "Отмена", DialogResult = DialogResult.Cancel, AutoSize = true, MinimumSize = new Size(100, 30) };
+        var cancel = new Button { Text = L.T("Отмена"), DialogResult = DialogResult.Cancel, AutoSize = true, MinimumSize = new Size(100, 30) };
         var buttons = new FlowLayoutPanel
         {
             FlowDirection = FlowDirection.RightToLeft,
@@ -645,7 +645,7 @@ sealed class LinksStep : Form
         var body = new FlowLayoutPanel { FlowDirection = FlowDirection.TopDown, WrapContents = false, AutoSize = true };
         body.Controls.Add(new Label
         {
-            Text = giveBack ? "Последний шаг: вернуть ссылки" : "Последний шаг: ссылки",
+            Text = giveBack ? L.T("Последний шаг: вернуть ссылки") : L.T("Последний шаг: ссылки"),
             Font = new Font("Segoe UI Semibold", 13f),
             AutoSize = true,
             Margin = new Padding(0, 0, 0, 8),
@@ -653,26 +653,26 @@ sealed class LinksStep : Form
         body.Controls.Add(new Label
         {
             Text = giveBack
-                ? "LiteBro удаляется, а ссылки http и https пока назначены ему. Выбрать для них программу " +
-                    "Windows разрешает только вам. В открывшемся окне Параметров:\n\n" +
-                    "1. Нажмите на плитку под заголовком HTTP (сейчас там LiteBro).\n" +
-                    "2. В открывшемся окне выберите " + browser + ".\n" +
-                    "3. Нажмите «Задать по умолчанию».\n\n" +
-                    "Windows вернёт " + browser + " и HTTP, и HTTPS."
-                : "Выбрать программу для ссылок Windows разрешает только вам. В открывшемся окне Параметров:\n\n" +
-                    "1. Нажмите на плитку под заголовком HTTP (вероятно, сейчас там " + browser + ").\n" +
-                    "2. В открывшемся окне выберите LiteBro.\n" +
-                    "3. Нажмите «Задать по умолчанию».\n\n" +
-                    "Windows отдаст LiteBro и HTTP, и HTTPS: локальные адреса он откроет сам, остальные сразу передаст " +
-                    "в " + browser + ". Если " + browser + " потом предложит стать браузером по умолчанию, откажитесь: " +
-                    "иначе он заберёт ссылки обратно.",
+                ? L.T("LiteBro удаляется, а ссылки http и https пока назначены ему. Выбрать для них программу ") +
+                    L.T("Windows разрешает только вам. В открывшемся окне Параметров:\n\n") +
+                    L.T("1. Нажмите на плитку под заголовком HTTP (сейчас там LiteBro).\n") +
+                    L.T("2. В открывшемся окне выберите ") + browser + ".\n" +
+                    L.T("3. Нажмите «Задать по умолчанию».\n\n") +
+                    L.T("Windows вернёт ") + browser + L.T(" и HTTP, и HTTPS.")
+                : L.T("Выбрать программу для ссылок Windows разрешает только вам. В открывшемся окне Параметров:\n\n") +
+                    L.T("1. Нажмите на плитку под заголовком HTTP (вероятно, сейчас там ") + browser + ").\n" +
+                    L.T("2. В открывшемся окне выберите LiteBro.\n") +
+                    L.T("3. Нажмите «Задать по умолчанию».\n\n") +
+                    L.T("Windows отдаст LiteBro и HTTP, и HTTPS: локальные адреса он откроет сам, остальные сразу передаст ") +
+                    L.T("в ") + browser + L.T(". Если ") + browser + L.T(" потом предложит стать браузером по умолчанию, откажитесь: ") +
+                    L.T("иначе он заберёт ссылки обратно."),
             AutoSize = true,
             MaximumSize = new Size(TextWidth, 0),
             Margin = new Padding(0, 0, 0, 10),
         });
         status = new Label
         {
-            Text = "Жду вашего выбора…",
+            Text = L.T("Жду вашего выбора…"),
             Font = new Font("Segoe UI Semibold", 9f),
             AutoSize = true,
             MaximumSize = new Size(TextWidth, 0),
@@ -680,9 +680,9 @@ sealed class LinksStep : Form
         };
         body.Controls.Add(status);
 
-        var reopen = new Button { Text = "Открыть Параметры", AutoSize = true, MinimumSize = new Size(100, 30) };
+        var reopen = new Button { Text = L.T("Открыть Параметры"), AutoSize = true, MinimumSize = new Size(100, 30) };
         reopen.Click += (_, _) => Program.OpenSettings(SettingsPage);
-        close = new Button { Text = "Позже", DialogResult = DialogResult.Cancel, AutoSize = true, MinimumSize = new Size(100, 30) };
+        close = new Button { Text = L.T("Позже"), DialogResult = DialogResult.Cancel, AutoSize = true, MinimumSize = new Size(100, 30) };
         var buttons = new FlowLayoutPanel
         {
             FlowDirection = FlowDirection.RightToLeft,
@@ -732,13 +732,13 @@ sealed class LinksStep : Form
         if (http != https)
         {
             // Windows switched only one of them this time: the same three clicks on the other tile
-            status.Text = (http ? "HTTP" : "HTTPS") + " готово. Теперь то же самое для плитки " + (http ? "HTTPS." : "HTTP.");
+            status.Text = (http ? "HTTP" : "HTTPS") + L.T(" готово. Теперь то же самое для плитки ") + (http ? "HTTPS." : "HTTP.");
             return;
         }
         if (!http) return;
         poll.Stop();
-        status.Text = giveBack ? "Готово: ссылки снова у " + browser + "." : "Готово: ссылки идут через LiteBro.";
-        close.Text = "Готово";
+        status.Text = giveBack ? L.T("Готово: ссылки снова у ") + browser + "." : L.T("Готово: ссылки идут через LiteBro.");
+        close.Text = L.T("Готово");
         close.DialogResult = DialogResult.OK;
         var done = new System.Windows.Forms.Timer { Interval = 1500 };
         done.Tick += (_, _) =>

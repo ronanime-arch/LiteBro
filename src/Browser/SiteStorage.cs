@@ -16,23 +16,12 @@ static class StoragePage
 {
     public const string Path = "/storage";
     public const string Url = "https://" + Home.Host + Path;
-    static byte[]? html;
-    static string? script;
 
     public static bool Is(string? uri) => Home.Is(uri) && new Uri(uri!).AbsolutePath == Path;
 
     public static Stream Html()
     {
-        html ??= Read("storage.html");
-        return new MemoryStream(html, writable: false);
-    }
-
-    static byte[] Read(string name)
-    {
-        using var stream = typeof(StoragePage).Assembly.GetManifestResourceStream(name);
-        using var copy = new MemoryStream();
-        stream.CopyTo(copy);
-        return copy.ToArray();
+        return L.Stream("storage.html");
     }
 
     /// <summary>A site's page and the address it is on, if it has a site: http or https.</summary>
@@ -45,7 +34,7 @@ static class StoragePage
     /// </summary>
     public static async Task<string> RunAsync(CoreWebView2 core, Dictionary<string, object> op)
     {
-        script ??= Encoding.UTF8.GetString(Read("sitestorage.js"));
+        var script = L.Text("sitestorage.js");
         var expression = script.Replace("__OP__", ProjectStore.Json.Serialize(op));
         var reply = await core.CallDevToolsProtocolMethodAsync("Runtime.evaluate", ProjectStore.Json.Serialize(new Dictionary<string, object>
         {
@@ -58,7 +47,7 @@ static class StoragePage
         {
             var text = details.TryGetValue("exception", out var e) && e is Dictionary<string, object> err && err.TryGetValue("description", out var d)
                 ? d as string : details.TryGetValue("text", out var t) ? t as string : null;
-            throw new InvalidOperationException((text ?? "ошибка страницы").Split('\n')[0]);
+            throw new InvalidOperationException((text ?? L.T("ошибка страницы")).Split('\n')[0]);
         }
         return r.TryGetValue("result", out var res) && res is Dictionary<string, object> result && result.TryGetValue("value", out var v) && v is string s
             ? s : "{}";
@@ -96,10 +85,10 @@ static class StoragePage
         var host = new Uri(core.Source).Host;
         var name = Text("name");
         if (name.Length == 0 || name.IndexOfAny(new[] { ';', '=', ',', ' ', '\t', '\r', '\n' }) >= 0)
-            throw new InvalidOperationException("Имя cookie не может быть пустым и содержать ; = , или пробелы.");
+            throw new InvalidOperationException(L.T("Имя cookie не может быть пустым и содержать ; = , или пробелы."));
         var domain = Text("domain").Trim();
         if (domain.Length == 0) domain = host;
-        if (!Covers(domain, host)) throw new InvalidOperationException("Домен cookie должен быть доменом этого сайта: " + host + ".");
+        if (!Covers(domain, host)) throw new InvalidOperationException(L.T("Домен cookie должен быть доменом этого сайта: ") + host + ".");
         var path = Text("path").Trim();
         if (!path.StartsWith("/")) path = "/";
         if (m.ContainsKey("oldName"))
@@ -121,7 +110,7 @@ static class StoragePage
         var expires = Text("expires").Trim();
         if (expires.Length > 0)
         {
-            if (!DateTime.TryParse(expires, out var at)) throw new InvalidOperationException("Срок — дата вида 2027-01-31 12:00 или пусто (до закрытия браузера).");
+            if (!DateTime.TryParse(expires, out var at)) throw new InvalidOperationException(L.T("Срок — дата вида 2027-01-31 12:00 или пусто (до закрытия браузера)."));
             cookie.Expires = at;
         }
         core.CookieManager.AddOrUpdateCookie(cookie);

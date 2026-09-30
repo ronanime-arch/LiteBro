@@ -15,7 +15,8 @@ static class Emulation
 {
     public sealed class Device
     {
-        public string Name = "";
+        string name = "";
+        public string Name { get => L.T(name); set => name = value; }
         public int Width, Height;
         public double Scale;
         public bool Mobile;
@@ -24,7 +25,8 @@ static class Emulation
 
     public sealed class Speed
     {
-        public string Name = "";
+        string name = "";
+        public string Name { get => L.T(name); set => name = value; }
         public bool Offline;
         public double Latency;
         public double Down, Up; // bytes a second

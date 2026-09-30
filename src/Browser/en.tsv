@@ -365,7 +365,7 @@ _ на плитках)	_ on tiles)
 Проекты (домик)	Projects (house)
 Пропадает только кнопка: её горячие клавиши работают.	Only the button disappears: its keyboard shortcuts work.
 Пропадает только кнопка; кнопку «Для разработчика» выключить нельзя.	Only the button disappears; the “For developers” button cannot be switched off.
-Пропадают вместе с пунктами меню и горячими клавишами. Инструменты разработчика (сброс сайта, эмуляция, снимок, хранилище, JSON, заглушки) после установки выключены. Когда выключены эмуляция, снимок и хранилище, пропадает и кнопка «Инструменты» (гаечный ключ).	They disappear together with their menu items and keyboard shortcuts. The developer tools (site reset, emulation, snapshot, storage, JSON, mocks) are off after installation. When emulation, snapshot and storage are off, the “Tools” button (wrench) disappears too.
+Пропадают вместе с пунктами меню и горячими клавишами. Инструменты разработчика (сброс сайта, эмуляция, снимок, хранилище, JSON, заглушки) после установки выключены. Когда выключены эмуляция, снимок, хранилище и разрешения сайтов, пропадает и кнопка «Инструменты» (гаечный ключ).	They disappear together with their menu items and keyboard shortcuts. The developer tools (site reset, emulation, snapshot, storage, JSON, mocks) are off after installation. When emulation, snapshot, storage and site permissions are off, the “Tools” button (wrench) disappears too.
 Просмотр JSON деревом	JSON tree view
 Пункт «Открыть рядом» в меню вкладки. Уже открытое разделение убирается как обычно.	The “Open side by side” item in the tab menu. A split already open is removed as usual.
 Пункт меню «Инструменты». Уже открытая вкладка хранилища продолжит работать.	The “Tools” menu item. A storage tab already open keeps working.

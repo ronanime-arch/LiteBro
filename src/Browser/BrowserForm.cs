@@ -68,6 +68,10 @@ sealed class BrowserForm : Form
     // The two halves of a split scroll together
     bool syncScroll;
     int? dragFrom;
+    // A page in full screen (a video, a game): the window covers its monitor and shows that page alone
+    Tab? fullScreen;
+    FormWindowState beforeFullState;
+    Rectangle beforeFullBounds;
     double zoom = 1;
     bool minimized, inBackground;
 
@@ -140,6 +144,7 @@ sealed class BrowserForm : Form
         strip.Closing += CloseTab;
         strip.NewTab += () => OpenNewTab(null);
         strip.Menu += ShowTabMenu;
+        strip.Mute += ToggleMute;
         host.Controls.Add(divider);
         host.Controls.Add(stripeLeft);
         host.Controls.Add(stripeRight);
@@ -495,6 +500,12 @@ sealed class BrowserForm : Form
             tab.PlayingAudio = core.IsDocumentPlayingAudio;
             strip.Invalidate();
         };
+        if (tab.Muted) core.IsMuted = true;
+        core.ContainsFullScreenElementChanged += (_, _) => BeginInvoke(new Action(() =>
+        {
+            if (tab.Core == core) SetFullScreen(tab, core.ContainsFullScreenElement);
+        }));
+        core.ServerCertificateErrorDetected += OnCertificateError;
         core.ProcessFailed += (_, e) =>
         {
             if (e.ProcessFailedKind == CoreWebView2ProcessFailedKind.RenderProcessExited) core.Reload();
@@ -592,7 +603,7 @@ sealed class BrowserForm : Form
 
     void ShowStrip()
     {
-        bool show = tabs.Count != 1 || !Home.IsTiles(tabs[0].Site);
+        bool show = fullScreen == null && (tabs.Count != 1 || !Home.IsTiles(tabs[0].Site));
         if (strip.Visible != show) strip.Visible = show;
     }
 
@@ -847,6 +858,8 @@ sealed class BrowserForm : Form
             menu.Items.Add(new ToolStripMenuItem(L.T("Убрать разделение"), null, (_, _) => Unsplit()));
         }
         if (menu.Items.Count > 0) menu.Items.Add(new ToolStripSeparator());
+        menu.Items.Add(new ToolStripMenuItem(tab.Muted ? L.T("Включить звук вкладки") : L.T("Выключить звук вкладки"), null,
+            (_, _) => ToggleMute(tab)));
         menu.Items.Add(new ToolStripMenuItem(L.T("Закрыть вкладку"), null, (_, _) => CloseTab(tab)) { ShortcutKeyDisplayString = tab == active ? "Ctrl+W" : "" });
         menu.Show(strip, at);
     }
@@ -955,7 +968,7 @@ sealed class BrowserForm : Form
     Rectangle BoundsOf(Tab tab)
     {
         var r = host.ClientRectangle;
-        if (!IsPane(tab)) return r;
+        if (!IsPane(tab) || tab == fullScreen) return r;
         int d = DividerWidth, x = (int)(r.Width * splitAt) - d / 2, s = StripeHeight;
         return tab == paneLeft ? new Rectangle(r.X, r.Y + s, x, r.Height - s) : new Rectangle(x + d, r.Y + s, r.Width - x - d, r.Height - s);
     }
@@ -1413,6 +1426,102 @@ sealed class BrowserForm : Form
         ShowState(tab, switched: true);
     }
 
+    /// <summary>The tab's speaker was clicked: its sound off, or on again.</summary>
+    void ToggleMute(Tab tab)
+    {
+        tab.Muted = !tab.Muted;
+        try { if (tab.Core is { } core) core.IsMuted = tab.Muted; }
+        catch (Exception) { } // the WebView is closing
+        strip.Invalidate();
+    }
+
+    /// <summary>
+    /// A page went into full screen (a video's button, a game) or out of it: the window covers its monitor
+    /// without a frame, the tab strip, the toolbar and the other half of a split, and comes back as it was.
+    /// </summary>
+    void SetFullScreen(Tab tab, bool on)
+    {
+        if (on == (fullScreen == tab)) return;
+        if (!on)
+        {
+            RestoreWindow();
+            return;
+        }
+        // Only a page on screen: one in the background asked while the user went elsewhere
+        if (!OnScreen.Contains(tab) || minimized)
+        {
+            LeavePageFullScreen(tab);
+            return;
+        }
+        if (fullScreen != null) RestoreWindow();
+        if (tab != active) FocusPane(tab);
+        fullScreen = tab;
+        beforeFullState = WindowState;
+        beforeFullBounds = WindowState == FormWindowState.Normal ? Bounds : RestoreBounds;
+        var screen = Screen.FromControl(this).Bounds;
+        SuspendLayout();
+        // Normal before the frame goes: WinForms makes a maximized window anew when its border changes, WebViews and all
+        if (WindowState != FormWindowState.Normal) WindowState = FormWindowState.Normal;
+        FormBorderStyle = FormBorderStyle.None;
+        Bounds = screen;
+        bar.Visible = strip.Visible = false;
+        divider.Visible = stripeLeft.Visible = stripeRight.Visible = false;
+        if (Partner?.Ctl is { } beside) beside.IsVisible = false;
+        ResumeLayout();
+        LayoutPanes();
+        tab.Ctl?.MoveFocus(CoreWebView2MoveFocusReason.Programmatic);
+    }
+
+    /// <summary>The window as it was before the page's full screen.</summary>
+    void RestoreWindow()
+    {
+        if (fullScreen == null) return;
+        fullScreen = null;
+        SuspendLayout();
+        if (WindowState != FormWindowState.Normal) WindowState = FormWindowState.Normal;
+        FormBorderStyle = FormBorderStyle.Sizable;
+        Bounds = beforeFullBounds;
+        if (beforeFullState == FormWindowState.Maximized) WindowState = FormWindowState.Maximized;
+        bar.Visible = true;
+        ShowStrip();
+        if (Split)
+        {
+            divider.Visible = stripeLeft.Visible = stripeRight.Visible = true;
+            if (Partner?.Ctl is { } beside) beside.IsVisible = !minimized;
+        }
+        ResumeLayout();
+        LayoutPanes();
+        if (IsHandleCreated) Theme.ApplyFrame(Handle);
+    }
+
+    /// <summary>Esc, F11, another tab: the page leaves its full screen and the window comes back.</summary>
+    void ExitFullScreen()
+    {
+        var tab = fullScreen;
+        RestoreWindow();
+        if (tab != null) LeavePageFullScreen(tab);
+    }
+
+    static void LeavePageFullScreen(Tab tab)
+    {
+        try { _ = tab.Core?.ExecuteScriptAsync("document.fullscreenElement && document.exitFullscreen()"); }
+        catch (Exception) { } // the WebView is closing
+    }
+
+    /// <summary>
+    /// A server on this machine with its own certificate (vite --https, dotnet dev-certs) opens without the warning,
+    /// as Chrome's --allow-insecure-localhost; any other site keeps the engine's page.
+    /// </summary>
+    static void OnCertificateError(object? sender, CoreWebView2ServerCertificateErrorDetectedEventArgs e)
+    {
+        if (Uri.TryCreate(e.RequestUri, UriKind.Absolute, out var u) && IsThisMachine(u))
+            e.Action = CoreWebView2ServerCertificateErrorAction.AlwaysAllow;
+    }
+
+    /// <summary>localhost, *.localhost (the engine resolves them to loopback itself), 127.0.0.0/8 and ::1.</summary>
+    static bool IsThisMachine(Uri u) =>
+        u.IsLoopback || u.DnsSafeHost.EndsWith(".localhost", StringComparison.OrdinalIgnoreCase);
+
     /// <summary>Remembers the country and searches again with it.</summary>
     void PickCountry(SearchCountry.Country? picked)
     {
@@ -1446,6 +1555,7 @@ sealed class BrowserForm : Form
     async void SelectTab(Tab tab)
     {
         if (tab == active || tab.Closed) return;
+        if (fullScreen != null) ExitFullScreen();
         if (tab == Partner)
         {
             FocusPane(tab);
@@ -1505,6 +1615,7 @@ sealed class BrowserForm : Form
     {
         int i = tabs.IndexOf(tab);
         if (i < 0) return;
+        if (tab == fullScreen) ExitFullScreen();
         if (tabs.Count == 1)
         {
             if (Home.IsTiles(tab.Site)) Close();
@@ -1600,6 +1711,7 @@ sealed class BrowserForm : Form
     void Unload(Tab tab)
     {
         if (tab.Ctl is not { } c) return;
+        if (tab == fullScreen) ExitFullScreen();
         // A project's start or failure page comes back as the project's own address, never as a new start
         tab.Address = tab.Site;
         KeepHistory(tab, current: false, ahead: true);
@@ -2788,6 +2900,10 @@ sealed class BrowserForm : Form
                 return () => { if (active != null) Snapshot(active, full: true); };
             case Keys.Shift | Keys.Escape:
                 return () => Core?.OpenTaskManagerWindow();
+            // Out of a page's full screen, as in other browsers
+            case Keys.Escape when fullScreen != null:
+            case Keys.F11 when fullScreen != null:
+                return ExitFullScreen;
         }
         return null;
     }
@@ -2906,7 +3022,7 @@ sealed class BrowserForm : Form
         if (now == minimized) return;
         minimized = now;
         foreach (var tab in OnScreen)
-            if (tab.Ctl is { } c) c.IsVisible = !now;
+            if (tab.Ctl is { } c) c.IsVisible = !now && (fullScreen == null || tab == fullScreen);
         if (now) EnterBackground();
         else LeaveBackground();
         if (App.Current.S.AutoReload) WatchFolders();
@@ -2958,8 +3074,9 @@ sealed class BrowserForm : Form
         freezeTimer.Stop();
         if (isMain)
         {
-            var bounds = WindowState == FormWindowState.Normal ? Bounds : RestoreBounds;
-            Settings.SaveWindow(bounds, WindowState == FormWindowState.Maximized, active?.Ctl?.ZoomFactor ?? zoom);
+            var bounds = fullScreen != null ? beforeFullBounds : WindowState == FormWindowState.Normal ? Bounds : RestoreBounds;
+            bool maximized = fullScreen != null ? beforeFullState == FormWindowState.Maximized : WindowState == FormWindowState.Maximized;
+            Settings.SaveWindow(bounds, maximized, active?.Ctl?.ZoomFactor ?? zoom);
         }
         foreach (var tab in tabs)
         {

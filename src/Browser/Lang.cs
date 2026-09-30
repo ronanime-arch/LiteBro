@@ -20,7 +20,13 @@ static class L
     public static bool En => Code == "en";
 
     /// <summary>The Language line of settings.ini: auto (by the language of Windows), ru, en.</summary>
-    public static void Set(string setting) => Code = Resolve(setting);
+    public static void Set(string setting)
+    {
+        Code = Resolve(setting);
+        auto = setting is not ("ru" or "en");
+    }
+
+    static bool auto = true;
 
     public static string Resolve(string setting) => setting switch
     {
@@ -29,8 +35,12 @@ static class L
         _ => CultureInfo.CurrentUICulture.TwoLetterISOLanguageName is "ru" or "uk" or "be" or "kk" or "ky" or "uz" or "tg" ? "ru" : "en",
     };
 
-    /// <summary>The engine's own words (its menus, its pages) and the Accept-Language sites get.</summary>
-    public static string EngineLanguage => En ? "en-US" : "ru-RU";
+    /// <summary>
+    /// The engine's own words (its menus, its pages) and the Accept-Language sites get: with auto the language of
+    /// Windows itself (German menus on a German Windows, though this program's own words are English there).
+    /// </summary>
+    public static string EngineLanguage =>
+        auto && CultureInfo.CurrentUICulture.Name.Length > 0 ? CultureInfo.CurrentUICulture.Name : En ? "en-US" : "ru-RU";
 
     static Dictionary<string, string>? english;
     static Regex? pieces;

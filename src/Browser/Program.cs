@@ -413,7 +413,7 @@ sealed class App : ApplicationContext
     string engineKey = "";
 
     /// <summary>The engine flags that can change while it runs: the language, the gateway (local mode), CORS, and GPU and extra flags on a reset.</summary>
-    static string EngineKey() => L.Code + "|" + NetGuard.LocalOnly + "|" + NetGuard.CorsOff + "|" + Current.S.Gpu + "|" + Current.S.ExtraBrowserArgs;
+    static string EngineKey() => L.EngineLanguage + "|" + NetGuard.LocalOnly + "|" + NetGuard.CorsOff + "|" + Current.S.Gpu + "|" + Current.S.ExtraBrowserArgs;
 
     /// <summary>
     /// Flags of the engine apply to its whole browser process: every tab is closed (keeping its address), the process

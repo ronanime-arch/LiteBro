@@ -1212,7 +1212,7 @@ sealed class BrowserForm : Form
 
     /// <summary>
     /// A site's right-click menu: this program's tools in the engine's "More tools" submenu (beside Share),
-    /// each as it is switched on for developers.
+    /// whatever is switched off on the developer page (the user's choice: off there hides buttons, not these).
     /// </summary>
     void AddPageTools(Tab tab, CoreWebView2 core, CoreWebView2ContextMenuRequestedEventArgs e)
     {
@@ -1233,29 +1233,24 @@ sealed class BrowserForm : Form
             return sub;
         }
 
-        var tools = new List<CoreWebView2ContextMenuItem>();
-        if (Dev.On("snapshot"))
+        var tools = new List<CoreWebView2ContextMenuItem>
         {
-            tools.Add(Item("Захватить всю страницу… (Ctrl+Shift+S)", () => Snapshot(tab, full: true)));
-            tools.Add(Item("Захватить видимую часть…", () => Snapshot(tab, full: false)));
-        }
-        if (Dev.On("reset") && SiteOrigin(tab) != null)
-            tools.Add(Item("Сбросить кэш сайта и обновить (Ctrl+Shift+R)", () => ResetSite(tab)));
-        if (Dev.On("storage") && StoragePage.HasSite(core))
+            Item("Захватить всю страницу…" + (Dev.On("snapshot") ? " (Ctrl+Shift+S)" : ""), () => Snapshot(tab, full: true)),
+            Item("Захватить видимую часть…", () => Snapshot(tab, full: false)),
+        };
+        if (SiteOrigin(tab) != null)
+            tools.Add(Item("Сбросить кэш сайта и обновить" + (Dev.On("reset") ? " (Ctrl+Shift+R)" : ""), () => ResetSite(tab)));
+        if (StoragePage.HasSite(core))
             tools.Add(Item("Хранилище сайта", () => OpenStorage(tab)));
-        if (Dev.On("emulation"))
-        {
-            var radio = CoreWebView2ContextMenuItemKind.Radio;
-            var screens = new List<CoreWebView2ContextMenuItem> { Item("Обычный экран", () => SetEmulation(tab, null, tab.Speed), radio, tab.Device == null) };
-            screens.AddRange(Emulation.Devices.Select(d => Item($"{d.Name} ({d.Width}×{d.Height})", () => SetEmulation(tab, d, tab.Speed), radio, tab.Device == d)));
-            var speeds = new List<CoreWebView2ContextMenuItem> { Item("Обычная", () => SetEmulation(tab, tab.Device, null), radio, tab.Speed == null) };
-            speeds.AddRange(Emulation.Speeds.Select(sp => Item(sp.Name, () => SetEmulation(tab, tab.Device, sp), radio, tab.Speed == sp)));
-            tools.Add(Sub("Устройство" + (tab.Device != null ? ": " + tab.Device.Name : ""), screens));
-            tools.Add(Sub("Сеть" + (tab.Speed != null ? ": " + tab.Speed.Name : ""), speeds));
-        }
+        var radio = CoreWebView2ContextMenuItemKind.Radio;
+        var screens = new List<CoreWebView2ContextMenuItem> { Item("Обычный экран", () => SetEmulation(tab, null, tab.Speed), radio, tab.Device == null) };
+        screens.AddRange(Emulation.Devices.Select(d => Item($"{d.Name} ({d.Width}×{d.Height})", () => SetEmulation(tab, d, tab.Speed), radio, tab.Device == d)));
+        var speeds = new List<CoreWebView2ContextMenuItem> { Item("Обычная", () => SetEmulation(tab, tab.Device, null), radio, tab.Speed == null) };
+        speeds.AddRange(Emulation.Speeds.Select(sp => Item(sp.Name, () => SetEmulation(tab, tab.Device, sp), radio, tab.Speed == sp)));
+        tools.Add(Sub("Устройство" + (tab.Device != null ? ": " + tab.Device.Name : ""), screens));
+        tools.Add(Sub("Сеть" + (tab.Speed != null ? ": " + tab.Speed.Name : ""), speeds));
         if (tab.Device != null || tab.Speed != null)
             tools.Add(Item("Выключить эмуляцию", () => SetEmulation(tab, null, null)));
-        if (tools.Count == 0) return;
 
         var into = MoreTools(e.MenuItems);
         if (into == null)

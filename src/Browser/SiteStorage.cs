@@ -116,6 +116,14 @@ static class StoragePage
         core.CookieManager.AddOrUpdateCookie(cookie);
     }
 
+    /// <summary>Every cookie the storage page shows: of the page's host and its parent domains, every path.</summary>
+    public static async Task ClearCookiesAsync(CoreWebView2 core)
+    {
+        var host = new Uri(core.Source).Host;
+        foreach (var c in await core.CookieManager.GetCookiesAsync(null))
+            if (Covers(c.Domain, host)) core.CookieManager.DeleteCookie(c);
+    }
+
     public static void DeleteCookie(CoreWebView2 core, string name, string domain, string path) =>
         core.CookieManager.DeleteCookiesWithDomainAndPath(name, domain, path);
 }

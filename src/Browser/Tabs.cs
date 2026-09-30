@@ -39,6 +39,12 @@ sealed class Tab
     public string? TermCwd;
     /// <summary>The command line running now and the folder it was started in; null at the prompt.</summary>
     public string? TermRunning, TermRunningDir;
+    /// <summary>The tab this one was opened from: tabs opened from one tab line up right after it.</summary>
+    public Tab? OpenedFrom;
+    /// <summary>Kept at the strip's left end as a small square, opened again when the browser starts (pinned.txt).</summary>
+    public bool Pinned;
+    /// <summary>The site's icon, drawn on a pinned tab; null until the page gives one.</summary>
+    public Image? Icon;
     /// <summary>The site tab whose storage this tab's storage page shows; set only by the browser when it opens the page.</summary>
     public Tab? StorageOf;
     /// <summary>The «только localhost» request filter and the web socket script are in place on the current WebView.</summary>
@@ -139,24 +145,44 @@ sealed class TabStrip : Control
     int Unit => Font.Height;
     int TabTop => Unit / 3;
 
+    /// <summary>Pinned tabs come first in the list.</summary>
+    int PinnedCount
+    {
+        get
+        {
+            int n = 0;
+            while (n < tabs.Count && tabs[n].Pinned) n++;
+            return n;
+        }
+    }
+
+    int PinnedWidth => Unit * 5 / 2;
+
     int TabWidth
     {
         get
         {
-            int room = Width - Unit - Height;
-            int w = tabs.Count == 0 ? room : room / tabs.Count;
+            int pinned = PinnedCount, rest = tabs.Count - pinned;
+            int room = Width - Unit - Height - pinned * PinnedWidth;
+            int w = rest == 0 ? room : room / rest;
             return Math.Max(Unit * 3, Math.Min(Unit * 15, w));
         }
     }
 
-    Rectangle TabRect(int i) => new(Unit / 2 + i * TabWidth, TabTop, TabWidth, Height - TabTop);
+    Rectangle TabRect(int i)
+    {
+        int pinned = PinnedCount;
+        if (i < pinned) return new(Unit / 2 + i * PinnedWidth, TabTop, PinnedWidth, Height - TabTop);
+        return new(Unit / 2 + pinned * PinnedWidth + (i - pinned) * TabWidth, TabTop, TabWidth, Height - TabTop);
+    }
 
     Rectangle AddRect
     {
         get
         {
             int s = Height - TabTop - Unit / 2;
-            return new(Unit / 2 + tabs.Count * TabWidth + Unit / 4, TabTop + (Height - TabTop - s) / 2, s, s);
+            int left = tabs.Count == 0 ? Unit / 2 : TabRect(tabs.Count - 1).Right;
+            return new(left + Unit / 4, TabTop + (Height - TabTop - s) / 2, s, s);
         }
     }
 
@@ -166,7 +192,7 @@ sealed class TabStrip : Control
         return new(tab.Right - s - Unit / 3, tab.Top + (tab.Height - s) / 2, s, s);
     }
 
-    bool HasClose(int i) => tabs[i] == active || tabs[i] == beside || TabWidth >= Unit * 5;
+    bool HasClose(int i) => !tabs[i].Pinned && (tabs[i] == active || tabs[i] == beside || TabWidth >= Unit * 5);
 
     int Hit(Point p, out bool close) => Hit(p, out close, out _);
 
@@ -191,7 +217,7 @@ sealed class TabStrip : Control
     Rectangle? SoundRect(int i)
     {
         var tab = tabs[i];
-        if (!tab.PlayingAudio && !tab.Muted) return null;
+        if (tab.Pinned || (!tab.PlayingAudio && !tab.Muted)) return null;
         var r = TabRect(i);
         int left = r.Left + Unit * 2 / 3;
         if (IsSplit(tab)) left += Unit + 2 + Unit / 3;
@@ -227,6 +253,12 @@ sealed class TabStrip : Control
             {
                 using var pen = new Pen(Mix(BackColor, Theme.Text, .25f));
                 g.DrawLine(pen, r.Right - 1, r.Top + r.Height / 4, r.Right - 1, r.Bottom - r.Height / 3);
+            }
+
+            if (tab.Pinned)
+            {
+                DrawPinned(g, tab, r);
+                continue;
             }
 
             int left = r.Left + Unit * 2 / 3;
@@ -286,6 +318,46 @@ sealed class TabStrip : Control
             g.FillEllipse(brush, add);
         }
         TextRenderer.DrawText(g, GlyphAdd, plus, add, Theme.Text, Center);
+    }
+
+    /// <summary>A pinned tab: the site's icon (or the first letter of its name), a loading circle, the half of a split below.</summary>
+    void DrawPinned(Graphics g, Tab tab, Rectangle r)
+    {
+        int s = Unit + Unit / 5;
+        var box = new Rectangle(r.Left + (r.Width - s) / 2, r.Top + (r.Height - s) / 2 - 1, s, s);
+        if (tab.Loading)
+        {
+            using var pen = new Pen(Color.FromArgb(0x4d, 0x6b, 0xfe), Math.Max(2, Unit / 7));
+            g.DrawArc(pen, Rectangle.Inflate(box, -2, -2), -90, 270);
+        }
+        else if (tab.Icon != null)
+        {
+            var mode = g.InterpolationMode;
+            g.InterpolationMode = InterpolationMode.HighQualityBicubic;
+            g.DrawImage(tab.Icon, box);
+            g.InterpolationMode = mode;
+        }
+        else
+        {
+            using var brush = new SolidBrush(Mix(BackColor, Theme.Text, .25f));
+            using var path = Rounded(box, 4, allCorners: true);
+            g.FillPath(brush, path);
+            var label = tab.Label.Trim();
+            using var bold = new Font(Font, FontStyle.Bold);
+            TextRenderer.DrawText(g, label.Length > 0 ? label.Substring(0, 1).ToUpperInvariant() : "?", bold, box,
+                tab.Ctl == null ? Theme.Dim : Theme.Text,
+                TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPadding | TextFormatFlags.NoPrefix);
+        }
+        if (IsSplit(tab))
+        {
+            using var brush = new SolidBrush(tab == splitLeft ? Theme.LeftPane : Theme.RightPane);
+            g.FillRectangle(brush, box.Left, box.Bottom + 2, box.Width, Math.Max(2, Unit / 6));
+        }
+        else if (tab.Muted)
+        {
+            TextRenderer.DrawText(g, GlyphMuted, small, new Rectangle(r.Right - Unit, r.Top, Unit, Unit), Theme.Dim,
+                TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPadding);
+        }
     }
 
     static GraphicsPath Rounded(Rectangle r, int radius, bool allCorners)

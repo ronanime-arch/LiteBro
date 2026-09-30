@@ -23,7 +23,8 @@ h1 { margin: 0; font-size: 20px; font-weight: 600; }
 #origin { font: 13px Consolas, monospace; }
 button, select { font: 13px var(--text); padding: 4px 12px; border: 1px solid var(--line); border-radius: 6px; background: transparent; color: inherit; cursor: pointer; }
 select { background: var(--card); }
-button:hover { background: rgba(127, 127, 127, .15); }
+button:hover:not(:disabled) { background: rgba(127, 127, 127, .15); }
+button:disabled { opacity: .45; cursor: default; }
 button[hidden], select[hidden], .row [hidden] { display: none; }
 input[type=search], input[type=text] { font: 13px var(--text); padding: 4px 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--card); color: inherit; }
 input[type=search] { min-width: 220px; }
@@ -76,7 +77,8 @@ dialog .grow { flex: 1; }
     <select id="idbStore" hidden title="База и хранилище объектов"></select>
     <input type="search" id="find" placeholder="Найти">
     <button id="add">Добавить</button>
-    <button id="clear">Очистить всё</button>
+    <button id="clear">Очистить</button>
+    <button id="clearAll" title="Cookies, localStorage, sessionStorage и все хранилища IndexedDB этого сайта">Очистить всё</button>
   </div>
   <div id="error"></div>
   <div class="muted" id="note"></div>
@@ -106,6 +108,21 @@ dialog .grow { flex: 1; }
       <button type="button" id="remove">Удалить</button>
       <button type="button" id="cancel">Отмена</button>
       <button type="submit" id="save">Сохранить</button>
+    </div>
+  </form>
+</dialog>
+<dialog id="newStore">
+  <form method="dialog" id="storeForm">
+    <h2>Новое хранилище IndexedDB</h2>
+    <label class="f">База<input type="text" id="sDb" spellcheck="false" list="dbNames"></label>
+    <datalist id="dbNames"></datalist>
+    <label class="f">Хранилище объектов<input type="text" id="sName" spellcheck="false"></label>
+    <label class="f">Ключ из поля значения (keyPath)<input type="text" id="sKeyPath" spellcheck="false" placeholder="пусто — ключ задаётся отдельно"></label>
+    <div class="checks"><label><input type="checkbox" id="sAuto"> Автоматический ключ (autoIncrement)</label></div>
+    <div class="row">
+      <span class="muted grow" id="storeNote"></span>
+      <button type="button" id="storeCancel">Отмена</button>
+      <button type="submit">Создать</button>
     </div>
   </form>
 </dialog>
@@ -157,12 +174,18 @@ function draw() {
       o.textContent = x.db + " / " + x.store.name + " (" + x.store.count + ")";
       $("idbStore").append(o);
     }
+    const more = document.createElement("option");
+    more.value = "\u0001new";
+    more.textContent = "+ Новое хранилище…";
+    $("idbStore").append(more);
     $("idbStore").value = store;
   }
   const s = idb ? all.find(x => x.id === store) : null;
-  $("add").hidden = idb && !s;
-  $("clear").hidden = part === "cookies" || (idb && !s);
-  $("clear").textContent = idb ? "Очистить хранилище" : "Очистить всё";
+  $("add").textContent = idb && !s ? "Новое хранилище" : "Добавить";
+  $("clear").disabled = !current().length;
+  $("clear").textContent = idb ? "Очистить хранилище" : "Очистить";
+  $("clearAll").disabled = !state.cookies.length && !state.local.length && !state.session.length
+    && !all.some(x => x.store.count > 0);
   $("note").textContent = idb && s
     ? (s.store.keyPath !== null ? "Ключ берётся из значения: " + JSON.stringify(s.store.keyPath) + ". " : "") +
       (s.store.count > s.store.rows.length ? "Показаны первые " + s.store.rows.length + " из " + s.store.count + ". " : "") +
@@ -261,14 +284,49 @@ $("pretty").addEventListener("click", () => {
   try { $("fValue").value = JSON.stringify(JSON.parse($("fValue").value), null, 2); $("editNote").textContent = ""; }
   catch (err) { $("editNote").textContent = "Не JSON: " + err.message; }
 });
-$("add").addEventListener("click", () => open(null));
+$("add").addEventListener("click", () => {
+  if (part === "idb" && !stores().some(x => x.id === store)) newStore();
+  else open(null);
+});
 $("clear").addEventListener("click", () => {
   if (part === "idb") {
     if (confirm("Удалить все записи хранилища " + where().store + "?")) post(Object.assign({ op: "idbClear" }, where()));
+  } else if (part === "cookies") {
+    if (confirm("Удалить все cookies этого сайта и его родительских доменов?")) post({ op: "cookieClear" });
   } else if (confirm("Удалить все записи " + (part === "local" ? "localStorage" : "sessionStorage") + " этого сайта?")) post({ op: "clear", area: part });
 });
+$("clearAll").addEventListener("click", () => {
+  if (confirm("Удалить всё хранилище сайта: cookies, localStorage, sessionStorage и записи всех хранилищ IndexedDB?\n\nСайт, скорее всего, попросит войти заново."))
+    post({ op: "clearAll" });
+});
+
+function newStore() {
+  $("dbNames").textContent = "";
+  for (const db of state.idb) { const o = document.createElement("option"); o.value = db.name; $("dbNames").append(o); }
+  $("sDb").value = state.idb.length ? state.idb[0].name : "";
+  $("sName").value = $("sKeyPath").value = "";
+  $("sAuto").checked = false;
+  $("storeNote").textContent = "";
+  $("newStore").showModal();
+  ($("sDb").value ? $("sName") : $("sDb")).focus();
+}
+$("storeForm").addEventListener("submit", ev => {
+  const db = $("sDb").value.trim(), name = $("sName").value.trim();
+  if (!db || !name) {
+    ev.preventDefault();
+    $("storeNote").textContent = "Нужны имя базы и имя хранилища.";
+    return;
+  }
+  store = db + "\u0000" + name;
+  post({ op: "idbCreate", db, store: name, keyPath: $("sKeyPath").value.trim(), autoIncrement: $("sAuto").checked });
+});
+$("storeCancel").addEventListener("click", () => $("newStore").close());
 for (const b of $("tabs").children) b.addEventListener("click", () => { part = b.dataset.part; draw(); });
-$("idbStore").addEventListener("change", () => { store = $("idbStore").value; draw(); });
+$("idbStore").addEventListener("change", () => {
+  if ($("idbStore").value === "\u0001new") { $("idbStore").value = store; newStore(); return; }
+  store = $("idbStore").value;
+  draw();
+});
 $("find").addEventListener("input", draw);
 $("refresh").addEventListener("click", () => post({ op: "load" }));
 document.addEventListener("keydown", ev => { if (ev.key === "F5") { ev.preventDefault(); post({ op: "load" }); } });

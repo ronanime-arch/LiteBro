@@ -300,6 +300,24 @@ sealed class Settings
         "Disabled = " + DevOff,
         "");
 
+    static string PinnedPath => Path.Combine(Dir, "pinned.txt");
+
+    /// <summary>The pinned tabs, in order: an address, or «term» and a folder for a terminal.</summary>
+    public static List<string[]> LoadPinned()
+    {
+        try
+        {
+            return File.ReadAllLines(PinnedPath, Encoding.UTF8).Where(l => l.Trim().Length > 0).Select(l => l.Split('\t')).ToList();
+        }
+        catch (Exception) { return new List<string[]>(); }
+    }
+
+    public static void SavePinned(IEnumerable<string[]> pinned)
+    {
+        try { File.WriteAllLines(PinnedPath, pinned.Select(p => string.Join("\t", p)), Encoding.UTF8); }
+        catch (Exception e) when (e is IOException || e is UnauthorizedAccessException) { }
+    }
+
     public static (Rectangle Bounds, bool Maximized, double Zoom)? LoadWindow()
     {
         try

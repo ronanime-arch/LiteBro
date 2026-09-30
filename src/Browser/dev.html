@@ -36,6 +36,15 @@ button { font: 13px var(--text); padding: 4px 12px; border: 1px solid var(--line
 button:hover { background: rgba(127, 127, 127, .15); }
 select { font: 13px var(--text); padding: 4px 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--card); color: inherit; }
 input[type=number] { width: 70px; font: 13px var(--text); padding: 3px 6px; border: 1px solid var(--line); border-radius: 6px; background: var(--card); color: inherit; margin: 0 4px; }
+/* What each switch hides, drawn as it looks in the browser */
+.icon { width: 34px; height: 30px; flex: none; display: grid; place-items: center; border-radius: 6px;
+  background: rgba(127, 127, 127, .16); font: 16px "Segoe Fluent Icons", "Segoe MDL2 Assets"; color: var(--fg); }
+.icon.word { font: 600 12px var(--text); }
+.icon svg { width: 22px; height: 20px; }
+.icon.shell { background: #6a2a91; border-radius: 0 8px 8px 0; }
+.icon.net { background: #1f7a45; border-radius: 8px 0 0 8px; }
+.icon.console { background: rgba(0, 0, 0, .55); color: #fff; border-radius: 13px; height: 24px; }
+.item.off .icon { opacity: .45; }
 #timing.off { opacity: .5; }
 button:disabled { opacity: .45; cursor: default; background: transparent; }
 </style>
@@ -122,6 +131,27 @@ const GROUPS = [
   ]],
 ];
 
+// Glyphs of the icon font, as on the toolbar (BrowserForm) and the start page
+const SHIELD = '<svg viewBox="0 0 20 22"><path d="M10 1l8 3v6c0 5.2-3.4 9.3-8 11-4.6-1.7-8-5.8-8-11V4z" fill="none" stroke="#fff" stroke-width="2" stroke-linejoin="round"/><path d="M6 11l3 3 5-6" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+const POWERSHELL = '<svg viewBox="0 0 26 22"><path d="M4 1h21l-3 20H1z" fill="#2671be"/><path d="M7 6l6 5-8 5" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/><path d="M12 16h6" stroke="#fff" stroke-width="2.2" stroke-linecap="round"/></svg>';
+const ICONS = {
+  back: "\uE72B", forward: "\uE72A", reload: "\uE72C", home: "\uE80F", star: "\uE734", ram: { text: "МБ" },
+  reset: "\uE75C", country: "\uE774", emulation: "\uE90F", snapshot: "\uE722", storage: "\uEDA2", json: { text: "{ }" },
+  mocks: "\uE8A5", split: "\uE89A", perms: "\uE8D7",
+  shell: { svg: POWERSHELL, cls: "shell" }, localonly: { svg: SHIELD, cls: "net" }, netlog: "\uE8FD", console: { text: ">_", cls: "console" },
+  tabMute: "\uE767", strictTracking: "\uEA18", trustLocalCerts: "\uE72E", freezeTabs: "\uE769", gpu: "\uE7F4",
+};
+function icon(id) {
+  const i = ICONS[id], span = document.createElement("span");
+  span.className = "icon";
+  span.setAttribute("aria-hidden", "true");
+  if (typeof i === "string") span.textContent = i;
+  else if (i && i.svg) span.innerHTML = i.svg;
+  else if (i) { span.textContent = i.text; span.classList.add("word"); }
+  if (i && i.cls) span.classList.add(i.cls);
+  return span;
+}
+
 const boxes = {};
 for (const [title, note, items] of GROUPS) {
   const h = document.createElement("h2");
@@ -151,7 +181,7 @@ for (const [title, note, items] of GROUPS) {
     });
     const track = document.createElement("span");
     track.className = "track";
-    label.append(text, box, track);
+    label.append(icon(id), text, box, track);
     section.append(label);
     boxes[id] = box;
   }
@@ -217,7 +247,7 @@ for (const [where, key, name, what] of SETTINGS) {
   });
   const track = document.createElement("span");
   track.className = "track";
-  label.append(text, box, track);
+  label.append(icon(key), text, box, track);
   $(where).append(label);
   settingBoxes[key] = box;
 }

@@ -1429,7 +1429,8 @@ sealed class BrowserForm : Form
     void ShowEmulation(Tab tab)
     {
         bool on = tab.Device != null || tab.Speed != null;
-        bool any = Dev.On("emulation") || Dev.On("snapshot") || Dev.On("storage") || Dev.On("perms");
+        // Permissions only ride along: they alone don't bring the button back
+        bool any = Dev.On("emulation") || Dev.On("snapshot") || Dev.On("storage");
         emulate.Visible = on || (any && !tab.ShowingInternalPage && !IsInternal(tab.Site) && tab.Term == null);
         emulate.ForeColor = on ? Color.FromArgb(0x1f, 0x9d, 0x55) : Theme.Text;
         var what = string.Join(", ", new[] { tab.Device?.Name, tab.Speed?.Name }.OfType<string>());

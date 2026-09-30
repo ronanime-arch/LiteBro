@@ -19,6 +19,8 @@ sealed class Tab
     /// <summary>The WebView2 profile of the tab's WebView: "" for the shared one, else a project's own (Project.Profile).</summary>
     public string Profile = "";
     public bool Loading, ShowingInternalPage, TrimmedAfterLoad, Suspended, PlayingAudio, Closed;
+    /// <summary>Sound switched off with the tab's speaker; kept when its WebView is replaced.</summary>
+    public bool Muted;
     /// <summary>The project whose start page (or failure page) is shown: F5 tries it again.</summary>
     public Project? LastProject;
     /// <summary>The link of LastProject being opened; null for the project's own address.</summary>
@@ -76,7 +78,7 @@ sealed class Tab
 /// <summary>The row of tabs above the toolbar, drawn by hand: a click brings a tab forward, its cross or a middle click closes it.</summary>
 sealed class TabStrip : Control
 {
-    const string GlyphClose = "", GlyphAdd = "", GlyphSound = "";
+    const string GlyphClose = "", GlyphAdd = "", GlyphSound = "", GlyphMuted = "";
     // The tab in front has the toolbar's colour and merges with it
     static Color Face => Theme.Face;
 
@@ -86,10 +88,12 @@ sealed class TabStrip : Control
     Tab? active, beside, splitLeft, splitRight;
     // Index of the tab under the mouse; tabs.Count is the new tab button
     int hover = -1;
-    bool overClose;
+    bool overClose, overSound;
     string tipText = "";
 
     public event Action<Tab>? Picked, Closing;
+    /// <summary>A click on a tab's speaker: its sound off or on again.</summary>
+    public event Action<Tab>? Mute;
     /// <summary>A right click on a tab, with where to show its menu.</summary>
     public event Action<Tab, Point>? Menu;
     public event Action? NewTab;
@@ -162,18 +166,35 @@ sealed class TabStrip : Control
 
     bool HasClose(int i) => tabs[i] == active || tabs[i] == beside || TabWidth >= Unit * 5;
 
-    int Hit(Point p, out bool close)
+    int Hit(Point p, out bool close) => Hit(p, out close, out _);
+
+    int Hit(Point p, out bool close, out bool sound)
     {
-        close = false;
+        close = sound = false;
         if (AddRect.Contains(p)) return tabs.Count;
         for (int i = 0; i < tabs.Count; i++)
         {
             var r = TabRect(i);
             if (!r.Contains(p)) continue;
             close = HasClose(i) && CloseRect(r).Contains(p);
+            sound = !close && SoundRect(i) is { } s && s.Contains(p);
             return i;
         }
         return -1;
+    }
+
+    bool IsSplit(Tab tab) => tab == splitLeft || tab == splitRight;
+
+    /// <summary>The speaker of a tab that plays sound or is muted, after its split mark and loading circle; null without one.</summary>
+    Rectangle? SoundRect(int i)
+    {
+        var tab = tabs[i];
+        if (!tab.PlayingAudio && !tab.Muted) return null;
+        var r = TabRect(i);
+        int left = r.Left + Unit * 2 / 3;
+        if (IsSplit(tab)) left += Unit + 2 + Unit / 3;
+        if (tab.Loading) left += Unit * 2 / 3 + Unit / 3;
+        return new Rectangle(left - Unit / 4, r.Top, Unit + Unit / 2, r.Height);
     }
 
     protected override void OnPaint(PaintEventArgs e)
@@ -208,7 +229,7 @@ sealed class TabStrip : Control
 
             int left = r.Left + Unit * 2 / 3;
             // Which half of a split the tab is on, in that half's colour
-            if (tab == splitLeft || tab == splitRight)
+            if (IsSplit(tab))
             {
                 bool l = tab == splitLeft;
                 int h = Unit + 2, w = Unit + 2;
@@ -227,10 +248,16 @@ sealed class TabStrip : Control
                 g.DrawArc(pen, left, r.Top + (r.Height - s) / 2, s, s, -90, 270);
                 left += s + Unit / 3;
             }
-            else if (tab.PlayingAudio)
+            if (SoundRect(i) is { } sound)
             {
+                if (i == hover && overSound)
+                {
+                    using var brush = new SolidBrush(Mix(front ? Face : BackColor, Theme.Text, .15f));
+                    using var path = Rounded(sound, Unit / 3, allCorners: true);
+                    g.FillPath(brush, path);
+                }
                 var box = new Rectangle(left, r.Top, Unit, r.Height);
-                TextRenderer.DrawText(g, GlyphSound, small, box, Theme.Text, Center);
+                TextRenderer.DrawText(g, tab.Muted ? GlyphMuted : GlyphSound, small, box, tab.Muted ? Theme.Dim : Theme.Text, Center);
                 left += Unit + Unit / 4;
             }
 
@@ -283,14 +310,16 @@ sealed class TabStrip : Control
     protected override void OnMouseMove(MouseEventArgs e)
     {
         base.OnMouseMove(e);
-        int h = Hit(e.Location, out bool close);
-        if (h == hover && close == overClose) return;
+        int h = Hit(e.Location, out bool close, out bool sound);
+        if (h == hover && close == overClose && sound == overSound) return;
         hover = h;
         overClose = close;
+        overSound = sound;
         Invalidate();
         var text = h == tabs.Count ? L.T("Новая вкладка (Ctrl+T)")
             : h < 0 ? ""
             : close ? L.T("Закрыть вкладку (Ctrl+W)")
+            : sound ? (tabs[h].Muted ? L.T("Включить звук вкладки") : L.T("Выключить звук вкладки"))
             : Tip(tabs[h]);
         if (text == tipText) return;
         tipText = text;
@@ -309,7 +338,7 @@ sealed class TabStrip : Control
     {
         base.OnMouseLeave(e);
         hover = -1;
-        overClose = false;
+        overClose = overSound = false;
         Invalidate();
     }
 
@@ -317,8 +346,9 @@ sealed class TabStrip : Control
     {
         base.OnMouseDown(e);
         if (e.Button != MouseButtons.Left) return;
-        int h = Hit(e.Location, out bool close);
+        int h = Hit(e.Location, out bool close, out bool sound);
         if (h == tabs.Count) NewTab?.Invoke();
+        else if (h >= 0 && sound) Mute?.Invoke(tabs[h]);
         else if (h >= 0 && !close) Picked?.Invoke(tabs[h]);
     }
 

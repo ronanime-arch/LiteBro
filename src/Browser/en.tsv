@@ -614,3 +614,8 @@ LiteBro: только localhost	LiteBro: localhost only
 сеанс	session
 этого сайта?	of this site?
 \x1b[90m[Процесс завершён. Enter — запустить снова]\x1b[0m	\x1b[90m[Process exited. Enter to start again]\x1b[0m
+Включить звук вкладки	Unmute tab
+Выключить звук вкладки	Mute tab
+Клик по значку звука на вкладке	Click on the speaker of a tab
+Выключить и снова включить звук вкладки (также в меню правого клика по вкладке)	Mute and unmute the tab (also in the tab right-click menu)
+Выйти из полноэкранного режима видео или игры	Leave the full screen of a video or a game

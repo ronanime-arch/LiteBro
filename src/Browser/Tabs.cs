@@ -31,6 +31,12 @@ sealed class Tab
     public Terminal? Term;
     /// <summary>The folder a terminal tab starts its shell in; set only by the browser when it opens the tab.</summary>
     public string? TermDir;
+    /// <summary>Typed into the shell once it starts (a terminal tile's command); set only by the browser.</summary>
+    public string? TermCommand;
+    /// <summary>The shell's folder, as its prompt last told it (TermPage.Init).</summary>
+    public string? TermCwd;
+    /// <summary>The command line running now and the folder it was started in; null at the prompt.</summary>
+    public string? TermRunning, TermRunningDir;
     /// <summary>The site tab whose storage this tab's storage page shows; set only by the browser when it opens the page.</summary>
     public Tab? StorageOf;
     /// <summary>The «только localhost» request filter and the web socket script are in place on the current WebView.</summary>

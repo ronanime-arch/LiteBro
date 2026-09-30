@@ -44,6 +44,12 @@ sealed class Project
     /// <summary>The WebView2 profile of the project's pages; "" for the shared one.</summary>
     public string Profile => OwnProfile && Id.Length > 0 ? "project-" + Id : "";
 
+    /// <summary>A terminal tile: opens PowerShell in WorkDir and runs Command there (saved with the terminal's star).</summary>
+    public bool IsTerminal => TermPage.Is(Url.Trim());
+
+    /// <summary>A terminal tile's command line: Exe and Args together; empty for a plain shell.</summary>
+    public string Command => (Exe.Trim() + " " + Args.Trim()).Trim();
+
     /// <summary>Url and the links' addresses.</summary>
     public IEnumerable<string> Addresses() => new[] { Url }.Concat(Links.Select(l => l.Url));
 }

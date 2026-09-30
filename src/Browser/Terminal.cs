@@ -252,6 +252,72 @@ static class TermPage
     public static bool Is(string? uri) =>
         Home.Is(uri) && new Uri(uri!).AbsolutePath == "/term";
 
+    /// <summary>
+    /// PowerShell that tells the browser where it is and what it runs, in escape sequences the page ignores:
+    /// its folder before each prompt (OSC 9;9, as for Windows Terminal) and the line accepted by Enter (OSC 633;E).
+    /// </summary>
+    const string InitScript =
+        "$global:__litebroPrompt = $function:prompt\n" +
+        "function global:prompt { [Console]::Write([char]27 + ']9;9;' + $PWD.ProviderPath + [char]7); & $global:__litebroPrompt }\n" +
+        "if (Import-Module PSReadLine -PassThru -ErrorAction SilentlyContinue) {\n" +
+        "  Set-PSReadLineKeyHandler -Key Enter -ScriptBlock {\n" +
+        "    $l = $null; $c = $null\n" +
+        "    [Microsoft.PowerShell.PSConsoleReadLine]::GetBufferState([ref]$l, [ref]$c)\n" +
+        "    [Console]::Write([char]27 + ']633;E;' + ($l -replace '[\\x00-\\x1f]', ' ') + [char]7)\n" +
+        "    [Microsoft.PowerShell.PSConsoleReadLine]::AcceptLine()\n" +
+        "  }\n" +
+        "}\n";
+
+    public static readonly string CommandLine =
+        "powershell.exe -NoLogo -NoExit -EncodedCommand " + Convert.ToBase64String(Encoding.Unicode.GetBytes(InitScript));
+
+    const string CwdMark = "\x1b]9;9;", LineMark = "\x1b]633;E;";
+
+    /// <summary>
+    /// Reads the shell's own sequences out of what it printed: the folder (at each prompt, so nothing runs any more)
+    /// and the line started. Text cut inside a sequence is kept in carry for the next piece.
+    /// </summary>
+    public static void Watch(Tab tab, ref string carry, string text)
+    {
+        var s = carry + text;
+        carry = "";
+        int at = 0;
+        while ((at = s.IndexOf('\x1b', at)) >= 0)
+        {
+            bool cwd = string.CompareOrdinal(s, at, CwdMark, 0, CwdMark.Length) == 0;
+            bool line = !cwd && string.CompareOrdinal(s, at, LineMark, 0, LineMark.Length) == 0;
+            if (!cwd && !line)
+            {
+                // A mark cut at the end of this piece
+                if (s.Length - at < LineMark.Length && (CwdMark.StartsWith(s.Substring(at)) || LineMark.StartsWith(s.Substring(at))))
+                {
+                    carry = s.Substring(at);
+                    return;
+                }
+                at++;
+                continue;
+            }
+            int start = at + (cwd ? CwdMark.Length : LineMark.Length), end = s.IndexOf('\a', start);
+            if (end < 0)
+            {
+                if (s.Length - at < 4096) carry = s.Substring(at);
+                return;
+            }
+            var value = s.Substring(start, end - start);
+            if (cwd)
+            {
+                tab.TermCwd = value;
+                tab.TermRunning = tab.TermRunningDir = null;
+            }
+            else if (value.Trim().Length > 0)
+            {
+                tab.TermRunning = value.Trim();
+                tab.TermRunningDir = tab.TermCwd;
+            }
+            at = end + 1;
+        }
+    }
+
     /// <summary>A file of the page by its path, with the headers to serve it; null for another path.</summary>
     public static Stream? File(string path, out string headers)
     {

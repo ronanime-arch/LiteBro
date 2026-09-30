@@ -171,6 +171,7 @@ sealed class BrowserForm : Form
         };
         freezeTimer.Tick += (_, _) => FreezeIdleTabs();
         reloadTimer.Tick += (_, _) => ReloadChanged();
+        menuWatch.Tick += (_, _) => WatchMenu();
         FormClosed += (_, _) =>
         {
             foreach (var w in watchers.Values) w.Dispose();
@@ -380,7 +381,11 @@ sealed class BrowserForm : Form
         ApplyTheme(c);
         c.Bounds = BoundsOf(tab);
         // A click into the tab beside brings it forward: the toolbar follows it
-        c.GotFocus += (_, _) => { if (tab == Partner) FocusPane(tab); };
+        c.GotFocus += (_, _) =>
+        {
+            openMenu?.Close(ToolStripDropDownCloseReason.AppClicked);
+            if (tab == Partner) FocusPane(tab);
+        };
         c.ZoomFactor = zoom;
         c.AcceleratorKeyPressed += OnAcceleratorKeyPressed;
         var core = c.CoreWebView2;
@@ -852,6 +857,33 @@ sealed class BrowserForm : Form
     }
 
     /// <summary>A menu in the theme's colours, gone once closed: the next one is built again with the current state.</summary>
+    // A menu of the toolbar or the tabs, while it is open: a click into a page does not reach WinForms
+    // (the WebView's window is the engine's process), so the page taking focus closes it, and so does
+    // a button pressed over the pages (a page that had focus already gets no new focus)
+    ContextMenuStrip? openMenu;
+    readonly Timer menuWatch = new() { Interval = 50 };
+
+    [DllImport("user32.dll")] static extern short GetAsyncKeyState(int key);
+
+    void WatchMenu()
+    {
+        if (openMenu is not { Visible: true } menu)
+        {
+            menuWatch.Stop();
+            return;
+        }
+        bool pressed = (GetAsyncKeyState(0x01) & 0x8000) != 0 || (GetAsyncKeyState(0x02) & 0x8000) != 0 || (GetAsyncKeyState(0x04) & 0x8000) != 0;
+        if (!pressed) return;
+        var at = Cursor.Position;
+        if (!host.RectangleToScreen(host.ClientRectangle).Contains(at) || OverMenu(menu, at)) return;
+        menu.Close(ToolStripDropDownCloseReason.AppClicked);
+    }
+
+    /// <summary>The point is on the menu or one of its open submenus.</summary>
+    static bool OverMenu(ToolStripDropDown menu, Point at) =>
+        menu.Bounds.Contains(at) || menu.Items.OfType<ToolStripMenuItem>()
+            .Any(i => i.HasDropDownItems && i.DropDown.Visible && OverMenu(i.DropDown, at));
+
     ContextMenuStrip NewMenu()
     {
         var menu = new ContextMenuStrip();
@@ -860,7 +892,20 @@ sealed class BrowserForm : Form
             menu.Renderer = new ToolStripProfessionalRenderer(new DarkMenuColors());
             menu.ForeColor = Theme.Text;
         }
-        menu.Closed += (_, _) => BeginInvoke(new Action(menu.Dispose));
+        menu.Opened += (_, _) =>
+        {
+            openMenu = menu;
+            menuWatch.Start();
+        };
+        menu.Closed += (_, _) =>
+        {
+            if (openMenu == menu)
+            {
+                openMenu = null;
+                menuWatch.Stop();
+            }
+            BeginInvoke(new Action(menu.Dispose));
+        };
         return menu;
     }
 

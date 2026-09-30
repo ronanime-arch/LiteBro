@@ -612,7 +612,7 @@ sealed class BrowserForm : Form
             if (star.Text != glyph) star.Text = glyph;
             star.ForeColor = tile == null ? Theme.Text : Color.FromArgb(0xf5, 0xb3, 0x01);
             tips.SetToolTip(star, tile != null ? "В избранном: плитка «" + tile.Name + "»"
-                : "Сохранить плиткой: терминал в этой папке" + (t.Command.Length > 0 ? " с командой " + t.Command : ""));
+                : "Добавить в избранное: терминал в этой папке" + (t.Command.Length > 0 ? " с командой " + t.Command : ""));
             return;
         }
         var url = Savable(tab);
@@ -714,9 +714,34 @@ sealed class BrowserForm : Form
             Color = "#7d35aa",
             IconSource = "none",
         };
-        ProjectStore.Save(p);
+        ProjectStore.Save(p); // the picture is named after the Id
+        if (ProgramIcon(p.Exe, dir) is { } png)
+        {
+            try
+            {
+                p.Icon = Icons.Save(p.Id, png);
+                p.IconSource = "file";
+                ProjectStore.Save(p);
+            }
+            catch (Exception e) when (e is IOException || e is UnauthorizedAccessException) { }
+        }
         App.Current.ProjectSaved(p);
         if (active != null) ShowStar(active);
+    }
+
+    /// <summary>The picture of the command's program (claude.exe, ollama.exe…); none for scripts and npm shims.</summary>
+    static byte[]? ProgramIcon(string exe, string dir)
+    {
+        exe = Environment.ExpandEnvironmentVariables(exe.Trim().Trim('"'));
+        if (exe.Length == 0) return null;
+        string? path = null;
+        try
+        {
+            var local = Path.Combine(dir, exe);
+            path = File.Exists(local) ? local : File.Exists(local + ".exe") ? local + ".exe" : Launcher.ResolveExe(exe);
+        }
+        catch (ArgumentException) { } // a path with characters Windows does not allow
+        return path != null ? Icons.FromProgram(path) : null;
     }
 
     /// <summary>A new tile for the address; a project's page takes the project's program, arguments and colour.</summary>

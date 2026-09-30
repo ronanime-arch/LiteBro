@@ -275,7 +275,7 @@ sealed class Launcher
     /// A full path, or a bare name such as npm or dsh looked up in PATH the way cmd does: with the extensions
     /// Windows runs, never as a file without one (pi-node keeps a bash script "dsh" beside dsh.cmd).
     /// </summary>
-    static string? ResolveExe(string name)
+    internal static string? ResolveExe(string name)
     {
         if (name.Length == 0) return null;
         if (File.Exists(name)) return Path.GetFullPath(name);

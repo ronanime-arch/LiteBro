@@ -20,7 +20,9 @@ sealed class BrowserForm : Form
     const string GlyphBack = "", GlyphForward = "", GlyphReload = "",
         GlyphStop = "", GlyphHome = "", GlyphGlobe = "";
     // A tab in the background is paused after a while, and after a long while closed until it is picked again
-    static readonly TimeSpan SuspendAfter = TimeSpan.FromMinutes(1), UnloadAfter = TimeSpan.FromMinutes(5);
+    // «Для разработчика»: how long a tab in the background runs before it is paused, and before it is closed (0 = never)
+    static TimeSpan SuspendAfter => TimeSpan.FromMinutes(App.Current.S.SuspendAfter);
+    static TimeSpan UnloadAfter => TimeSpan.FromMinutes(App.Current.S.UnloadAfter);
 
     [DllImport("user32.dll", CharSet = CharSet.Unicode)]
     static extern IntPtr SendMessage(IntPtr window, int message, IntPtr wParam, string lParam);
@@ -145,6 +147,7 @@ sealed class BrowserForm : Form
         strip.NewTab += () => OpenNewTab(null);
         strip.Menu += ShowTabMenu;
         strip.Mute += ToggleMute;
+        strip.MuteEnabled = App.Current.S.TabMute;
         host.Controls.Add(divider);
         host.Controls.Add(stripeLeft);
         host.Controls.Add(stripeRight);
@@ -873,8 +876,9 @@ sealed class BrowserForm : Form
             menu.Items.Add(new ToolStripMenuItem(L.T("Убрать разделение"), null, (_, _) => Unsplit()));
         }
         if (menu.Items.Count > 0) menu.Items.Add(new ToolStripSeparator());
-        menu.Items.Add(new ToolStripMenuItem(tab.Muted ? L.T("Включить звук вкладки") : L.T("Выключить звук вкладки"), null,
-            (_, _) => ToggleMute(tab)));
+        if (App.Current.S.TabMute)
+            menu.Items.Add(new ToolStripMenuItem(tab.Muted ? L.T("Включить звук вкладки") : L.T("Выключить звук вкладки"), null,
+                (_, _) => ToggleMute(tab)));
         menu.Items.Add(new ToolStripMenuItem(L.T("Закрыть вкладку"), null, (_, _) => CloseTab(tab)) { ShortcutKeyDisplayString = tab == active ? "Ctrl+W" : "" });
         menu.Show(strip, at);
     }
@@ -1483,6 +1487,7 @@ sealed class BrowserForm : Form
     /// <summary>The tab's speaker was clicked: its sound off, or on again.</summary>
     void ToggleMute(Tab tab)
     {
+        if (!App.Current.S.TabMute && !tab.Muted) return;
         tab.Muted = !tab.Muted;
         try { if (tab.Core is { } core) core.IsMuted = tab.Muted; }
         catch (Exception) { } // the WebView is closing
@@ -1568,7 +1573,7 @@ sealed class BrowserForm : Form
     /// </summary>
     static void OnCertificateError(object? sender, CoreWebView2ServerCertificateErrorDetectedEventArgs e)
     {
-        if (Uri.TryCreate(e.RequestUri, UriKind.Absolute, out var u) && IsThisMachine(u))
+        if (App.Current.S.TrustLocalCerts && Uri.TryCreate(e.RequestUri, UriKind.Absolute, out var u) && IsThisMachine(u))
             e.Action = CoreWebView2ServerCertificateErrorAction.AlwaysAllow;
     }
 
@@ -1732,6 +1737,7 @@ sealed class BrowserForm : Form
     /// </summary>
     void FreezeIdleTabs()
     {
+        if (!App.Current.S.FreezeTabs) return;
         var now = DateTime.UtcNow;
         foreach (var tab in tabs)
         {
@@ -1741,7 +1747,7 @@ sealed class BrowserForm : Form
             // Nor a site whose storage a storage page shows: it reads it from the live page
             if (tabs.Any(t => t.StorageOf == tab)) continue;
             // A page Chromium refused to pause is busy with something (a call, say): it is not closed either
-            if (tab.Suspended && now - since >= UnloadAfter) Unload(tab);
+            if (tab.Suspended && App.Current.S.UnloadAfter > 0 && now - since >= UnloadAfter) Unload(tab);
             else if (!tab.Suspended && now - since >= SuspendAfter) Suspend(tab, core);
         }
     }
@@ -1822,6 +1828,10 @@ sealed class BrowserForm : Form
     {
         foreach (var tab in tabs)
             if (tab.Core is { } core) ApplyTracking(core);
+        // Muting switched off: no tab stays silent with no way to hear it again
+        strip.MuteEnabled = App.Current.S.TabMute;
+        if (!App.Current.S.TabMute)
+            foreach (var tab in tabs.Where(t => t.Muted).ToList()) ToggleMute(tab);
         if (!Dev.On("emulation"))
             foreach (var tab in tabs.Where(t => t.Device != null || t.Speed != null).ToList())
                 SetEmulation(tab, null, null);
@@ -1991,7 +2001,17 @@ sealed class BrowserForm : Form
                 ["mocks"] = MockStore.Summary(),
                 ["off"] = Dev.OffList(),
                 ["lang"] = App.Current.S.Language,
-                ["strict"] = App.Current.S.StrictTracking,
+                ["settings"] = new Dictionary<string, object>
+                {
+                    ["strictTracking"] = App.Current.S.StrictTracking,
+                    ["trustLocalCerts"] = App.Current.S.TrustLocalCerts,
+                    ["tabMute"] = App.Current.S.TabMute,
+                    ["freezeTabs"] = App.Current.S.FreezeTabs,
+                    ["suspendAfter"] = App.Current.S.SuspendAfter,
+                    ["unloadAfter"] = App.Current.S.UnloadAfter,
+                    ["theme"] = App.Current.S.Theme,
+                    ["gpu"] = App.Current.S.Gpu,
+                },
             }));
     }
 
@@ -2566,7 +2586,7 @@ sealed class BrowserForm : Form
         ["netClear"] = new[] { "net" }, ["netExport"] = new[] { "net" }, ["mockFrom"] = new[] { "net" }, ["mockOpen"] = new[] { "net" },
         ["mockSave"] = new[] { "net" }, ["mockOn"] = new[] { "net" }, ["mockDelete"] = new[] { "net" },
         ["dev"] = new[] { "dev" }, ["lang"] = new[] { "dev" }, ["devReset"] = new[] { "dev" }, ["settingsReset"] = new[] { "dev" },
-        ["storage"] = new[] { "storage" }, ["perms"] = new[] { "perms" }, ["permsOpen"] = new[] { "dev" }, ["strict"] = new[] { "dev" },
+        ["storage"] = new[] { "storage" }, ["perms"] = new[] { "perms" }, ["permsOpen"] = new[] { "dev" }, ["setting"] = new[] { "dev" },
         ["termStart"] = new[] { "term" }, ["termIn"] = new[] { "term" }, ["termSize"] = new[] { "term" },
     };
 
@@ -2673,9 +2693,9 @@ sealed class BrowserForm : Form
             case "perms" when PermsPage.Is(e.Source):
                 PermsOp(tab, Text("op") == "set" ? m : null);
                 break;
-            case "strict" when Dev.Is(e.Source):
-                App.Current.S.SaveStrictTracking(Flag("on"));
-                BeginInvoke(new Action(App.Current.ApplyDev));
+            case "setting" when Dev.Is(e.Source) && Text("key") is { } key && m.TryGetValue("value", out var value):
+                // Not from inside the WebView's own event: GPU restarts the engine, closing this WebView too
+                BeginInvoke(new Action(() => App.Current.SetSetting(key, value)));
                 break;
             case "dev" when Dev.Is(e.Source) && Text("id") is { } devId:
                 if (Dev.Set(devId, Flag("on"))) BeginInvoke(new Action(App.Current.ApplyDev));

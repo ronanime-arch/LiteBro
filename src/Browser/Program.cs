@@ -421,6 +421,36 @@ sealed class App : ApplicationContext
         else foreach (var form in forms.ToList()) form.ApplyNet(); // the same language: the pages get the choice back
     }
 
+    /// <summary>
+    /// A setting of the «Для разработчика» page (Защита, Вкладки, Оформление): saved, then applied everywhere.
+    /// GPU is an engine flag: its change restarts the engine. Values the page could not have sent are ignored.
+    /// </summary>
+    public void SetSetting(string key, object value)
+    {
+        bool on = value is true;
+        int minutes = value is int n ? n : -1;
+        switch (key)
+        {
+            case "strictTracking": S.Change(s => s.StrictTracking = on); break;
+            case "trustLocalCerts": S.Change(s => s.TrustLocalCerts = on); break;
+            case "tabMute": S.Change(s => s.TabMute = on); break;
+            case "freezeTabs": S.Change(s => s.FreezeTabs = on); break;
+            case "suspendAfter" when minutes >= 1 && minutes <= Settings.MaxMinutes: S.Change(s => s.SuspendAfter = minutes); break;
+            case "unloadAfter" when minutes >= 0 && minutes <= Settings.MaxMinutes: S.Change(s => s.UnloadAfter = minutes); break;
+            case "theme" when value is "dark" or "light" or "auto":
+                S.Change(s => s.Theme = (string)value);
+                Theme.Init(S.Theme);
+                foreach (var form in forms.ToList()) form.ApplyTheme();
+                break;
+            case "gpu":
+                S.Change(s => s.Gpu = on);
+                if (Env != null && EngineKey() != engineKey) restart ??= RestartEngineAsync();
+                break;
+            default: return;
+        }
+        ApplyDev();
+    }
+
     /// <summary>A switch of the «Для разработчика» page: every window's toolbar, menus and pages follow it.</summary>
     public void ApplyDev()
     {

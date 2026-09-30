@@ -389,7 +389,7 @@ sealed class BrowserForm : Form
                 App.Current.ShellMaybeUnused();
             if (tab.Term != null && !TermPage.Is(core.Source)) StopTerm(tab);
             // A tab that was a terminal is an ordinary one once it leaves: a later /term there starts nothing
-            if (tab.TermDir != null && !TermPage.Is(core.Source)) tab.TermDir = null;
+            if (tab.TermDir != null && !TermPage.Is(core.Source)) tab.TermDir = tab.TermCommand = null;
             tab.Address = core.Source;
             ShowState(tab);
         };
@@ -514,13 +514,13 @@ sealed class BrowserForm : Form
 
     /// <summary>The project whose site (or one of whose links) an address is on.</summary>
     static Project? ProjectOf(Uri url) => ProjectStore.All.FirstOrDefault(p => p.Addresses().Any(a =>
-        Uri.TryCreate(a, UriKind.Absolute, out var site) && !site.IsFile && SameSite(site, url)));
+        Uri.TryCreate(a, UriKind.Absolute, out var site) && !site.IsFile && !Home.Is(a) && SameSite(site, url)));
 
     /// <summary>The project an address in a tab belongs to: the tile the tab was opened from if the address is on its sites.</summary>
     static Project? OwnerOf(Tab tab, Uri url)
     {
         if (url.IsFile) return null;
-        bool On(Project p) => p.Addresses().Any(a => Uri.TryCreate(a, UriKind.Absolute, out var site) && !site.IsFile && SameSite(site, url));
+        bool On(Project p) => p.Addresses().Any(a => Uri.TryCreate(a, UriKind.Absolute, out var site) && !site.IsFile && !Home.Is(a) && SameSite(site, url));
         if (tab.LastProject is { } last && ProjectStore.Find(last.Id) is { } p && On(p)) return p;
         // Of the tiles on that site, one in the tab's own profile keeps the tab where it is
         return ProjectStore.All.FirstOrDefault(x => x.Profile == tab.Profile && On(x)) ?? ProjectOf(url);
@@ -604,6 +604,17 @@ sealed class BrowserForm : Form
     /// <summary>The star: on sites and files, filled when the address is already on a tile.</summary>
     void ShowStar(Tab tab)
     {
+        if (TermTileOf(tab) is { } t)
+        {
+            star.Visible = Dev.On("star");
+            var tile = SavedTerm(t.Dir, t.Command);
+            var glyph = tile == null ? GlyphStar : GlyphStarFilled;
+            if (star.Text != glyph) star.Text = glyph;
+            star.ForeColor = tile == null ? Theme.Text : Color.FromArgb(0xf5, 0xb3, 0x01);
+            tips.SetToolTip(star, tile != null ? "В избранном: плитка «" + tile.Name + "»"
+                : "Сохранить плиткой: терминал в этой папке" + (t.Command.Length > 0 ? " с командой " + t.Command : ""));
+            return;
+        }
         var url = Savable(tab);
         star.Visible = url != null && Dev.On("star");
         if (url == null) return;
@@ -622,6 +633,11 @@ sealed class BrowserForm : Form
     /// </summary>
     void ShowFavoriteMenu()
     {
+        if (active is { } termTab && TermTileOf(termTab) is { } t)
+        {
+            ShowTermMenu(t.Dir, t.Command);
+            return;
+        }
         if (active is not { } tab || Savable(tab) is not { } url) return;
         var name = tab.Title.Length > 0 ? tab.Title : NameOf(new Uri(url));
         if (name.Length > 80) name = name.Substring(0, 80).TrimEnd() + "…";
@@ -656,6 +672,51 @@ sealed class BrowserForm : Form
         }
         menu.Items.Add(links);
         menu.Show(star, new Point(0, star.Height));
+    }
+
+    /// <summary>What the star of a terminal saves: the folder and the command running there (none at the prompt).</summary>
+    static (string Dir, string Command)? TermTileOf(Tab tab)
+    {
+        if (tab.Term == null || tab.Core is not { } core || !TermPage.Is(core.Source)) return null;
+        if (tab.TermRunning is { } running) return (tab.TermRunningDir ?? tab.TermCwd ?? tab.TermDir ?? "", running);
+        return (tab.TermCwd ?? tab.TermDir ?? "", "");
+    }
+
+    static Project? SavedTerm(string dir, string command) => ProjectStore.All.FirstOrDefault(p => p.IsTerminal
+        && string.Equals(p.WorkDir.Trim().TrimEnd('\\'), dir.TrimEnd('\\'), StringComparison.OrdinalIgnoreCase) && p.Command == command);
+
+    void ShowTermMenu(string dir, string command)
+    {
+        var menu = NewMenu();
+        if (SavedTerm(dir, command) is { } saved)
+            menu.Items.Add(new ToolStripMenuItem("Это плитка «" + saved.Name + "»") { Enabled = false });
+        else
+            menu.Items.Add(new ToolStripMenuItem(command.Length > 0 ? "Сохранить плиткой: " + Short(command) + " в этой папке" : "Сохранить плиткой: терминал в этой папке",
+                null, (_, _) => SaveTermTile(dir, command)));
+        menu.Show(star, new Point(0, star.Height));
+        static string Short(string s) => s.Length > 40 ? s.Substring(0, 40) + "…" : s;
+    }
+
+    /// <summary>A terminal tile: a click opens PowerShell in the folder and types the command in.</summary>
+    void SaveTermTile(string dir, string command)
+    {
+        var folder = Path.GetFileName(dir.TrimEnd('\\'));
+        if (folder.Length == 0) folder = dir;
+        var first = command.Split(new[] { ' ' }, 2, StringSplitOptions.RemoveEmptyEntries);
+        var p = new Project
+        {
+            Name = first.Length > 0 ? folder + " — " + first[0] : folder,
+            Url = TermPage.Url,
+            Exe = first.Length > 0 ? first[0] : "",
+            Args = first.Length > 1 ? first[1] : "",
+            WorkDir = dir,
+            Letters = ">_",
+            Color = "#7d35aa",
+            IconSource = "none",
+        };
+        ProjectStore.Save(p);
+        App.Current.ProjectSaved(p);
+        if (active != null) ShowStar(active);
     }
 
     /// <summary>A new tile for the address; a project's page takes the project's program, arguments and colour.</summary>
@@ -1736,10 +1797,11 @@ sealed class BrowserForm : Form
     }
 
     /// <summary>The start page becomes the terminal, as a tile opens in its tab.</summary>
-    void OpenTerminalHere(Tab tab, string dir)
+    void OpenTerminalHere(Tab tab, string dir, string? command = null)
     {
         if (tab.Core is not { } core) return;
         tab.TermDir = dir;
+        tab.TermCommand = command;
         core.Navigate(TermPage.Url);
     }
 
@@ -1759,14 +1821,17 @@ sealed class BrowserForm : Form
         if (tab.TermDir == null || tab.Core is not { } core) return;
         StopTerm(tab);
         var dir = Directory.Exists(tab.TermDir) ? tab.TermDir : Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
-        var term = Terminal.Start("powershell.exe -NoLogo", dir, columns > 0 ? columns : 120, rows > 0 ? rows : 30, out var error);
+        var term = Terminal.Start(TermPage.CommandLine, dir, columns > 0 ? columns : 120, rows > 0 ? rows : 30, out var error);
         if (term == null)
         {
             core.PostWebMessageAsJson(ProjectStore.Json.Serialize(new Dictionary<string, object> { ["type"] = "termError", ["text"] = error ?? "" }));
             return;
         }
         tab.Term = term;
+        tab.TermCwd = dir;
+        tab.TermRunning = tab.TermRunningDir = null;
         var pending = new StringBuilder();
+        var carry = "";
         term.Output += text =>
         {
             bool first;
@@ -1785,6 +1850,8 @@ sealed class BrowserForm : Form
             Send(new Dictionary<string, object> { ["type"] = "termExit" });
         });
         term.Begin();
+        // A terminal tile's command: typed ahead, the shell reads it once its prompt is up
+        if (tab.TermCommand is { Length: > 0 } command) term.Write(command + "\r");
 
         void Flush()
         {
@@ -1795,7 +1862,11 @@ sealed class BrowserForm : Form
                 pending.Remove(0, text.Length);
                 if (pending.Length > 0) Post(Flush);
             }
-            if (tab.Term == term && text.Length > 0) Send(new Dictionary<string, object> { ["type"] = "termOut", ["data"] = text });
+            if (tab.Term != term || text.Length == 0) return;
+            var running = tab.TermRunning;
+            TermPage.Watch(tab, ref carry, text);
+            if (running != tab.TermRunning && tab == active) ShowStar(tab);
+            Send(new Dictionary<string, object> { ["type"] = "termOut", ["data"] = text });
         }
         void Send(Dictionary<string, object> message)
         {
@@ -1959,6 +2030,14 @@ sealed class BrowserForm : Form
     async void OpenProject(Tab tab, Project p, string? link = null)
     {
         if (tab.Core == null || !Uri.TryCreate(link ?? p.Url, UriKind.Absolute, out var url)) return;
+        if (p.IsTerminal && link == null)
+        {
+            // A terminal tile: PowerShell in its folder, its command typed in
+            tab.LastProject = null;
+            var dir = p.WorkDir.Trim().Length > 0 ? p.WorkDir.Trim() : Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+            if (await UseProfileAsync(tab, "")) OpenTerminalHere(tab, dir, p.Command);
+            return;
+        }
         tab.LastProject = p;
         if (!await UseProfileAsync(tab, p.Profile) || tab.LastProject != p) return;
         tab.LastLink = link;

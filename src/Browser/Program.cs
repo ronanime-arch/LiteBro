@@ -334,7 +334,7 @@ sealed class App : ApplicationContext
     /// <summary>A site already running gives its icon at once; one behind a login gives it when opened here.</summary>
     public async void FetchSiteIcon(Project p)
     {
-        if (!Uri.TryCreate(p.Url, UriKind.Absolute, out var url) || url.IsFile || NetGuard.ShouldBlock(url) || !ClaimIcon(p.Id)) return;
+        if (!Uri.TryCreate(p.Url, UriKind.Absolute, out var url) || url.IsFile || Home.Is(p.Url) || NetGuard.ShouldBlock(url) || !ClaimIcon(p.Id)) return;
         SetSiteIcon(p.Id, await Favicons.FetchAsync(url));
     }
 

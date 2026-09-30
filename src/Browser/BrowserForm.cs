@@ -1293,26 +1293,37 @@ sealed class BrowserForm : Form
         if (tab.Device != null || tab.Speed != null)
             tools.Add(Item(L.T("Выключить эмуляцию"), () => SetEmulation(tab, null, null)));
 
-        var into = MoreTools(e.MenuItems);
-        if (into == null)
+        // The engine draws its own «More tools» submenu from its own model: items added into it do not show
+        // (the user's Windows, 2026-09-30). It is replaced by a submenu of ours with the same name, its Share first.
+        if (MoreTools(e.MenuItems) is not { } found)
         {
             // No "More tools" in this runtime: a submenu of its own, above "Inspect"
-            var own = Sub(L.T("Другие инструменты"), tools);
             int at = e.MenuItems.Select(i => i.Name).ToList().IndexOf("inspectElement");
-            e.MenuItems.Insert(at >= 0 ? at : e.MenuItems.Count, own);
+            e.MenuItems.Insert(at >= 0 ? at : e.MenuItems.Count, Sub(L.T("Другие инструменты"), tools));
             return;
         }
-        if (into.Count > 0) into.Add(env.CreateContextMenuItem("", null, CoreWebView2ContextMenuItemKind.Separator));
-        foreach (var t in tools) into.Add(t);
+        var (parent, index, engine) = found;
+        var own = Sub(engine.Label, Array.Empty<CoreWebView2ContextMenuItem>());
+        var kids = own.Children;
+        try
+        {
+            foreach (var item in engine.Children.ToList()) kids.Add(item);
+            if (kids.Count > 0) kids.Add(env.CreateContextMenuItem("", null, CoreWebView2ContextMenuItemKind.Separator));
+        }
+        catch (Exception) { } // the engine keeps its items to itself: the tools go alone
+        foreach (var t in tools) kids.Add(t);
+        parent.RemoveAt(index);
+        parent.Insert(index, own);
     }
 
-    /// <summary>The engine's submenu that holds "Share".</summary>
-    static IList<CoreWebView2ContextMenuItem>? MoreTools(IList<CoreWebView2ContextMenuItem> items)
+    /// <summary>The engine's submenu that holds "Share", with the list it is in and where.</summary>
+    static (IList<CoreWebView2ContextMenuItem> Parent, int Index, CoreWebView2ContextMenuItem Item)? MoreTools(IList<CoreWebView2ContextMenuItem> items)
     {
-        foreach (var i in items)
+        for (int n = 0; n < items.Count; n++)
         {
+            var i = items[n];
             if (i.Kind != CoreWebView2ContextMenuItemKind.Submenu) continue;
-            if (i.Children.Any(c => c.Name == "share")) return i.Children;
+            if (i.Children.Any(c => c.Name == "share")) return (items, n, i);
             if (MoreTools(i.Children) is { } inner) return inner;
         }
         return null;

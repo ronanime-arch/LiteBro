@@ -380,7 +380,7 @@ _ на плитках)	_ on tiles)
 Терминал в папке проекта открывается из консоли проекта.	A terminal in the project folder opens from the project console.
 Эмуляция устройства и сети	Device and network emulation
 Эту страницу выключить нельзя: она всегда открывается кнопкой у правого края стартовой страницы и кнопкой на странице журнала сети.	This page cannot be switched off: it always opens with the button at the right edge of the start page and with the button on the network log page.
-и разрешённые сайты, журнал сети, CORS, удаление cookies при выходе, обновление при изменении файлов, выключенное на этой странице	and allowed sites, network log, CORS, deleting cookies on exit, reload on file changes, what is switched off on this page
+и разрешённые сайты, журнал сети, CORS, удаление cookies при выходе, обновление при изменении файлов, строгая защита от трекеров, выключенное на этой странице	and allowed sites, network log, CORS, deleting cookies on exit, reload on file changes, strict tracking prevention, what is switched off on this page
 и строки settings.ini. Плитки проектов, заглушки, cookies и входы на сайты не трогаются. Перед сбросом браузер спросит подтверждение.	and the settings.ini lines. Project tiles, mocks, cookies and site logins are not touched. The browser asks before resetting.
 + Добавить ссылку	+ Add link
 . CORS не проверяется	. CORS is not checked
@@ -619,3 +619,32 @@ LiteBro: только localhost	LiteBro: localhost only
 Клик по значку звука на вкладке	Click on the speaker of a tab
 Выключить и снова включить звук вкладки (также в меню правого клика по вкладке)	Mute and unmute the tab (also in the tab right-click menu)
 Выйти из полноэкранного режима видео или игры	Leave the full screen of a video or a game
+Движок браузера перезапускается	The browser engine is restarting
+# Строгая защита от трекеров: блокируется больше счётчиков и рекламы, изредка ломается вход через другой сайт	# Strict tracking prevention: more trackers and ads are blocked, signing in through another site occasionally breaks
+Разрешения сайтов: камера, микрофон, местоположение	Site permissions: camera, microphone, location
+Микрофон	Microphone
+Камера	Camera
+Местоположение	Location
+Уведомления	Notifications
+Датчики движения	Motion sensors
+Чтение буфера обмена	Clipboard read
+Несколько загрузок подряд	Multiple automatic downloads
+Чтение и запись файлов	File read and write
+Автовоспроизведение	Autoplay
+Шрифты компьютера	Local fonts
+MIDI-устройства	MIDI devices
+Окна на нескольких экранах	Window management
+Общий	Shared
+Проект «	Project «
+Защита	Protection
+Строгая защита от трекеров	Strict tracking prevention
+Как «Строгая» в Edge: блокируется больше счётчиков, рекламы и сторонних cookies. Изредка ломается вход через другой сайт или встроенное видео; тогда выключите. Выключено — «Сбалансированная», как в Edge по умолчанию.	As Strict in Edge: more trackers, ads and third-party cookies are blocked. Signing in through another site or an embedded video occasionally breaks; then switch it off. Off means Balanced, the Edge default.
+Разрешения сайтов	Site permissions
+Камера, микрофон, местоположение, уведомления: что разрешено или запрещено сайтам, с отменой.	Camera, microphone, location, notifications: what sites are allowed or refused, and undoing it.
+Пункт меню «Инструменты». Страница открывается и кнопкой в разделе «Защита» выше.	The “Tools” menu item. The page also opens with the button in the Protection section above.
+Что сайты получили или что им запрещено: камера, микрофон, местоположение, уведомления и другое. Спрашивать — забыть выбор, сайт спросит снова. У проектов со своим профилем разрешения свои. Разрешение открывать внешние программы (ссылки mailto: и т. п.) здесь не показывается: его хранит сам движок.	What sites were given or refused: camera, microphone, location, notifications and more. Ask forgets the choice, and the site asks again. Projects with their own profile have their own permissions. Permission to open external programs (mailto: links and the like) is not shown here: the engine keeps it itself.
+Сайты пока ничего не спрашивали, или все выборы уже забыты.	Sites have not asked for anything yet, or every choice has been forgotten.
+Разрешено	Allowed
+Запрещено	Blocked
+Спрашивать	Ask
+Записей:	Entries:

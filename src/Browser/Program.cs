@@ -166,13 +166,31 @@ sealed class App : ApplicationContext
     readonly HashSet<string> usedProfiles = new() { "" };
 
     /// <summary>A WebView in the shared profile ("") or in a project's own.</summary>
-    public async Task<CoreWebView2Controller> CreateControllerAsync(CoreWebView2Environment env, IntPtr window, string profile)
+    public async Task<CoreWebView2Controller> CreateControllerAsync(CoreWebView2Environment env, IntPtr window, string profile, bool pages = true)
     {
-        usedProfiles.Add(profile);
+        if (pages) usedProfiles.Add(profile);
         if (profile.Length == 0) return await env.CreateCoreWebView2ControllerAsync(window);
         var options = env.CreateCoreWebView2ControllerOptions();
         options.ProfileName = profile;
         return await env.CreateCoreWebView2ControllerAsync(window, options);
+    }
+
+    /// <summary>
+    /// Runs something on a profile's settings (its permissions): through a tab already in it, else a hidden WebView
+    /// made for the purpose and closed after. Such a WebView shows no page: the profile is not one to clear on exit for it.
+    /// </summary>
+    public async Task<T> WithProfileAsync<T>(string profile, IntPtr window, Func<CoreWebView2Profile, Task<T>> use)
+    {
+        foreach (var form in forms)
+            if (form.CoreIn(profile) is { } core) return await use(core.Profile);
+        if (Env is not { } env) throw new InvalidOperationException(L.T("Движок браузера перезапускается"));
+        var c = await CreateControllerAsync(env, window, profile, pages: false);
+        try
+        {
+            c.IsVisible = false;
+            return await use(c.CoreWebView2.Profile);
+        }
+        finally { c.Close(); }
     }
 
     /// <summary>The last window is closing and cookies and cache are to go with it (ClearOnExit).</summary>

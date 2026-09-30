@@ -52,6 +52,21 @@ button:disabled { opacity: .45; cursor: default; background: transparent; }
     </select>
     <span class="muted">Меняет язык браузера и его страниц. Движок перезапустится: вкладки перезагрузятся, открытые терминалы закроются.</span>
   </div>
+  <h2>Защита</h2>
+  <section>
+    <label class="item" id="strictItem">
+      <span class="text">
+        <div class="name">Строгая защита от трекеров</div>
+        <div class="muted">Как «Строгая» в Edge: блокируется больше счётчиков, рекламы и сторонних cookies. Изредка ломается вход через другой сайт или встроенное видео; тогда выключите. Выключено — «Сбалансированная», как в Edge по умолчанию.</div>
+      </span>
+      <input type="checkbox" id="strict">
+      <span class="track"></span>
+    </label>
+  </section>
+  <div class="row">
+    <button id="perms">Разрешения сайтов</button>
+    <span class="muted">Камера, микрофон, местоположение, уведомления: что разрешено или запрещено сайтам, с отменой.</span>
+  </div>
   <h2>Кнопки и инструменты</h2>
   <div class="row">
     <button id="allOn" disabled>Включить всё</button>
@@ -60,7 +75,7 @@ button:disabled { opacity: .45; cursor: default; background: transparent; }
   <div id="groups"></div>
   <h2>Настройки по умолчанию</h2>
   <p class="muted">Все настройки браузера — как после установки, без переустановки: тема, страна поиска, режим «только localhost»
-    и разрешённые сайты, журнал сети, CORS, удаление cookies при выходе, обновление при изменении файлов, выключенное на этой странице
+    и разрешённые сайты, журнал сети, CORS, удаление cookies при выходе, обновление при изменении файлов, строгая защита от трекеров, выключенное на этой странице
     и строки settings.ini. Плитки проектов, заглушки, cookies и входы на сайты не трогаются. Перед сбросом браузер спросит подтверждение.</p>
   <div class="row"><button id="defaults">Вернуть настройки по умолчанию…</button></div>
 </main>
@@ -88,6 +103,7 @@ const GROUPS = [
     ["json", "Просмотр JSON деревом", "Ответы API в формате JSON показываются простым текстом."],
     ["mocks", "Заглушки", "Запросы снова идут на сервер, раздел на странице журнала сети скрыт. Сами заглушки сохраняются."],
     ["split", "Две вкладки рядом", "Пункт «Открыть рядом» в меню вкладки. Уже открытое разделение убирается как обычно."],
+    ["perms", "Разрешения сайтов", "Пункт меню «Инструменты». Страница открывается и кнопкой в разделе «Защита» выше."],
   ]],
   ["Стартовая страница", "Пропадает только кнопка; кнопку «Для разработчика» выключить нельзя.", [
     ["shell", "Терминал (фиолетовая кнопка слева)", "Терминал в папке проекта открывается из консоли проекта."],
@@ -157,6 +173,12 @@ $("lang").addEventListener("change", () => {
   post({ type: "lang", value });
 });
 
+$("strict").addEventListener("change", () => {
+  $("strictItem").classList.toggle("off", !$("strict").checked);
+  post({ type: "strict", on: $("strict").checked });
+});
+$("perms").addEventListener("click", e => post({ type: "permsOpen", newTab: e.ctrlKey }));
+$("perms").addEventListener("auxclick", e => { if (e.button === 1) { e.preventDefault(); post({ type: "permsOpen", newTab: true }); } });
 $("allOn").addEventListener("click", () => post({ type: "devReset" }));
 $("defaults").addEventListener("click", () => post({ type: "settingsReset" }));
 
@@ -164,6 +186,8 @@ window.chrome.webview.addEventListener("message", e => {
   const m = e.data;
   if (!m || m.type !== "net") return;
   if (m.lang) $("lang").value = language = m.lang;
+  $("strict").checked = !!m.strict;
+  $("strictItem").classList.toggle("off", !m.strict);
   const off = m.off || [];
   for (const id in boxes) {
     boxes[id].checked = !off.includes(id);

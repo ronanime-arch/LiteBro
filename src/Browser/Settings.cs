@@ -72,12 +72,14 @@ sealed class Settings
     public bool ClearOnExit;
     /// <summary>A page on screen loads again when a file in its project's folder (or its own folder, for a file) changes.</summary>
     public bool AutoReload;
+    /// <summary>Tracking prevention at its strict level (Edge's «Строгая»); else balanced, the engine's default.</summary>
+    public bool StrictTracking;
     /// <summary>Buttons and tools switched off on the «Для разработчика» page (Dev.Ids), through spaces; the developer tools by default.</summary>
     public string DevOff = Dev.DefaultOff;
 
     static readonly string[] Keys =
     {
-        "searchurl", "searchcountry", "theme", "language", "gpu", "extrabrowserargs", "localhosts", "otherbrowser", "localonly", "netjournal", "allowhosts", "ignorecors", "clearonexit", "autoreload", "disabled",
+        "searchurl", "searchcountry", "theme", "language", "gpu", "extrabrowserargs", "localhosts", "otherbrowser", "localonly", "netjournal", "allowhosts", "ignorecors", "clearonexit", "autoreload", "stricttracking", "disabled",
     };
 
     public static Settings Load()
@@ -120,6 +122,7 @@ sealed class Settings
                 case "ignorecors": s.IgnoreCors = IsTrue(value); break;
                 case "clearonexit": s.ClearOnExit = IsTrue(value); break;
                 case "autoreload": s.AutoReload = IsTrue(value); break;
+                case "stricttracking": s.StrictTracking = IsTrue(value); break;
                 case "disabled": s.DevOff = value; break;
             }
         }
@@ -171,6 +174,13 @@ sealed class Settings
     public void SaveAutoReload(bool on)
     {
         AutoReload = on;
+        Save();
+    }
+
+    /// <summary>Remembers the switch of strict tracking prevention («Для разработчика»).</summary>
+    public void SaveStrictTracking(bool on)
+    {
+        StrictTracking = on;
         Save();
     }
 
@@ -252,6 +262,8 @@ sealed class Settings
         "ClearOnExit = " + Bool(ClearOnExit),
         L.T("# Обновлять страницу на экране, когда меняется файл в папке её проекта (или в папке открытого файла)"),
         "AutoReload = " + Bool(AutoReload),
+        L.T("# Строгая защита от трекеров: блокируется больше счётчиков и рекламы, изредка ломается вход через другой сайт"),
+        "StrictTracking = " + Bool(StrictTracking),
         "",
         L.T("# --- Для разработчика ---"),
         L.T("# Что выключено на странице «Для разработчика» (кнопка у правого края стартовой страницы), через пробел."),

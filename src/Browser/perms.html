@@ -1,0 +1,116 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<title>Разрешения сайтов</title>
+<style>
+:root {
+  color-scheme: light dark;
+  --bg: #f2f3f6; --fg: #1b1d22; --muted: #6b7080; --card: #ffffff; --line: rgba(0, 0, 0, .12);
+  --allow: #1f9d55; --deny: #d9434b; --text: "Segoe UI Variable Text", "Segoe UI", sans-serif;
+}
+@media (prefers-color-scheme: dark) {
+  :root { --bg: #121212; --fg: #e9eaee; --muted: #9a9fae; --card: #1c1d20; --line: rgba(255, 255, 255, .14); }
+}
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+html, body { margin: 0; background: var(--bg); color: var(--fg); font: 14px/1.45 var(--text); }
+main { max-width: 920px; margin: 0 auto; padding: 22px 22px 40px; }
+h1 { margin: 0 0 6px; font-size: 20px; font-weight: 600; }
+.muted { color: var(--muted); font-size: 12.5px; margin: 0; }
+.row { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 14px; margin-top: 14px; }
+button, select { font: 13px var(--text); padding: 4px 10px; border: 1px solid var(--line); border-radius: 6px; background: var(--card); color: inherit; cursor: pointer; }
+button:hover { background: rgba(127, 127, 127, .15); }
+#error { color: var(--deny); font-weight: 600; margin-top: 12px; }
+#error:empty { display: none; }
+section { background: var(--card); border: 1px solid var(--line); border-radius: 8px; margin-top: 14px; overflow: hidden; }
+section h2 { margin: 0; padding: 10px 14px; font-size: 14px; font-weight: 600; border-bottom: 1px solid var(--line);
+  display: flex; gap: 10px; align-items: baseline; }
+section h2 .origin { font: 13px Consolas, monospace; overflow-wrap: anywhere; }
+section h2 .profile { color: var(--muted); font-size: 12.5px; font-weight: 400; margin-left: auto; white-space: nowrap; }
+.perm { display: flex; align-items: center; gap: 12px; padding: 7px 14px; }
+.perm + .perm { border-top: 1px solid var(--line); }
+.perm .name { flex: 1; }
+.perm select.allow { color: var(--allow); font-weight: 600; }
+.perm select.deny { color: var(--deny); font-weight: 600; }
+#empty { margin-top: 22px; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Разрешения сайтов</h1>
+  <p class="muted">Что сайты получили или что им запрещено: камера, микрофон, местоположение, уведомления и другое. Спрашивать — забыть выбор, сайт спросит снова. У проектов со своим профилем разрешения свои. Разрешение открывать внешние программы (ссылки mailto: и т. п.) здесь не показывается: его хранит сам движок.</p>
+  <div class="row">
+    <button id="reload">Обновить</button>
+    <span class="muted" id="count"></span>
+  </div>
+  <div id="error"></div>
+  <p class="muted" id="empty" hidden>Сайты пока ничего не спрашивали, или все выборы уже забыты.</p>
+  <div id="list"></div>
+</main>
+<script>
+"use strict";
+const $ = id => document.getElementById(id);
+const post = m => window.chrome.webview.postMessage(m);
+const STATES = [["allow", "Разрешено"], ["deny", "Запрещено"], ["ask", "Спрашивать"]];
+
+function load() { post({ type: "perms", op: "load" }); }
+
+function draw(items) {
+  const list = $("list");
+  list.textContent = "";
+  $("empty").hidden = items.length > 0;
+  $("count").textContent = items.length ? "Записей: " + items.length : "";
+  // One card per site and profile, the kinds in it
+  const groups = new Map();
+  for (const it of items) {
+    const key = it.profile + "\n" + it.origin;
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(it);
+  }
+  const keys = [...groups.keys()].sort((a, b) => a.localeCompare(b));
+  for (const key of keys) {
+    const rows = groups.get(key);
+    const section = document.createElement("section");
+    const h = document.createElement("h2");
+    const origin = document.createElement("span");
+    origin.className = "origin";
+    origin.textContent = rows[0].origin;
+    const profile = document.createElement("span");
+    profile.className = "profile";
+    profile.textContent = rows[0].profileName;
+    h.append(origin, profile);
+    section.append(h);
+    rows.sort((a, b) => a.kindName.localeCompare(b.kindName));
+    for (const it of rows) {
+      const row = document.createElement("div");
+      row.className = "perm";
+      const name = document.createElement("span");
+      name.className = "name";
+      name.textContent = it.kindName;
+      const pick = document.createElement("select");
+      for (const [value, text] of STATES) pick.add(new Option(text, value, false, value === it.state));
+      pick.className = it.state;
+      pick.addEventListener("change", () => {
+        pick.disabled = true;
+        post({ type: "perms", op: "set", profile: it.profile, origin: it.origin, kind: it.kind, state: pick.value });
+      });
+      row.append(name, pick);
+      section.append(row);
+    }
+    list.append(section);
+  }
+}
+
+window.chrome.webview.addEventListener("message", e => {
+  const m = e.data;
+  if (!m || m.type !== "perms") return;
+  $("error").textContent = m.error || "";
+  if (m.items) draw(m.items);
+});
+
+$("reload").addEventListener("click", load);
+load();
+</script>
+</body>
+</html>

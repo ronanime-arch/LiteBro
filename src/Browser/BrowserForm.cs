@@ -388,6 +388,7 @@ sealed class BrowserForm : Form
         // SmartScreen sends the addresses to Microsoft: no telemetry
         try { core.Settings.IsReputationCheckingRequired = false; }
         catch (Exception) { } // an older WebView2 runtime
+        ApplyTracking(core);
         // The start page is served from here and talks to the browser through web messages
         core.AddWebResourceRequestedFilter(Home.Url + "*", CoreWebView2WebResourceContext.All);
         core.WebResourceRequested += OnHomeRequest;
@@ -511,6 +512,20 @@ sealed class BrowserForm : Form
             if (e.ProcessFailedKind == CoreWebView2ProcessFailedKind.RenderProcessExited) core.Reload();
         };
     }
+
+    /// <summary>Tracking prevention of the tab's profile: strict when switched on («Для разработчика»), else balanced.</summary>
+    static void ApplyTracking(CoreWebView2 core)
+    {
+        try
+        {
+            core.Profile.PreferredTrackingPreventionLevel = App.Current.S.StrictTracking
+                ? CoreWebView2TrackingPreventionLevel.Strict : CoreWebView2TrackingPreventionLevel.Balanced;
+        }
+        catch (Exception) { } // an older runtime, or the WebView is closing
+    }
+
+    /// <summary>A WebView here in that profile, to reach the profile's settings through; null if no tab is in it.</summary>
+    public CoreWebView2? CoreIn(string profile) => tabs.FirstOrDefault(t => t.Profile == profile && t.Core != null)?.Core;
 
     /// <summary>The site is not there: a server that is off, a name that does not resolve, no network.</summary>
     static bool IsUnreachable(CoreWebView2WebErrorStatus status) => status is CoreWebView2WebErrorStatus.CannotConnect
@@ -1309,6 +1324,39 @@ sealed class BrowserForm : Form
         core.Navigate(StoragePage.Url);
     }
 
+    /// <summary>
+    /// The permissions page's request: a choice changed (or back to «ask»), then the settings of every profile read anew.
+    /// A choice goes only to a profile there is: the shared one or a project's own.
+    /// </summary>
+    async void PermsOp(Tab page, Dictionary<string, object>? set)
+    {
+        var reply = new Dictionary<string, object> { ["type"] = "perms" };
+        var profiles = PermsPage.Profiles();
+        try
+        {
+            if (set != null)
+            {
+                var profile = set.TryGetValue("profile", out var p) ? p as string : null;
+                var origin = set.TryGetValue("origin", out var o) ? o as string : null;
+                if (profile == null || !profiles.Any(x => x.Profile == profile) || string.IsNullOrEmpty(origin)
+                    || !PermsPage.TryParse(set.TryGetValue("kind", out var k) ? k as string : null,
+                        set.TryGetValue("state", out var st) ? st as string : null, out var kind, out var state))
+                    return;
+                await App.Current.WithProfileAsync(profile, Handle, async data =>
+                {
+                    await data.SetPermissionStateAsync(kind, origin, state);
+                    return true;
+                });
+            }
+            var rows = new List<Dictionary<string, object>>();
+            foreach (var (profile, name) in profiles)
+                rows.AddRange(await App.Current.WithProfileAsync(profile, Handle, data => PermsPage.RowsAsync(data, profile, name)));
+            reply["items"] = rows;
+        }
+        catch (Exception ex) { reply["error"] = ex.Message; }
+        if (page.Core is { } c && PermsPage.Is(c.Source)) c.PostWebMessageAsJson(ProjectStore.Json.Serialize(reply));
+    }
+
     /// <summary>A storage page's request: done in the site's page (or its cookie manager), then the storage read anew.</summary>
     async void StorageOp(Tab page, Tab site, Dictionary<string, object> m)
     {
@@ -1347,7 +1395,7 @@ sealed class BrowserForm : Form
     void ShowEmulation(Tab tab)
     {
         bool on = tab.Device != null || tab.Speed != null;
-        bool any = Dev.On("emulation") || Dev.On("snapshot") || Dev.On("storage");
+        bool any = Dev.On("emulation") || Dev.On("snapshot") || Dev.On("storage") || Dev.On("perms");
         emulate.Visible = on || (any && !tab.ShowingInternalPage && !IsInternal(tab.Site) && tab.Term == null);
         emulate.ForeColor = on ? Color.FromArgb(0x1f, 0x9d, 0x55) : Theme.Text;
         var what = string.Join(", ", new[] { tab.Device?.Name, tab.Speed?.Name }.OfType<string>());
@@ -1371,6 +1419,12 @@ sealed class BrowserForm : Form
         {
             if (menu.Items.Count > 0 && !Dev.On("snapshot")) menu.Items.Add(new ToolStripSeparator());
             menu.Items.Add(new ToolStripMenuItem(L.T("Хранилище сайта: cookies, localStorage, IndexedDB"), null, (_, _) => OpenStorage(tab)));
+        }
+        if (Dev.On("perms"))
+        {
+            if (menu.Items.Count > 0 && !Dev.On("snapshot") && !(Dev.On("storage") && tab.Core is { } c && StoragePage.HasSite(c)))
+                menu.Items.Add(new ToolStripSeparator());
+            menu.Items.Add(new ToolStripMenuItem(L.T("Разрешения сайтов: камера, микрофон, местоположение"), null, (_, _) => OpenNewTab(PermsPage.Url)));
         }
         // An emulation left on is always switched off from here, the feature on or not
         if (tab.Device != null || tab.Speed != null)
@@ -1766,6 +1820,8 @@ sealed class BrowserForm : Form
     /// <summary>After a switch on the «Для разработчика» page: emulation switched off leaves the tabs, the toolbar follows.</summary>
     public void ApplyDev()
     {
+        foreach (var tab in tabs)
+            if (tab.Core is { } core) ApplyTracking(core);
         if (!Dev.On("emulation"))
             foreach (var tab in tabs.Where(t => t.Device != null || t.Speed != null).ToList())
                 SetEmulation(tab, null, null);
@@ -1935,6 +1991,7 @@ sealed class BrowserForm : Form
                 ["mocks"] = MockStore.Summary(),
                 ["off"] = Dev.OffList(),
                 ["lang"] = App.Current.S.Language,
+                ["strict"] = App.Current.S.StrictTracking,
             }));
     }
 
@@ -2439,7 +2496,7 @@ sealed class BrowserForm : Form
         var path = new Uri(e.Request.Uri).AbsolutePath;
         // Only the pages themselves open anywhere (a frame of another site included, which frame-ancestors then refuses);
         // their data (a console's text, the journal, icons) goes to the browser's own pages alone
-        bool document = path is "/" or NetPage.Path or Dev.Path or StoragePage.Path or "/term"
+        bool document = path is "/" or NetPage.Path or Dev.Path or StoragePage.Path or PermsPage.Path or "/term"
             || (ProgramLog.Parse(path, out bool isText) != null && !isText);
         if (!(sender is CoreWebView2 asker && Home.Is(asker.Source))
             && (e.ResourceContext != CoreWebView2WebResourceContext.Document || !document))
@@ -2468,6 +2525,8 @@ sealed class BrowserForm : Form
             e.Response = env.CreateWebResourceResponse(Dev.Html(), 200, "OK", ProgramLog.Headers);
         else if (path == StoragePage.Path)
             e.Response = env.CreateWebResourceResponse(StoragePage.Html(), 200, "OK", ProgramLog.Headers);
+        else if (path == PermsPage.Path)
+            e.Response = env.CreateWebResourceResponse(PermsPage.Html(), 200, "OK", ProgramLog.Headers);
         else if (path == NetPage.Path + "/log")
         {
             var m = Regex.Match(new Uri(e.Request.Uri).Query, @"[?&]after=(\d+)");
@@ -2491,6 +2550,7 @@ sealed class BrowserForm : Form
         if (path == NetPage.Path) return "net";
         if (path == Dev.Path) return "dev";
         if (path == StoragePage.Path) return "storage";
+        if (path == PermsPage.Path) return "perms";
         if (path == "/term") return "term";
         return ProgramLog.Parse(path, out bool text) != null && !text ? "console" : "";
     }
@@ -2506,7 +2566,7 @@ sealed class BrowserForm : Form
         ["netClear"] = new[] { "net" }, ["netExport"] = new[] { "net" }, ["mockFrom"] = new[] { "net" }, ["mockOpen"] = new[] { "net" },
         ["mockSave"] = new[] { "net" }, ["mockOn"] = new[] { "net" }, ["mockDelete"] = new[] { "net" },
         ["dev"] = new[] { "dev" }, ["lang"] = new[] { "dev" }, ["devReset"] = new[] { "dev" }, ["settingsReset"] = new[] { "dev" },
-        ["storage"] = new[] { "storage" },
+        ["storage"] = new[] { "storage" }, ["perms"] = new[] { "perms" }, ["permsOpen"] = new[] { "dev" }, ["strict"] = new[] { "dev" },
         ["termStart"] = new[] { "term" }, ["termIn"] = new[] { "term" }, ["termSize"] = new[] { "term" },
     };
 
@@ -2606,6 +2666,16 @@ sealed class BrowserForm : Form
                 break;
             case "devOpen":
                 OpenHereOrNew(tab, Dev.Url, Flag("newTab"));
+                break;
+            case "permsOpen":
+                OpenHereOrNew(tab, PermsPage.Url, Flag("newTab"));
+                break;
+            case "perms" when PermsPage.Is(e.Source):
+                PermsOp(tab, Text("op") == "set" ? m : null);
+                break;
+            case "strict" when Dev.Is(e.Source):
+                App.Current.S.SaveStrictTracking(Flag("on"));
+                BeginInvoke(new Action(App.Current.ApplyDev));
                 break;
             case "dev" when Dev.Is(e.Source) && Text("id") is { } devId:
                 if (Dev.Set(devId, Flag("on"))) BeginInvoke(new Action(App.Current.ApplyDev));

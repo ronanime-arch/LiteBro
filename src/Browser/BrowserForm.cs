@@ -146,6 +146,7 @@ sealed class BrowserForm : Form
         strip.Closing += CloseTab;
         strip.NewTab += () => OpenNewTab(null);
         strip.Menu += ShowTabMenu;
+        strip.StripMenu += ShowStripMenu;
         strip.Mute += ToggleMute;
         strip.MuteEnabled = App.Current.S.TabMute;
         host.Controls.Add(divider);
@@ -160,7 +161,7 @@ sealed class BrowserForm : Form
         };
         divider.MouseUp += (_, _) => dragFrom = null;
         SetTips();
-        ram.Click += (_, _) => Core?.OpenTaskManagerWindow();
+        ram.Click += (_, _) => ShowTaskManager();
         address.KeyDown += OnAddressKeyDown;
         address.GotFocus += (_, _) => BeginInvoke(new Action(address.SelectAll));
         ramTimer.Tick += (_, _) => UpdateRam();
@@ -538,6 +539,10 @@ sealed class BrowserForm : Form
         catch (Exception) { } // an older runtime, or the WebView is closing
     }
 
+    /// <summary>The profiles of the tabs with a WebView here, each with one of those WebViews.</summary>
+    public IEnumerable<(string Name, CoreWebView2 Core)> LiveProfiles() =>
+        tabs.Where(t => t.Core != null).GroupBy(t => t.Profile).Select(g => (g.Key, g.First().Core!));
+
     /// <summary>A WebView here in that profile, to reach the profile's settings through; null if no tab is in it.</summary>
     public CoreWebView2? CoreIn(string profile) => tabs.FirstOrDefault(t => t.Profile == profile && t.Core != null)?.Core;
 
@@ -701,8 +706,7 @@ sealed class BrowserForm : Form
             return;
         }
         if (active is not { } tab || Savable(tab) is not { } url) return;
-        var name = tab.Title.Length > 0 ? tab.Title : NameOf(new Uri(url));
-        if (name.Length > 80) name = name.Substring(0, 80).TrimEnd() + "…";
+        var name = SavedName(tab, url);
         var owner = OwnerOf(tab);
         var menu = NewMenu();
         if (SavedIn(url) is { } saved)
@@ -734,6 +738,13 @@ sealed class BrowserForm : Form
         }
         menu.Items.Add(links);
         menu.Show(star, new Point(0, star.Height));
+    }
+
+    /// <summary>The name a page is saved under: its title, else its site or file name.</summary>
+    static string SavedName(Tab tab, string url)
+    {
+        var name = tab.Title.Length > 0 ? tab.Title : NameOf(new Uri(url));
+        return name.Length > 80 ? name.Substring(0, 80).TrimEnd() + "…" : name;
     }
 
     /// <summary>What the star of a terminal saves: the folder and the command running there (none at the prompt).</summary>
@@ -958,6 +969,196 @@ sealed class BrowserForm : Form
                 (_, _) => ToggleMute(tab)));
         menu.Items.Add(new ToolStripMenuItem(L.T("Закрыть вкладку"), null, (_, _) => CloseTab(tab)) { ShortcutKeyDisplayString = tab == active ? "Ctrl+W" : "" });
         menu.Show(strip, at);
+    }
+
+    /// <summary>
+    /// A right click on the strip beside the tabs: the last closed tab back, every tab as one tile,
+    /// the engine's process manager, every tab closed.
+    /// </summary>
+    void ShowStripMenu(Point at)
+    {
+        var menu = NewMenu();
+        menu.ShowItemToolTips = true;
+        var last = closedTabs.Count > 0 ? closedTabs[closedTabs.Count - 1] : null;
+        menu.Items.Add(new ToolStripMenuItem(L.T("Открыть закрытую вкладку"), null, (_, _) => ReopenClosedTab())
+        {
+            ShortcutKeyDisplayString = "Ctrl+Shift+T",
+            Enabled = last != null,
+            ToolTipText = last == null ? "" : last.Title.Length > 0 ? last.Title : last.Url,
+        });
+        var pages = SavablePages();
+        menu.Items.Add(new ToolStripMenuItem(L.T("Добавить все в закладки") + (pages.Count > MaxLinks + 1 ? L.T(" (первые ") + (MaxLinks + 1) + ")" : ""),
+            null, (_, _) => SaveAllAsTile())
+        {
+            Enabled = pages.Count > 0,
+            ToolTipText = L.T("Одной плиткой на стартовой странице, с датой в названии: первая вкладка — адрес плитки, остальные — её ссылки. «Открыть всё» в меню плитки откроет их снова."),
+        });
+        menu.Items.Add(new ToolStripSeparator());
+        menu.Items.Add(new ToolStripMenuItem(L.T("Диспетчер задач"), null, (_, _) => ShowTaskManager()) { ShortcutKeyDisplayString = "Shift+Esc" });
+        menu.Items.Add(new ToolStripSeparator());
+        menu.Items.Add(new ToolStripMenuItem(L.T("Закрыть все вкладки"), null, (_, _) => CloseAllTabs())
+        {
+            ToolTipText = L.T("Вместо них — стартовая страница. Программы проектов продолжают работать; закреплённые вкладки и терминалы с работающей оболочкой остаются."),
+        });
+        menu.Show(strip, at);
+    }
+
+    /// <summary>uBlock Origin Lite's own settings in a new tab, in the profile of the page that asks (the shared one for /dev).</summary>
+    async void OpenAdBlockSettings(Tab from)
+    {
+        if (from.Core is not { } core) return;
+        var url = await AdBlock.DashboardAsync(core.Profile);
+        if (url != null) OpenNewTab(url, from);
+        else MessageBox.Show(this, App.Current.S.AdBlock
+                ? L.T("uBlock Origin Lite ещё не подключился: подождите несколько секунд и попробуйте снова.")
+                : L.T("Блокировка рекламы выключена: сначала включите её."),
+            "LiteBro", MessageBoxButtons.OK, MessageBoxIcon.Information);
+    }
+
+    /// <summary>The engine's process manager (Shift+Esc, a click on the memory figure).</summary>
+    void ShowTaskManager() => (Core ?? tabs.FirstOrDefault(t => t.Core != null)?.Core)?.OpenTaskManagerWindow();
+
+    /// <summary>A closed tab, kept to be opened again (Ctrl+Shift+T): where it was, in which profile, with its history.</summary>
+    sealed class ClosedTab
+    {
+        public string Url = "", Title = "", Profile = "";
+        public Project? Project;
+        public string? Link;
+        /// <summary>It showed its project's start page: opened again, the project is opened (and started) anew.</summary>
+        public bool Starting;
+        /// <summary>A terminal's folder: a new shell starts there.</summary>
+        public string? TermDir;
+        public bool Pinned;
+        public int Index;
+        public readonly List<string> Before = new(), Ahead = new();
+    }
+
+    // The window's closed tabs, the last closed last
+    readonly List<ClosedTab> closedTabs = new();
+    const int MaxClosedTabs = 25;
+
+    /// <summary>What a tab being closed leaves to open it again; nothing for the tiles page and a storage page.</summary>
+    static ClosedTab? ClosedFrom(Tab tab, int index)
+    {
+        var site = tab.Site;
+        if (Home.IsTiles(site) || StoragePage.Is(site)) return null;
+        var r = new ClosedTab { Url = site, Title = tab.Title, Profile = tab.Profile, Project = tab.LastProject, Link = tab.LastLink, Pinned = tab.Pinned, Index = index };
+        if (TermPage.Is(site))
+        {
+            r.TermDir = tab.TermCwd ?? tab.TermDir;
+            return r.TermDir != null ? r : null;
+        }
+        if (!IsPage(site)) return null;
+        r.Starting = tab.ShowingInternalPage && tab.FailedUrl == null && tab.LastProject != null;
+        // As Duplicate does, from the engine's history last read (the WebView is about to go)
+        r.Before.AddRange(tab.Before);
+        r.Ahead.AddRange(tab.Ahead);
+        var t = tab.Trail;
+        for (int i = Math.Max(0, tab.Floor); i < tab.TrailAt && i < t.Length; i++)
+            if (IsPage(t[i]) && t[i] != site) r.Before.Add(t[i]);
+        // The nearest page ahead goes last, as Step takes them
+        for (int i = t.Length - 1; i > tab.TrailAt; i--)
+            if (IsPage(t[i]) && t[i] != site) r.Ahead.Add(t[i]);
+        return r;
+    }
+
+    /// <summary>The last closed tab in front again, where it was: its page, profile and history; a terminal starts a new shell in its folder.</summary>
+    async void ReopenClosedTab()
+    {
+        if (closedTabs.Count == 0) return;
+        var r = closedTabs[closedTabs.Count - 1];
+        closedTabs.RemoveAt(closedTabs.Count - 1);
+        if (r.TermDir != null)
+        {
+            var term = await CreateTabAsync(null, "");
+            if (term?.Core is not { } shell) return;
+            term.TermDir = Directory.Exists(r.TermDir) ? r.TermDir : UserFolder;
+            term.Pinned = r.Pinned;
+            Add(term, front: true, place: r.Index);
+            shell.Navigate(TermPage.Url);
+            return;
+        }
+        var project = r.Project != null ? ProjectStore.Find(r.Project.Id) : null;
+        // A project deleted meanwhile takes its own profile along: the page goes where its address belongs now
+        var profile = r.Profile.Length == 0 || ProjectStore.All.Any(p => p.Profile == r.Profile) ? r.Profile : ProfileFor(r.Url);
+        var tab = await CreateTabAsync(null, profile);
+        if (tab?.Core is not { } core) return;
+        tab.Title = r.Title;
+        tab.LastProject = project;
+        tab.Before.AddRange(r.Before);
+        tab.Ahead.AddRange(r.Ahead);
+        tab.Pinned = r.Pinned;
+        Add(tab, front: true, place: r.Index);
+        if (r.Starting && project != null) OpenProject(tab, project, r.Link);
+        else
+        {
+            tab.Stepping = true; // keeps Ahead
+            core.Navigate(r.Url);
+        }
+    }
+
+    /// <summary>The sites and files of the window's tabs, in the strip's order, each address once.</summary>
+    List<(string Url, string Name)> SavablePages()
+    {
+        var list = new List<(string Url, string Name)>();
+        foreach (var tab in tabs)
+            if (Savable(tab) is { } url && !list.Any(x => SameAddress(x.Url, url)))
+                list.Add((url, SavedName(tab, url)));
+        return list;
+    }
+
+    /// <summary>
+    /// «Добавить все в закладки»: one tile named with the date and time, the first tab its address and the others
+    /// its links (as many as a tile takes), so that «Открыть всё» opens them again. The number of pages on its colour.
+    /// </summary>
+    void SaveAllAsTile()
+    {
+        var pages = SavablePages();
+        if (pages.Count == 0) return;
+        var p = new Project
+        {
+            Name = L.T("Вкладки ") + DateTime.Now.ToString("g", System.Globalization.CultureInfo.CurrentCulture),
+            Url = pages[0].Url,
+            IconSource = "none",
+            Letters = Math.Min(pages.Count, MaxLinks + 1).ToString(System.Globalization.CultureInfo.InvariantCulture),
+        };
+        p.Links.AddRange(pages.Skip(1).Take(MaxLinks).Select(x => new ProjectLink { Name = x.Name, Url = x.Url }));
+        ProjectStore.Save(p);
+        App.Current.ProjectSaved(p);
+    }
+
+    /// <summary>Closing the tab would end a program: a terminal's shell, or the PowerShell of the console of no project.</summary>
+    static bool KeepsProcess(Tab tab) =>
+        tab.Term != null || (tab.Site.StartsWith(ProgramLog.Url(ProgramLog.Shell)) && App.Current.ShellRunning);
+
+    bool closingAll;
+
+    /// <summary>
+    /// «Закрыть все вкладки»: the start page in front (one already open, else a fresh one), and the other tabs closed
+    /// (each can be opened again). Nothing that runs is ended: project programs go on, and pinned tabs and terminals
+    /// with their shell stay.
+    /// </summary>
+    async void CloseAllTabs()
+    {
+        var closing = tabs.Where(t => !t.Pinned && !KeepsProcess(t)).ToList();
+        if (closingAll || closing.Count == 0) return;
+        closingAll = true;
+        try
+        {
+            if (closing.FirstOrDefault(t => Home.IsTiles(t.Site)) is { } tiles)
+            {
+                closing.Remove(tiles);
+                SelectTab(tiles);
+            }
+            else
+            {
+                var home = await CreateTabAsync(Home.Url, "");
+                if (home == null) return;
+                Add(home, front: true);
+            }
+            foreach (var tab in closing) if (!tab.Closed) CloseTab(tab);
+        }
+        finally { closingAll = false; }
     }
 
     static string UserFolder => Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
@@ -1887,10 +2088,12 @@ sealed class BrowserForm : Form
     /// Puts a tab into the strip, in front or in the background: right after the tab it was opened from
     /// (after the ones opened from it before, so they keep their order), else at the end; never among the pinned.
     /// </summary>
-    void Add(Tab tab, bool front, Tab? from = null)
+    /// <param name="place">Where it is to stand: a closed tab opened again goes back to its place.</param>
+    void Add(Tab tab, bool front, Tab? from = null, int? place = null)
     {
         int pinned = PinnedCount, at = tabs.Count;
-        if (tab.Pinned) at = pinned;
+        if (tab.Pinned) at = Math.Min(place ?? pinned, pinned);
+        else if (place is { } p) at = Math.Min(p, tabs.Count);
         else if (from != null && tabs.IndexOf(from) >= 0)
         {
             tab.OpenedFrom = from;
@@ -1983,6 +2186,11 @@ sealed class BrowserForm : Form
         {
             other = tab == paneLeft ? paneRight : paneLeft;
             EndSplit();
+        }
+        if (ClosedFrom(tab, i) is { } closed)
+        {
+            closedTabs.Add(closed);
+            if (closedTabs.Count > MaxClosedTabs) closedTabs.RemoveAt(0);
         }
         tab.Closed = true;
         StopTerm(tab);
@@ -2304,6 +2512,7 @@ sealed class BrowserForm : Form
                 ["settings"] = new Dictionary<string, object>
                 {
                     ["strictTracking"] = App.Current.S.StrictTracking,
+                    ["adBlock"] = App.Current.S.AdBlock,
                     ["trustLocalCerts"] = App.Current.S.TrustLocalCerts,
                     ["tabMute"] = App.Current.S.TabMute,
                     ["freezeTabs"] = App.Current.S.FreezeTabs,
@@ -2883,7 +3092,7 @@ sealed class BrowserForm : Form
         ["netClear"] = new[] { "net" }, ["netExport"] = new[] { "net" }, ["mockFrom"] = new[] { "net" }, ["mockOpen"] = new[] { "net" },
         ["mockSave"] = new[] { "net" }, ["mockOn"] = new[] { "net" }, ["mockDelete"] = new[] { "net" },
         ["dev"] = new[] { "dev" }, ["lang"] = new[] { "dev" }, ["devReset"] = new[] { "dev" }, ["settingsReset"] = new[] { "dev" },
-        ["storage"] = new[] { "storage" }, ["permsOpen"] = new[] { "dev" }, ["setting"] = new[] { "dev" },
+        ["storage"] = new[] { "storage" }, ["permsOpen"] = new[] { "dev" }, ["setting"] = new[] { "dev" }, ["adBlockOpen"] = new[] { "dev" },
         ["termStart"] = new[] { "term" }, ["termIn"] = new[] { "term" }, ["termSize"] = new[] { "term" },
     };
 
@@ -2983,6 +3192,9 @@ sealed class BrowserForm : Form
                 break;
             case "devOpen":
                 OpenHereOrNew(tab, Dev.Url, Flag("newTab"));
+                break;
+            case "adBlockOpen" when Dev.Is(e.Source):
+                OpenAdBlockSettings(tab);
                 break;
             case "permsOpen":
                 // Every site, in the window under the toolbar's right end
@@ -3264,6 +3476,8 @@ sealed class BrowserForm : Form
             case Keys.Control | Keys.W:
             case Keys.Control | Keys.F4:
                 return () => { if (active != null) CloseTab(active); };
+            case Keys.Control | Keys.Shift | Keys.T:
+                return ReopenClosedTab;
             case Keys.Control | Keys.Tab:
                 return () => SelectNext(1);
             case Keys.Control | Keys.Shift | Keys.Tab:
@@ -3284,7 +3498,7 @@ sealed class BrowserForm : Form
             case Keys.Control | Keys.Shift | Keys.S when Dev.On("snapshot"):
                 return () => { if (active != null) Snapshot(active, full: true); };
             case Keys.Shift | Keys.Escape:
-                return () => Core?.OpenTaskManagerWindow();
+                return ShowTaskManager;
             // Out of a page's full screen, as in other browsers
             case Keys.Escape when fullScreen != null:
             case Keys.F11 when fullScreen != null:

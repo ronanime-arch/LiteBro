@@ -74,6 +74,8 @@ sealed class Settings
     public bool AutoReload;
     /// <summary>Tracking prevention at its strict level (Edge's «Строгая»); else balanced, the engine's default.</summary>
     public bool StrictTracking;
+    /// <summary>Ads and trackers blocked by the built-in uBlock Origin Lite (AdBlock.cs); on by default.</summary>
+    public bool AdBlock = true;
     /// <summary>A click on a tab's speaker mutes it; off by default.</summary>
     public bool TabMute;
     /// <summary>Certificate errors of servers on this machine are let through; off by default.</summary>
@@ -86,7 +88,7 @@ sealed class Settings
 
     static readonly string[] Keys =
     {
-        "searchurl", "searchcountry", "theme", "language", "gpu", "extrabrowserargs", "localhosts", "otherbrowser", "localonly", "netjournal", "allowhosts", "ignorecors", "clearonexit", "autoreload", "stricttracking", "tabmute", "trustlocalcerts", "freezetabs", "suspendafter", "unloadafter", "disabled",
+        "searchurl", "searchcountry", "theme", "language", "gpu", "extrabrowserargs", "localhosts", "otherbrowser", "localonly", "netjournal", "allowhosts", "ignorecors", "clearonexit", "autoreload", "stricttracking", "adblock", "tabmute", "trustlocalcerts", "freezetabs", "suspendafter", "unloadafter", "disabled",
     };
 
     public static Settings Load()
@@ -130,6 +132,7 @@ sealed class Settings
                 case "clearonexit": s.ClearOnExit = IsTrue(value); break;
                 case "autoreload": s.AutoReload = IsTrue(value); break;
                 case "stricttracking": s.StrictTracking = IsTrue(value); break;
+                case "adblock": s.AdBlock = IsTrue(value); break;
                 case "tabmute": s.TabMute = IsTrue(value); break;
                 case "trustlocalcerts": s.TrustLocalCerts = IsTrue(value); break;
                 case "freezetabs": s.FreezeTabs = IsTrue(value); break;
@@ -282,6 +285,8 @@ sealed class Settings
         "AutoReload = " + Bool(AutoReload),
         L.T("# Строгая защита от трекеров: блокируется больше счётчиков и рекламы, изредка ломается вход через другой сайт"),
         "StrictTracking = " + Bool(StrictTracking),
+        L.T("# Блокировать рекламу и трекеры встроенным uBlock Origin Lite"),
+        "AdBlock = " + Bool(AdBlock),
         L.T("# Доверять сертификатам серверов на этом компьютере (localhost, *.localhost, 127.x, ::1)"),
         "TrustLocalCerts = " + Bool(TrustLocalCerts),
         "",

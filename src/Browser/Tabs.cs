@@ -104,6 +104,8 @@ sealed class TabStrip : Control
     public bool MuteEnabled;
     /// <summary>A right click on a tab, with where to show its menu.</summary>
     public event Action<Tab, Point>? Menu;
+    /// <summary>A right click on the strip beside the tabs: the menu of the window's tabs.</summary>
+    public event Action<Point>? StripMenu;
     public event Action? NewTab;
 
     public TabStrip()
@@ -430,7 +432,12 @@ sealed class TabStrip : Control
     {
         base.OnMouseUp(e);
         int h = Hit(e.Location, out bool close);
-        if (h < 0 || h >= tabs.Count) return;
+        if (h < 0 || h >= tabs.Count)
+        {
+            // The free part of the strip and the new tab button
+            if (e.Button == MouseButtons.Right) StripMenu?.Invoke(e.Location);
+            return;
+        }
         if (e.Button == MouseButtons.Middle || (e.Button == MouseButtons.Left && close)) Closing?.Invoke(tabs[h]);
         else if (e.Button == MouseButtons.Right) Menu?.Invoke(tabs[h], e.Location);
     }

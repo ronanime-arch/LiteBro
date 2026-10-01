@@ -567,6 +567,9 @@ sealed class Launcher
         return true;
     }
 
+    /// <summary>The console's PowerShell runs: closing the last tab that shows it would end it.</summary>
+    public bool ShellRunning => shell is { HasExited: false };
+
     /// <summary>Closes the console's PowerShell, with what it started; the next command starts a new one.</summary>
     public void StopShell(bool quiet)
     {

@@ -155,7 +155,10 @@ sealed class App : ApplicationContext
         if (NetGuard.LocalOnly)
             args += " --proxy-server=http://127.0.0.1:" + Gateway.Start() + " --proxy-bypass-list=" + Gateway.BypassList() +
                 " --force-webrtc-ip-handling-policy=disable_non_proxied_udp";
-        var options = new CoreWebView2EnvironmentOptions(args) { Language = L.EngineLanguage };
+        // uBlock Origin Lite: extensions are always allowed, the switch turns the extension itself on and off.
+        // A new version is copied in before the engine starts, while nothing holds the old one.
+        var options = new CoreWebView2EnvironmentOptions(args) { Language = L.EngineLanguage, AreBrowserExtensionsEnabled = true };
+        if (S.AdBlock) await AdBlock.PrepareAsync();
         // A new WebView starts with the theme's background, not a white flash before its page paints
         var bg = Theme.PageBackground;
         Environment.SetEnvironmentVariable("WEBVIEW2_DEFAULT_BACKGROUND_COLOR", $"FF{bg.R:X2}{bg.G:X2}{bg.B:X2}");
@@ -170,10 +173,16 @@ sealed class App : ApplicationContext
     public async Task<CoreWebView2Controller> CreateControllerAsync(CoreWebView2Environment env, IntPtr window, string profile, bool pages = true)
     {
         if (pages) usedProfiles.Add(profile);
-        if (profile.Length == 0) return await env.CreateCoreWebView2ControllerAsync(window);
-        var options = env.CreateCoreWebView2ControllerOptions();
-        options.ProfileName = profile;
-        return await env.CreateCoreWebView2ControllerAsync(window, options);
+        CoreWebView2Controller c;
+        if (profile.Length == 0) c = await env.CreateCoreWebView2ControllerAsync(window);
+        else
+        {
+            var options = env.CreateCoreWebView2ControllerOptions();
+            options.ProfileName = profile;
+            c = await env.CreateCoreWebView2ControllerAsync(window, options);
+        }
+        if (pages) AdBlock.Apply(c.CoreWebView2.Profile, profile);
+        return c;
     }
 
     /// <summary>
@@ -302,6 +311,9 @@ sealed class App : ApplicationContext
             launcher.StopShell(quiet: false);
     }, null);
 
+    /// <summary>The PowerShell of the console of no project runs.</summary>
+    public bool ShellRunning => launchers.TryGetValue(ProgramLog.Shell.Id, out var launcher) && launcher.ShellRunning;
+
     /// <summary>The launcher of a project's program, kept for as long as the browser runs.</summary>
     public Launcher LauncherFor(Project p)
     {
@@ -407,6 +419,7 @@ sealed class App : ApplicationContext
         foreach (var form in forms.ToList()) form.ApplyTheme();
         // Saves the network values again (the same defaults) and restarts the engine if its flags changed
         SetNet(S.LocalOnly, S.NetJournal, S.AllowHosts, S.IgnoreCors);
+        AdBlock.Changed();
         ApplyDev();
     }
 
@@ -433,6 +446,10 @@ sealed class App : ApplicationContext
         switch (key)
         {
             case "strictTracking": S.Change(s => s.StrictTracking = on); break;
+            case "adBlock":
+                S.Change(s => s.AdBlock = on);
+                AdBlock.Changed();
+                break;
             case "trustLocalCerts": S.Change(s => s.TrustLocalCerts = on); break;
             case "tabMute": S.Change(s => s.TabMute = on); break;
             case "freezeTabs": S.Change(s => s.FreezeTabs = on); break;

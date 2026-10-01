@@ -1009,9 +1009,9 @@ sealed class BrowserForm : Form
         if (from.Core is not { } core) return;
         var url = await AdBlock.DashboardAsync(core.Profile);
         if (url != null) OpenNewTab(url, from);
-        else MessageBox.Show(this, App.Current.S.AdBlock
-                ? L.T("uBlock Origin Lite ещё не подключился: подождите несколько секунд и попробуйте снова.")
-                : L.T("Блокировка рекламы выключена: сначала включите её."),
+        else MessageBox.Show(this, !App.Current.S.AdBlock ? L.T("Блокировка рекламы выключена: сначала включите её.")
+                : AdBlock.State.Length > 0 ? AdBlock.State
+                : L.T("uBlock Origin Lite ещё не подключился: подождите несколько секунд и попробуйте снова."),
             "LiteBro", MessageBoxButtons.OK, MessageBoxIcon.Information);
     }
 
@@ -2513,6 +2513,7 @@ sealed class BrowserForm : Form
                 {
                     ["strictTracking"] = App.Current.S.StrictTracking,
                     ["adBlock"] = App.Current.S.AdBlock,
+                    ["adBlockState"] = AdBlock.State,
                     ["trustLocalCerts"] = App.Current.S.TrustLocalCerts,
                     ["tabMute"] = App.Current.S.TabMute,
                     ["freezeTabs"] = App.Current.S.FreezeTabs,

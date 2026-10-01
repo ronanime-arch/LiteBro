@@ -156,13 +156,14 @@ sealed class App : ApplicationContext
             args += " --proxy-server=http://127.0.0.1:" + Gateway.Start() + " --proxy-bypass-list=" + Gateway.BypassList() +
                 " --force-webrtc-ip-handling-policy=disable_non_proxied_udp";
         // uBlock Origin Lite: extensions are always allowed, the switch turns the extension itself on and off.
-        // A new version is copied in before the engine starts, while nothing holds the old one.
+        // A version downloaded last session takes its place before the engine starts, while nothing holds the old one.
         var options = new CoreWebView2EnvironmentOptions(args) { Language = L.EngineLanguage, AreBrowserExtensionsEnabled = true };
         if (S.AdBlock) await AdBlock.PrepareAsync();
         // A new WebView starts with the theme's background, not a white flash before its page paints
         var bg = Theme.PageBackground;
         Environment.SetEnvironmentVariable("WEBVIEW2_DEFAULT_BACKGROUND_COLOR", $"FF{bg.R:X2}{bg.G:X2}{bg.B:X2}");
         Env = await CoreWebView2Environment.CreateAsync(null, Path.Combine(Settings.Dir, "WebView2"), options);
+        AdBlock.Ensure();
         return Env;
     }
 
@@ -392,6 +393,7 @@ sealed class App : ApplicationContext
         S.SaveNet(localOnly, journal, NetGuard.AllowText, ignoreCors);
         foreach (var form in forms) form.ApplyNet();
         Gateway.Enforce();
+        AdBlock.Ensure(); // waits for «только localhost» to be off
         if (Env != null && EngineKey() != engineKey) restart ??= RestartEngineAsync();
     }
 

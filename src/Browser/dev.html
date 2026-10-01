@@ -67,7 +67,8 @@ button:disabled { opacity: .45; cursor: default; background: transparent; }
   <section id="protect"></section>
   <div class="row">
     <button id="adBlockOpen">Настройки uBlock Origin Lite</button>
-    <span class="muted">Списки фильтров и сайты без блокировки. Открываются в новой вкладке; это настройки общего профиля, у проектов с отдельным профилем свои.</span>
+    <span class="muted" id="adBlockNote">Списки фильтров и режим фильтрации. Сайт без блокировки: там включите «Режим разработчика», затем вкладка «Разработка», «Подробности режима фильтрации». Это настройки общего профиля, у проектов с отдельным профилем свои.</span>
+    <span class="muted" id="adBlockState"></span>
   </div>
   <div class="row">
     <button id="perms">Разрешения сайтов</button>
@@ -218,7 +219,7 @@ $("lang").addEventListener("change", () => {
 
 // Settings kept in settings.ini, keys as in App.SetSetting
 const SETTINGS = [
-  ["protect", "adBlock", "Блокировка рекламы (uBlock Origin Lite)", "Встроенный блокировщик рекламы, трекеров и вредоносных сайтов. Фильтры применяет сам движок, поэтому памяти и процессора он почти не тратит. Если сайт из-за него работает неправильно, добавьте сайт в исключения в настройках uBlock Origin Lite или выключите блокировку здесь."],
+  ["protect", "adBlock", "Блокировка рекламы (uBlock Origin Lite)", "Блокировщик рекламы, трекеров и вредоносных сайтов. При первом включении скачивается с GitHub (около 12 МБ, один раз). Фильтры применяет сам движок, поэтому памяти и процессора он почти не тратит. Если сайт из-за него работает неправильно, добавьте сайт в исключения в настройках uBlock Origin Lite или выключите блокировку здесь."],
   ["protect", "strictTracking", "Строгая защита от трекеров", "Как «Строгая» в Edge: блокируется больше счётчиков, рекламы и сторонних cookies. Изредка ломается вход через другой сайт или встроенное видео; тогда выключите. Выключено — «Сбалансированная», как в Edge по умолчанию."],
   ["protect", "trustLocalCerts", "Доверять сертификатам localhost", "Локальный сервер на https со своим сертификатом (vite --https, dotnet dev-certs) открывается без предупреждения. Только localhost, *.localhost, 127.x и ::1. Выключение действует после перезапуска браузера для уже открытых адресов."],
   ["tabsSection", "tabMute", "Выключение звука по значку на вкладке", "Клик по значку динамика выключает и включает звук вкладки, пункт есть и в меню вкладки. Выключено — значок только показывает, что вкладка играет."],
@@ -283,6 +284,10 @@ window.chrome.webview.addEventListener("message", e => {
     if (document.activeElement !== $(id) && set[id] !== undefined) $(id).value = set[id];
   $("timing").classList.toggle("off", !set.freezeTabs);
   $("adBlockOpen").disabled = !set.adBlock;
+  // Downloading, waiting for local-only mode to be off, a failure: said instead of the button's note
+  const state = set.adBlock ? set.adBlockState || "" : "";
+  $("adBlockState").textContent = state;
+  $("adBlockNote").hidden = !!state;
   if (set.theme) $("theme").value = set.theme;
   const off = m.off || [];
   for (const id in boxes) {

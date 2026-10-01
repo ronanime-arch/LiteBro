@@ -183,19 +183,94 @@ static class AdBlock
         return to;
     }
 
-    // WebView2 shows no toolbar icon and no popup of an extension: the «Поведение» options of uBOL's settings (a count of
-    // blocked requests on the icon, a reload when the popup changes a site's mode) do nothing here. Check on a new version.
-    const string TrimCss = "\n/* LiteBro: no toolbar icon or popup in WebView2 */\nsection[data-pane=\"settings\"] > div:first-child { display: none; }\n";
+    // WebView2 shows no toolbar icon and no popup of an extension. What only they reach goes from the copy; a file still
+    // imported by a module that stays is kept, so a newer uBOL that needs one of them keeps working.
+    static readonly string[] Unused =
+    {
+        "js/popup.js", "css/popup.css", // popup.html itself stays: the manifest names it
+        "picker-ui.html", "js/picker-ui.js", "css/picker-ui.css", "js/scripting/picker.js",
+        "unpicker-ui.html", "js/unpicker-ui.js", "css/unpicker-ui.css", "js/scripting/unpicker.js",
+        "zapper-ui.html", "js/zapper-ui.js", "css/zapper-ui.css", "js/scripting/zapper.js",
+        "js/tool-overlay-ui.js", "css/tool-overlay-ui.css", "js/scripting/tool-overlay.js",
+        "report.html", "js/report.js", "css/report.css",
+        "matched-rules.html", "js/matched-rules.js", "css/matched-rules.css",
+    };
 
-    /// <summary>Hides what does nothing in WebView2 from uBOL's settings page; once.</summary>
+    // Its settings' «Поведение» block (a count on the toolbar icon, a reload when the popup changes a site's mode) does
+    // nothing here: hidden, its markup stays for settings.js
+    const string TrimCss = "\n/* LiteBro: no toolbar icon or popup in WebView2 */\nsection[data-pane=\"settings\"] > div:has(#showBlockedCount) { display: none; }\n";
+
+    /// <summary>An empty page of the extension: what uBOL takes only from its own pages is sent from there (AskAsync).</summary>
+    const string Page = "litebro.html";
+
+    // The lists' names are English in every language; in a Russian interface they get Russian ones (names of lists stay)
+    static readonly Dictionary<string, string> RussianNames = new()
+    {
+        ["ublock-filters"] = "Фильтры uBlock – реклама, трекеры и прочее",
+        ["pgl"] = "Peter Lowe – реклама, трекеры и прочее",
+        ["ublock-badware"] = "Фильтры uBlock – опасное ПО",
+        ["urlhaus-full"] = "Вредоносные адреса (URLhaus)",
+        ["adguard-mobile"] = "AdGuard/uBO – реклама в мобильных версиях",
+        ["block-lan"] = "Защита локальной сети от внешних сайтов",
+        ["dpollock-0"] = "Файл hosts Дэна Поллока",
+        ["adguard-spyware-url"] = "AdGuard – отслеживание через адреса",
+        ["annoyances-cookies"] = "EasyList/uBO – уведомления о cookie",
+        ["annoyances-overlays"] = "EasyList/uBO – всплывающие окна поверх страницы",
+        ["annoyances-social"] = "EasyList – виджеты соцсетей",
+        ["annoyances-widgets"] = "EasyList – виджеты чатов",
+        ["annoyances-others"] = "EasyList – прочие раздражители",
+        ["annoyances-notifications"] = "EasyList – запросы уведомлений",
+        ["ublock-experimental"] = "Фильтры uBlock – экспериментальные",
+        ["stevenblack-hosts"] = "Сводный hosts Стивена Блэка (реклама и вредоносное ПО)",
+        ["ubol-tests"] = "Тестовые фильтры uBO Lite",
+        ["rus-1"] = "🇷🇺ru 🇺🇦ua 🇺🇿uz 🇰🇿kz: RU AdList: счётчики",
+    };
+
+    /// <summary>
+    /// The copy as LiteBro uses it: what does nothing in WebView2 gone or hidden, the page to send from, Russian names
+    /// of the lists. Writes only what is not so yet: a change makes the engine take the extension as a new one.
+    /// </summary>
     static void Trim(string dir)
     {
-        var css = Path.Combine(dir, "css", "settings.css");
+        if (!File.Exists(Path.Combine(dir, "manifest.json"))) return;
         try
         {
+            var gone = Unused.Where(u => File.Exists(Path.Combine(dir, u.Replace('/', '\\')))).ToList();
+            if (gone.Count > 0)
+            {
+                // The extension's own modules (not the filter lists' scripts) that stay
+                var kept = Directory.GetFiles(Path.Combine(dir, "js"), "*.js", SearchOption.AllDirectories)
+                    .Where(f => !Unused.Any(u => SameFile(f, dir, u))).Select(File.ReadAllText).ToList();
+                foreach (var file in gone)
+                {
+                    // import ... from './name' or import('./name'): still needed
+                    var name = Path.GetFileName(file);
+                    if (kept.Any(js => Regex.IsMatch(js, "import[^;]*?['\"][^'\"]*/" + Regex.Escape(name) + "['\"]"))) continue;
+                    File.Delete(Path.Combine(dir, file.Replace('/', '\\')));
+                }
+            }
+            var css = Path.Combine(dir, "css", "settings.css");
             if (File.Exists(css) && !File.ReadAllText(css).Contains("LiteBro")) File.AppendAllText(css, TrimCss);
+            var page = Path.Combine(dir, Page);
+            if (!File.Exists(page)) File.WriteAllText(page, "<!doctype html><meta charset=\"utf-8\"><title>LiteBro</title>\n");
+            if (L.Code == "ru") TranslateLists(Path.Combine(dir, "rulesets", "ruleset-details.json"));
         }
         catch (Exception e) when (e is IOException || e is UnauthorizedAccessException) { }
+    }
+
+    static bool SameFile(string path, string dir, string relative) =>
+        string.Equals(Path.GetFullPath(path), Path.GetFullPath(Path.Combine(dir, relative.Replace('/', '\\'))), StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>Each list's name by its id, as the file has them ("id": "…", "name": "…"); an unknown layout stays as it is.</summary>
+    static void TranslateLists(string path)
+    {
+        if (!File.Exists(path)) return;
+        var text = File.ReadAllText(path, Encoding.UTF8);
+        var changed = text;
+        foreach (var pair in RussianNames)
+            changed = Regex.Replace(changed, "(\"id\":\\s*\"" + Regex.Escape(pair.Key) + "\",\\s*\"name\":\\s*\")[^\"]*(\")",
+                m => m.Groups[1].Value + pair.Value + m.Groups[2].Value);
+        if (changed != text) File.WriteAllText(path, changed, new UTF8Encoding(false));
     }
 
     /// <summary>The git tree id of a folder whose files are all plain (100644), as git computes it.</summary>
@@ -296,6 +371,67 @@ static class AdBlock
             foreach (var (name, core) in form.LiveProfiles())
                 Apply(core.Profile, name);
         Ensure();
+    }
+
+    /// <summary>
+    /// Runs a script in a page of uBOL in a hidden WebView of the profile: some messages uBOL takes only from its own pages
+    /// (a site's filtering mode, as its popup sets it). The script's awaited value as JSON; null if that could not be done.
+    /// </summary>
+    static async Task<string?> AskAsync(IntPtr window, string profile, string script)
+    {
+        if (App.Current.Env is not { } env) return null;
+        CoreWebView2Controller? c = null;
+        try
+        {
+            c = await App.Current.CreateControllerAsync(env, window, profile, pages: false);
+            c.IsVisible = false;
+            var core = c.CoreWebView2;
+            var x = (await core.Profile.GetBrowserExtensionsAsync()).FirstOrDefault(e => e.Name == Name && e.IsEnabled);
+            if (x == null) return null;
+            var loaded = new TaskCompletionSource<bool>();
+            core.NavigationCompleted += (_, e) => loaded.TrySetResult(e.IsSuccess);
+            core.Navigate("chrome-extension://" + x.Id + "/" + Page);
+            if (await Task.WhenAny(loaded.Task, Task.Delay(10000)) != loaded.Task || !loaded.Task.Result) return null;
+            var call = core.CallDevToolsProtocolMethodAsync("Runtime.evaluate", ProjectStore.Json.Serialize(new Dictionary<string, object>
+            {
+                ["expression"] = "(async () => JSON.stringify(await (" + script + ")))()",
+                ["awaitPromise"] = true,
+                ["returnByValue"] = true,
+            }));
+            if (await Task.WhenAny(call, Task.Delay(10000)) != call) return null;
+            var answer = ProjectStore.Json.Deserialize<Dictionary<string, object>>(await call);
+            return answer.TryGetValue("result", out var r) && r is Dictionary<string, object> result
+                && result.TryGetValue("value", out var v) && v is string json ? json : null;
+        }
+        catch (Exception) { return null; } // the engine restarting, a WebView gone
+        finally { c?.Close(); }
+    }
+
+    static string Send(object message) => "chrome.runtime.sendMessage(" + ProjectStore.Json.Serialize(message) + ")";
+
+    // Sites last seen left unfiltered (or not), by profile and host: the tools menu shows them at once
+    static readonly Dictionary<string, bool> unfiltered = new();
+
+    public static bool? Unfiltered(string profile, string host) => unfiltered.TryGetValue(profile + "|" + host, out var off) ? off : null;
+
+    /// <summary>Asks uBOL whether it leaves the site unfiltered (its «без фильтрации» mode); null if it did not say.</summary>
+    public static async Task<bool?> IsUnfilteredAsync(IntPtr window, string profile, string host)
+    {
+        var answer = await AskAsync(window, profile, Send(new Dictionary<string, object> { ["what"] = "getFilteringMode", ["hostname"] = host }));
+        if (!int.TryParse(answer, out var level)) return null;
+        return unfiltered[profile + "|" + host] = level == 0;
+    }
+
+    /// <summary>The site left unfiltered, or back to the default filtering mode, as uBOL's popup does; false if it did not take.</summary>
+    public static async Task<bool> SetUnfilteredAsync(IntPtr window, string profile, string host, bool off)
+    {
+        // Back on: the mode every site has by default
+        var level = off ? "0" : "await chrome.runtime.sendMessage({ what: 'getDefaultFilteringMode' })";
+        var answer = await AskAsync(window, profile, "(async () => chrome.runtime.sendMessage({ what: 'setFilteringMode', hostname: "
+            + ProjectStore.Json.Serialize(host) + ", level: " + level + " }))()");
+        if (!int.TryParse(answer, out var now) || (now == 0) != off) return false;
+        unfiltered[profile + "|" + host] = off;
+        return true;
     }
 
     /// <summary>uBOL's own settings page (filter lists, sites left unfiltered) in that profile; null while it is not on there.</summary>

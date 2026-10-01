@@ -20,7 +20,7 @@ static class Dev
         // toolbar
         "back", "forward", "reload", "home", "star", "ram",
         // features
-        "reset", "country", "emulation", "snapshot", "storage", "json", "mocks", "split", "perms",
+        "reset", "country", "emulation", "snapshot", "storage", "json", "mocks", "split", "perms", "unblock",
         // start page
         "shell", "localonly", "netlog", "console",
     };

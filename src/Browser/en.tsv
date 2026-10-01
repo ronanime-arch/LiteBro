@@ -365,7 +365,7 @@ _ на плитках)	_ on tiles)
 Проекты (домик)	Projects (house)
 Пропадает только кнопка: её горячие клавиши работают.	Only the button disappears: its keyboard shortcuts work.
 Пропадает только кнопка; кнопку «Для разработчика» выключить нельзя.	Only the button disappears; the “For developers” button cannot be switched off.
-Пропадают вместе с пунктами меню и горячими клавишами. Инструменты разработчика (сброс сайта, эмуляция, снимок, хранилище, JSON, заглушки) после установки выключены. Когда выключены эмуляция, снимок, хранилище и разрешения сайтов, пропадает и кнопка «Инструменты» (гаечный ключ).	They disappear together with their menu items and keyboard shortcuts. The developer tools (site reset, emulation, snapshot, storage, JSON, mocks) are off after installation. When emulation, snapshot, storage and site permissions are off, the “Tools” button (wrench) disappears too.
+Пропадают вместе с пунктами меню и горячими клавишами. Инструменты разработчика (сброс сайта, эмуляция, снимок, хранилище, JSON, заглушки) после установки выключены. Когда выключены эмуляция, снимок, хранилище, разрешения сайтов и «Не блокировать», пропадает и кнопка «Инструменты» (гаечный ключ).	They disappear together with their menu items and keyboard shortcuts. The developer tools (site reset, emulation, snapshot, storage, JSON, mocks) are off after installation. When emulation, snapshot, storage, site permissions and “Don’t block” are off, the “Tools” button (wrench) disappears too.
 Просмотр JSON деревом	JSON tree view
 Пункт «Открыть рядом» в меню вкладки. Уже открытое разделение убирается как обычно.	The “Open side by side” item in the tab menu. A split already open is removed as usual.
 Пункт меню «Инструменты». Уже открытая вкладка хранилища продолжит работать.	The “Tools” menu item. A storage tab already open keeps working.
@@ -710,7 +710,7 @@ Cookies, localStorage, sessionStorage и все хранилища IndexedDB э�
 Правый клик по полосе вкладок	Right click on the tab strip
 Открыть закрытую вкладку, добавить все вкладки одной плиткой, диспетчер задач, закрыть все вкладки	Reopen a closed tab, bookmark all tabs as one tile, task manager, close all tabs
 Настройки uBlock Origin Lite	uBlock Origin Lite settings
-Списки фильтров и режим фильтрации. Сайт без блокировки: там включите «Режим разработчика», затем вкладка «Разработка», «Подробности режима фильтрации». Это настройки общего профиля, у проектов с отдельным профилем свои.	Filter lists and filtering mode. To leave a site unfiltered, turn on “Developer mode” there, then the “Develop” tab, “Filtering mode details”. These are the settings of the shared profile, projects with a separate profile have their own.
+Списки фильтров и режим фильтрации. Сайт без блокировки — пункт «Не блокировать (uBlock)» в меню «Инструменты» (гаечный ключ). Это настройки общего профиля, у проектов с отдельным профилем свои.	Filter lists and filtering mode. To leave a site unfiltered, use “Don’t block (uBlock)” in the “Tools” menu (wrench). These are the settings of the shared profile, projects with a separate profile have their own.
 Блокировка рекламы (uBlock Origin Lite)	Ad blocking (uBlock Origin Lite)
 Блокировщик рекламы, трекеров и вредоносных сайтов. При первом включении скачивается с GitHub (около 12 МБ, один раз). Фильтры применяет сам движок, поэтому памяти и процессора он почти не тратит. Если сайт из-за него работает неправильно, добавьте сайт в исключения в настройках uBlock Origin Lite или выключите блокировку здесь.	A blocker of ads, trackers and malicious sites. The first time it is turned on, it is downloaded from GitHub (about 12 MB, once). The engine itself applies the filters, so it costs almost no memory or CPU. If a site breaks because of it, add the site to the exceptions in the uBlock Origin Lite settings or turn blocking off here.
 # Блокировать рекламу и трекеры uBlock Origin Lite; при первом включении скачивается с GitHub	# Block ads and trackers with uBlock Origin Lite; it is downloaded from GitHub the first time it is turned on
@@ -725,3 +725,8 @@ uBlock Origin Lite ещё не подключился: подождите нес
 слишком большой файл	file too large
 в архиве нет расширения	no extension in the archive
 недопустимый путь в архиве	invalid path in the archive
+Не блокировать (uBlock)	Don’t block (uBlock)
+Реклама и трекеры на	Ads and trackers on
+не блокируются. Страница перезагрузится.	are not blocked. The page reloads.
+uBlock Origin Lite не ответил. Попробуйте ещё раз через несколько секунд.	uBlock Origin Lite did not answer. Try again in a few seconds.
+Пункт меню «Инструменты»: сайт без блокировки рекламы, когда она включена в разделе «Защита». Исключения остаются и в настройках uBlock Origin Lite.	A “Tools” menu item: the site without ad blocking, when blocking is on in the “Protection” section. The exceptions are also in the uBlock Origin Lite settings.

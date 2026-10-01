@@ -18,6 +18,9 @@ namespace LiteBro;
 /// the browser downloads the pinned release from GitHub, checks its files against the release's git tree and keeps them
 /// in the user's data, where the engine may write its indexed filter lists into the extension's folder. Every profile
 /// gets it on its first WebView of the session. uBOL filters declaratively: the engine applies the lists.
+/// The engine drops an extension whose files changed, its settings with it: the copy in use is never changed while it
+/// runs. A new one (a new version, or the same one trimmed anew) waits in Staged for the next start, uBOL's settings are
+/// saved beforehand (ublock-state), and a profile that has lost the extension gets them back when it is added again.
 /// </summary>
 static class AdBlock
 {
@@ -46,16 +49,14 @@ static class AdBlock
     /// <summary>What the «Для разработчика» page says under the switch: "" when ready or off.</summary>
     public static string State { get; private set; } = "";
 
-    static Task<string?>? downloading;
+    static bool busy;
 
-    /// <summary>
-    /// Before the engine starts, while nothing holds the extension: a version downloaded last session takes its place,
-    /// and a copy from before the settings page was trimmed gets trimmed (the engine adds it again as changed).
-    /// </summary>
+    static string RestartNote => L.T("Изменения uBlock Origin Lite вступят в силу после перезапуска LiteBro.");
+
+    /// <summary>Before the engine starts, while nothing holds the extension: a copy made ready last session takes its place.</summary>
     public static Task PrepareAsync() => Task.Run(() =>
     {
-        Trim(Folder);
-        if (VersionIn(Staged) != Version) return;
+        if (VersionIn(Staged) == null) return;
         string old = Folder + ".old";
         try
         {
@@ -67,36 +68,85 @@ static class AdBlock
         Delete(old);
     });
 
-    /// <summary>Downloads the pinned version if it is wanted and missing; a first install is put in at once.</summary>
+    /// <summary>
+    /// With the switch on: downloads the pinned version if missing, or makes a trimmed copy of the one in use if it is not
+    /// as Trim leaves it. A first install comes in at once; a change of the copy in use, at the next start.
+    /// </summary>
     public static async void Ensure()
     {
-        if (downloading != null) return;
-        if (!App.Current.S.AdBlock || VersionIn(Folder) == Version || VersionIn(Staged) == Version)
+        if (busy) return;
+        if (!App.Current.S.AdBlock)
         {
-            Show(App.Current.S.AdBlock && VersionIn(Staged) == Version ? L.T("Новая версия скачана, включится после перезапуска LiteBro.") : "");
+            Show("");
             return;
         }
-        if (NetGuard.LocalOnly)
+        if (VersionIn(Staged) != null)
+        {
+            Show(RestartNote);
+            return;
+        }
+        bool have = VersionIn(Folder) == Version;
+        if (have && !Trim(Folder, write: false))
+        {
+            Show("");
+            return;
+        }
+        if (!have && NetGuard.LocalOnly)
         {
             Show(L.T("Скачается с GitHub, когда будет выключен режим «только localhost»."));
             return;
         }
-        Show(L.T("Скачивается с GitHub, около 12 МБ…"));
-        string? problem;
-        try { problem = await (downloading = Task.Run(DownloadAsync)); }
-        finally { downloading = null; }
-        if (problem != null)
+        busy = true;
+        try
         {
-            Show(L.T("Не удалось скачать: ") + problem + L.T(". Попробует снова при следующем включении или запуске."));
-            return;
+            if (!have) Show(L.T("Скачивается с GitHub, около 12 МБ…"));
+            var problem = await (have ? Task.Run(StageTrimmed) : Task.Run(DownloadAsync));
+            if (problem != null)
+            {
+                Show((have ? L.T("Не удалось подготовить: ") : L.T("Не удалось скачать: ")) + problem
+                    + L.T(". Попробует снова при следующем включении или запуске."));
+                return;
+            }
+            if (!Directory.Exists(Folder))
+            {
+                try { Directory.Move(Staged, Folder); }
+                catch (Exception e) when (e is IOException || e is UnauthorizedAccessException) { }
+            }
+            if (VersionIn(Staged) == null)
+            {
+                Show("");
+                Changed();
+                return;
+            }
+            await BackupAsync();
+            Show(RestartNote);
         }
-        if (!Directory.Exists(Folder))
+        finally { busy = false; }
+    }
+
+    /// <summary>The copy in use, trimmed, into Staged (without the engine's own _metadata); null when done, else what went wrong.</summary>
+    static string? StageTrimmed()
+    {
+        var temp = Folder + ".download";
+        try
         {
-            try { Directory.Move(Staged, Folder); }
-            catch (Exception e) when (e is IOException || e is UnauthorizedAccessException) { }
+            Delete(temp);
+            Copy(Folder, temp);
+            Trim(temp, write: true);
+            Delete(Staged);
+            Directory.Move(temp, Staged);
+            return null;
         }
-        Show(VersionIn(Folder) == Version ? "" : L.T("Новая версия скачана, включится после перезапуска LiteBro."));
-        Changed();
+        catch (Exception e) { return e.Message; }
+        finally { Delete(temp); }
+    }
+
+    static void Copy(string from, string to)
+    {
+        Directory.CreateDirectory(to);
+        foreach (var file in Directory.GetFiles(from)) File.Copy(file, Path.Combine(to, Path.GetFileName(file)));
+        foreach (var dir in Directory.GetDirectories(from))
+            if (Path.GetFileName(dir) != "_metadata") Copy(dir, Path.Combine(to, Path.GetFileName(dir)));
     }
 
     static void Show(string state)
@@ -123,7 +173,7 @@ static class AdBlock
                     problem = L.T("файлы не совпали с выпуском на GitHub");
                     continue;
                 }
-                Trim(root);
+                Trim(root, write: true);
                 Delete(Staged);
                 Directory.Move(root, Staged);
                 return null;
@@ -203,75 +253,94 @@ static class AdBlock
     /// <summary>An empty page of the extension: what uBOL takes only from its own pages is sent from there (AskAsync).</summary>
     const string Page = "litebro.html";
 
-    // The lists' names are English in every language; in a Russian interface they get Russian ones (names of lists stay)
-    static readonly Dictionary<string, string> RussianNames = new()
+    // The lists' names are English in every language. litebro.js, added to uBOL's settings page, puts Russian ones on the
+    // page when the engine's language is Russian (the lists' own names stay): the files of the lists are left as they are,
+    // and a change of language changes nothing in the extension. An English name uBOL changes stays as it is.
+    static readonly Dictionary<string, string[]> RussianNames = new()
     {
-        ["ublock-filters"] = "Фильтры uBlock – реклама, трекеры и прочее",
-        ["pgl"] = "Peter Lowe – реклама, трекеры и прочее",
-        ["ublock-badware"] = "Фильтры uBlock – опасное ПО",
-        ["urlhaus-full"] = "Вредоносные адреса (URLhaus)",
-        ["adguard-mobile"] = "AdGuard/uBO – реклама в мобильных версиях",
-        ["block-lan"] = "Защита локальной сети от внешних сайтов",
-        ["dpollock-0"] = "Файл hosts Дэна Поллока",
-        ["adguard-spyware-url"] = "AdGuard – отслеживание через адреса",
-        ["annoyances-cookies"] = "EasyList/uBO – уведомления о cookie",
-        ["annoyances-overlays"] = "EasyList/uBO – всплывающие окна поверх страницы",
-        ["annoyances-social"] = "EasyList – виджеты соцсетей",
-        ["annoyances-widgets"] = "EasyList – виджеты чатов",
-        ["annoyances-others"] = "EasyList – прочие раздражители",
-        ["annoyances-notifications"] = "EasyList – запросы уведомлений",
-        ["ublock-experimental"] = "Фильтры uBlock – экспериментальные",
-        ["stevenblack-hosts"] = "Сводный hosts Стивена Блэка (реклама и вредоносное ПО)",
-        ["ubol-tests"] = "Тестовые фильтры uBO Lite",
-        ["rus-1"] = "🇷🇺ru 🇺🇦ua 🇺🇿uz 🇰🇿kz: RU AdList: счётчики",
+        ["ublock-filters"] = new[] { "uBlock filters – Ads, trackers, and more", "Фильтры uBlock – реклама, трекеры и прочее" },
+        ["pgl"] = new[] { "Peter Lowe – Ads, trackers, and more", "Peter Lowe – реклама, трекеры и прочее" },
+        ["ublock-badware"] = new[] { "uBlock filters – Badware risks", "Фильтры uBlock – опасное ПО" },
+        ["urlhaus-full"] = new[] { "Malicious URL Blocklist", "Вредоносные адреса (URLhaus)" },
+        ["adguard-mobile"] = new[] { "AdGuard/uBO – Mobile Ads", "AdGuard/uBO – реклама в мобильных версиях" },
+        ["block-lan"] = new[] { "Block Outsider Intrusion into LAN", "Защита локальной сети от внешних сайтов" },
+        ["dpollock-0"] = new[] { "Dan Pollock’s hosts file", "Файл hosts Дэна Поллока" },
+        ["adguard-spyware-url"] = new[] { "AdGuard URL Tracking Protection", "AdGuard – отслеживание через адреса" },
+        ["annoyances-cookies"] = new[] { "EasyList/uBO – Cookie Notices", "EasyList/uBO – уведомления о cookie" },
+        ["annoyances-overlays"] = new[] { "EasyList/uBO – Overlay Notices", "EasyList/uBO – всплывающие окна поверх страницы" },
+        ["annoyances-social"] = new[] { "EasyList – Social Widgets", "EasyList – виджеты соцсетей" },
+        ["annoyances-widgets"] = new[] { "EasyList – Chat Widgets", "EasyList – виджеты чатов" },
+        ["annoyances-others"] = new[] { "EasyList – Other Annoyances", "EasyList – прочие раздражители" },
+        ["annoyances-notifications"] = new[] { "EasyList – Notifications", "EasyList – запросы уведомлений" },
+        ["ublock-experimental"] = new[] { "uBlock filters – Experimental", "Фильтры uBlock – экспериментальные" },
+        ["stevenblack-hosts"] = new[] { "Steven Black’s Unified Hosts (adware + malware)", "Сводный hosts Стивена Блэка (реклама и вредоносное ПО)" },
+        ["ubol-tests"] = new[] { "uBO Lite Test Filters", "Тестовые фильтры uBO Lite" },
+        ["rus-1"] = new[] { "Counters", "счётчики" }, // after the flags of «RU AdList:»
     };
 
+    const string NamesScript = @"// LiteBro: Russian names of the filter lists when the browser speaks Russian
+(() => {
+  if (!chrome.i18n.getUILanguage().startsWith('ru')) return;
+  const names = __NAMES__;
+  const lists = document.getElementById('lists');
+  const apply = () => {
+    for (const [id, [en, ru]] of Object.entries(names)) {
+      const name = lists.querySelector(`.listEntry[data-rulesetid=""${id}""] > .detailbar .listname`);
+      if (!name) continue;
+      // Text only: the flags before a name are pictures
+      for (const node of name.childNodes)
+        if (node.nodeType === 3 && node.nodeValue.includes(en)) node.nodeValue = node.nodeValue.replace(en, ru);
+    }
+  };
+  new MutationObserver(apply).observe(lists, { childList: true, subtree: true });
+  apply();
+})();
+";
+
+    static string NamesFile => NamesScript.Replace("__NAMES__", ProjectStore.Json.Serialize(RussianNames));
+
     /// <summary>
-    /// The copy as LiteBro uses it: what does nothing in WebView2 gone or hidden, the page to send from, Russian names
-    /// of the lists. Writes only what is not so yet: a change makes the engine take the extension as a new one.
+    /// The copy as LiteBro uses it: what does nothing in WebView2 gone or hidden, the page to send from, the lists' names.
+    /// Only a copy not in use is written (write); true when there was, or would be, anything to change.
     /// </summary>
-    static void Trim(string dir)
+    static bool Trim(string dir, bool write)
     {
-        if (!File.Exists(Path.Combine(dir, "manifest.json"))) return;
-        try
+        bool changed = false;
+        void Change(Action act)
         {
-            var gone = Unused.Where(u => File.Exists(Path.Combine(dir, u.Replace('/', '\\')))).ToList();
-            if (gone.Count > 0)
-            {
-                // The extension's own modules (not the filter lists' scripts) that stay
-                var kept = Directory.GetFiles(Path.Combine(dir, "js"), "*.js", SearchOption.AllDirectories)
-                    .Where(f => !Unused.Any(u => SameFile(f, dir, u))).Select(File.ReadAllText).ToList();
-                foreach (var file in gone)
-                {
-                    // import ... from './name' or import('./name'): still needed
-                    var name = Path.GetFileName(file);
-                    if (kept.Any(js => Regex.IsMatch(js, "import[^;]*?['\"][^'\"]*/" + Regex.Escape(name) + "['\"]"))) continue;
-                    File.Delete(Path.Combine(dir, file.Replace('/', '\\')));
-                }
-            }
-            var css = Path.Combine(dir, "css", "settings.css");
-            if (File.Exists(css) && !File.ReadAllText(css).Contains("LiteBro")) File.AppendAllText(css, TrimCss);
-            var page = Path.Combine(dir, Page);
-            if (!File.Exists(page)) File.WriteAllText(page, "<!doctype html><meta charset=\"utf-8\"><title>LiteBro</title>\n");
-            if (L.Code == "ru") TranslateLists(Path.Combine(dir, "rulesets", "ruleset-details.json"));
+            changed = true;
+            if (write) act();
         }
-        catch (Exception e) when (e is IOException || e is UnauthorizedAccessException) { }
+        var gone = Unused.Where(u => File.Exists(Path.Combine(dir, u.Replace('/', '\\')))).ToList();
+        if (gone.Count > 0)
+        {
+            // The extension's own modules (not the filter lists' scripts) that stay
+            var kept = Directory.GetFiles(Path.Combine(dir, "js"), "*.js", SearchOption.AllDirectories)
+                .Where(f => !Unused.Any(u => SameFile(f, dir, u))).Select(File.ReadAllText).ToList();
+            foreach (var file in gone)
+            {
+                // import ... from './name' or import('./name'): still needed
+                var name = Path.GetFileName(file);
+                if (kept.Any(js => Regex.IsMatch(js, "import[^;]*?['\"][^'\"]*/" + Regex.Escape(name) + "['\"]"))) continue;
+                Change(() => File.Delete(Path.Combine(dir, file.Replace('/', '\\'))));
+            }
+        }
+        var css = Path.Combine(dir, "css", "settings.css");
+        if (File.Exists(css) && !File.ReadAllText(css).Contains("LiteBro")) Change(() => File.AppendAllText(css, TrimCss));
+        var page = Path.Combine(dir, Page);
+        if (!File.Exists(page)) Change(() => File.WriteAllText(page, "<!doctype html><meta charset=\"utf-8\"><title>LiteBro</title>\n"));
+        var script = Path.Combine(dir, "litebro.js");
+        if (!File.Exists(script) || File.ReadAllText(script) != NamesFile)
+            Change(() => File.WriteAllText(script, NamesFile, new UTF8Encoding(false)));
+        var dashboard = Path.Combine(dir, "dashboard.html");
+        var html = File.Exists(dashboard) ? File.ReadAllText(dashboard) : "";
+        if (html.Contains("</body>") && !html.Contains("litebro.js"))
+            Change(() => File.WriteAllText(dashboard, html.Replace("</body>", "<script src=\"litebro.js\"></script>\n</body>"), new UTF8Encoding(false)));
+        return changed;
     }
 
     static bool SameFile(string path, string dir, string relative) =>
         string.Equals(Path.GetFullPath(path), Path.GetFullPath(Path.Combine(dir, relative.Replace('/', '\\'))), StringComparison.OrdinalIgnoreCase);
-
-    /// <summary>Each list's name by its id, as the file has them ("id": "…", "name": "…"); an unknown layout stays as it is.</summary>
-    static void TranslateLists(string path)
-    {
-        if (!File.Exists(path)) return;
-        var text = File.ReadAllText(path, Encoding.UTF8);
-        var changed = text;
-        foreach (var pair in RussianNames)
-            changed = Regex.Replace(changed, "(\"id\":\\s*\"" + Regex.Escape(pair.Key) + "\",\\s*\"name\":\\s*\")[^\"]*(\")",
-                m => m.Groups[1].Value + pair.Value + m.Groups[2].Value);
-        if (changed != text) File.WriteAllText(path, changed, new UTF8Encoding(false));
-    }
 
     /// <summary>The git tree id of a folder whose files are all plain (100644), as git computes it.</summary>
     static string TreeOf(string dir)
@@ -339,18 +408,18 @@ static class AdBlock
     static readonly Dictionary<string, Task> applied = new();
 
     /// <summary>The first WebView of a profile this session: the extension is added if missing and follows the switch.</summary>
-    public static void Apply(CoreWebView2Profile profile, string name)
+    public static void Apply(IntPtr window, CoreWebView2Profile profile, string name)
     {
-        if (!applied.ContainsKey(name)) applied[name] = ApplyAsync(profile, name);
+        if (!applied.ContainsKey(name)) applied[name] = ApplyAsync(window, profile, name);
     }
 
-    static async Task ApplyAsync(CoreWebView2Profile profile, string name)
+    static async Task ApplyAsync(IntPtr window, CoreWebView2Profile profile, string name)
     {
-        try { await SetAsync(profile, App.Current.S.AdBlock); }
+        try { await SetAsync(window, profile, name, App.Current.S.AdBlock); }
         catch (Exception) { applied.Remove(name); } // the WebView closed meanwhile, say: the next one tries again
     }
 
-    static async Task SetAsync(CoreWebView2Profile profile, bool on)
+    static async Task SetAsync(IntPtr window, CoreWebView2Profile profile, string name, bool on)
     {
         var ours = (await profile.GetBrowserExtensionsAsync()).Where(x => x.Name == Name).ToList();
         if (on && ours.Count == 0)
@@ -358,9 +427,72 @@ static class AdBlock
             // Not downloaded yet: Ensure brings the profiles in line once it is
             if (VersionIn(Folder) == null) return;
             ours.Add(await profile.AddBrowserExtensionAsync(Folder));
+            // Dropped by the engine when its files changed: uBOL's settings as they were saved
+            await RestoreAsync(window, name);
         }
         foreach (var x in ours)
             if (x.IsEnabled != on) await x.EnableAsync(on);
+    }
+
+    static string StateDir => Path.Combine(Settings.Dir, "ublock-state");
+    static string StatePath(string profile) => Path.Combine(StateDir, (profile.Length == 0 ? "shared" : profile) + ".json");
+
+    // What uBOL keeps of the user's choices: the sites' filtering modes (the default one too), the lists switched on,
+    // strict blocking and the sites let past it, developer mode, own DNR rules
+    const string SaveScript = @"(async () => {
+  const send = m => chrome.runtime.sendMessage(m);
+  const options = await send({ what: 'getOptionsPageData' });
+  const kept = await chrome.storage.local.get(['userDnrRules', 'excludedStrictBlockHostnames']);
+  return {
+    modes: await send({ what: 'getFilteringModeDetails' }),
+    enabledRulesets: options.enabledRulesets,
+    strictBlockMode: options.strictBlockMode,
+    developerMode: options.developerMode,
+    userDnrRules: kept.userDnrRules,
+    excluded: kept.excludedStrictBlockHostnames,
+  };
+})()";
+
+    // Back through the messages uBOL's settings page sends, so the rules follow as they do from there
+    const string RestoreScript = @"(async b => {
+  const send = m => chrome.runtime.sendMessage(m);
+  if (b.modes) await send({ what: 'setFilteringModeDetails', modes: b.modes });
+  if (Array.isArray(b.enabledRulesets)) await send({ what: 'applyRulesets', enabledRulesets: b.enabledRulesets });
+  await send({ what: 'setStrictBlockMode', state: b.strictBlockMode !== false });
+  await send({ what: 'setDeveloperMode', state: b.developerMode === true });
+  if (b.excluded) await chrome.storage.local.set({ excludedStrictBlockHostnames: b.excluded });
+  if (b.userDnrRules) {
+    await chrome.storage.local.set({ userDnrRules: b.userDnrRules });
+    await send({ what: 'updateUserDnrRules' });
+  }
+  return true;
+})(JSON.parse(__STATE__))";
+
+    /// <summary>uBOL's settings in the profiles used this session, saved before the copy in use changes.</summary>
+    static async Task BackupAsync()
+    {
+        if (App.Current.Forms.FirstOrDefault() is not { } form) return;
+        foreach (var profile in applied.Keys.ToList()) await SaveStateAsync(form.Handle, profile);
+    }
+
+    static async Task SaveStateAsync(IntPtr window, string profile)
+    {
+        var json = await AskAsync(window, profile, SaveScript);
+        if (json == null || !json.StartsWith("{")) return;
+        try
+        {
+            Directory.CreateDirectory(StateDir);
+            File.WriteAllText(StatePath(profile), json);
+        }
+        catch (Exception e) when (e is IOException || e is UnauthorizedAccessException) { }
+    }
+
+    static async Task RestoreAsync(IntPtr window, string profile)
+    {
+        string json;
+        try { json = File.ReadAllText(StatePath(profile)); }
+        catch (Exception e) when (e is IOException || e is UnauthorizedAccessException) { return; } // none saved: a first install
+        if (json.StartsWith("{")) await AskAsync(window, profile, RestoreScript.Replace("__STATE__", ProjectStore.Json.Serialize(json)));
     }
 
     /// <summary>The switch changed (or the extension came): the profiles with a WebView follow now, the others on their next one.</summary>
@@ -369,7 +501,7 @@ static class AdBlock
         applied.Clear();
         foreach (var form in App.Current.Forms)
             foreach (var (name, core) in form.LiveProfiles())
-                Apply(core.Profile, name);
+                Apply(form.Handle, core.Profile, name);
         Ensure();
     }
 
@@ -431,6 +563,7 @@ static class AdBlock
             + ProjectStore.Json.Serialize(host) + ", level: " + level + " }))()");
         if (!int.TryParse(answer, out var now) || (now == 0) != off) return false;
         unfiltered[profile + "|" + host] = off;
+        await SaveStateAsync(window, profile); // kept should the engine drop the extension one day
         return true;
     }
 

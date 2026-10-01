@@ -182,7 +182,7 @@ sealed class App : ApplicationContext
             options.ProfileName = profile;
             c = await env.CreateCoreWebView2ControllerAsync(window, options);
         }
-        if (pages) AdBlock.Apply(c.CoreWebView2.Profile, profile);
+        if (pages) AdBlock.Apply(window, c.CoreWebView2.Profile, profile);
         return c;
     }
 

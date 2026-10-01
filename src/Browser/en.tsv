@@ -716,7 +716,6 @@ Cookies, localStorage, sessionStorage и все хранилища IndexedDB э�
 # Блокировать рекламу и трекеры uBlock Origin Lite; при первом включении скачивается с GitHub	# Block ads and trackers with uBlock Origin Lite; it is downloaded from GitHub the first time it is turned on
 uBlock Origin Lite ещё не подключился: подождите несколько секунд и попробуйте снова.	uBlock Origin Lite is not ready yet: wait a few seconds and try again.
 Блокировка рекламы выключена: сначала включите её.	Ad blocking is off: turn it on first.
-Новая версия скачана, включится после перезапуска LiteBro.	A new version is downloaded and will be used after LiteBro restarts.
 Скачается с GitHub, когда будет выключен режим «только localhost».	It will be downloaded from GitHub once “localhost only” mode is off.
 Скачивается с GitHub, около 12 МБ…	Downloading from GitHub, about 12 MB…
 Не удалось скачать:	Could not download:
@@ -730,3 +729,5 @@ uBlock Origin Lite ещё не подключился: подождите нес
 не блокируются. Страница перезагрузится.	are not blocked. The page reloads.
 uBlock Origin Lite не ответил. Попробуйте ещё раз через несколько секунд.	uBlock Origin Lite did not answer. Try again in a few seconds.
 Пункт меню «Инструменты»: сайт без блокировки рекламы, когда она включена в разделе «Защита». Исключения остаются и в настройках uBlock Origin Lite.	A “Tools” menu item: the site without ad blocking, when blocking is on in the “Protection” section. The exceptions are also in the uBlock Origin Lite settings.
+Изменения uBlock Origin Lite вступят в силу после перезапуска LiteBro.	The uBlock Origin Lite changes take effect after LiteBro restarts.
+Не удалось подготовить:	Could not prepare:

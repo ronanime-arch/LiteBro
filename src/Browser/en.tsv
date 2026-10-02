@@ -743,3 +743,18 @@ uBlock Origin Lite не ответил. Попробуйте ещё раз че�
 Игра окончена	Game over
 Пробел или клик — ещё раз	Space or click to play again
 Пробел или клик — играть	Space or click to play
+Понг	Pong
+Арканоид	Breakout
+Космические захватчики	Space invaders
+Сапёр	Minesweeper
+Косынка	Klondike
+Паук	Spider
+Свободная ячейка	FreeCell
+Победа	You won
+↑ ↓, W S или мышь — ракетка. Отбил — очко, забил браузеру — пять	↑ ↓, W S or mouse to move the paddle. A return scores one, a goal against the browser five
+← →, A D или мышь — ракетка	← →, A D or mouse to move the paddle
+← →, A D или мышь — пушка; пробел, ↑ или клик — выстрел	← →, A D or mouse to move the cannon; Space, ↑ or click to fire
+Клик — открыть клетку, правый клик — пометить баг, N — новое поле	Click to open a cell, right click to flag a bug, N for a new field
+Перетаскивайте карты мышью, двойной клик — в дом, клик по колоде — следующая карта, Z — отменить ход, N — новая раздача	Drag the cards with the mouse, double click to send a card home, click the stock for the next card, Z to undo a move, N for a new deal
+Перетаскивайте карты мышью, клик по колоде — раздать (не при пустом столбце), Z — отменить ход, N — новая раздача	Drag the cards with the mouse, click the stock to deal (not while a column is empty), Z to undo a move, N for a new deal
+Перетаскивайте карты мышью, двойной клик — в дом или в свободную ячейку, Z — отменить ход, N — новая раздача	Drag the cards with the mouse, double click to send a card home or to a free cell, Z to undo a move, N for a new deal

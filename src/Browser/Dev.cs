@@ -26,7 +26,7 @@ static class Dev
     };
 
     /// <summary>A new install, or settings back to their defaults: the developer tools wait to be switched on.</summary>
-    public const string DefaultOff = "reset emulation snapshot storage json mocks";
+    public const string DefaultOff = "reset emulation snapshot storage json mocks unblock";
 
     static HashSet<string>? off;
 

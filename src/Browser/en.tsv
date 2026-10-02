@@ -365,7 +365,7 @@ _ на плитках)	_ on tiles)
 Проекты (домик)	Projects (house)
 Пропадает только кнопка: её горячие клавиши работают.	Only the button disappears: its keyboard shortcuts work.
 Пропадает только кнопка; кнопку «Для разработчика» выключить нельзя.	Only the button disappears; the “For developers” button cannot be switched off.
-Пропадают вместе с пунктами меню и горячими клавишами. Инструменты разработчика (сброс сайта, эмуляция, снимок, хранилище, JSON, заглушки) после установки выключены. Когда выключены эмуляция, снимок, хранилище, разрешения сайтов и «Не блокировать», пропадает и кнопка «Инструменты» (гаечный ключ).	They disappear together with their menu items and keyboard shortcuts. The developer tools (site reset, emulation, snapshot, storage, JSON, mocks) are off after installation. When emulation, snapshot, storage, site permissions and “Don’t block” are off, the “Tools” button (wrench) disappears too.
+Пропадают вместе с пунктами меню и горячими клавишами. Инструменты разработчика (сброс сайта, эмуляция, снимок, хранилище, JSON, заглушки) и «Не блокировать» после установки выключены. Когда выключены эмуляция, снимок, хранилище, разрешения сайтов и «Не блокировать», пропадает и кнопка «Инструменты» (гаечный ключ).	They disappear together with their menu items and keyboard shortcuts. The developer tools (site reset, emulation, snapshot, storage, JSON, mocks) and “Don’t block” are off after installation. When emulation, snapshot, storage, site permissions and “Don’t block” are off, the “Tools” button (wrench) disappears too.
 Просмотр JSON деревом	JSON tree view
 Пункт «Открыть рядом» в меню вкладки. Уже открытое разделение убирается как обычно.	The “Open side by side” item in the tab menu. A split already open is removed as usual.
 Пункт меню «Инструменты». Уже открытая вкладка хранилища продолжит работать.	The “Tools” menu item. A storage tab already open keeps working.
@@ -731,3 +731,4 @@ uBlock Origin Lite не ответил. Попробуйте ещё раз че�
 Пункт меню «Инструменты»: сайт без блокировки рекламы, когда она включена в разделе «Защита». Исключения остаются и в настройках uBlock Origin Lite.	A “Tools” menu item: the site without ad blocking, when blocking is on in the “Protection” section. The exceptions are also in the uBlock Origin Lite settings.
 Изменения uBlock Origin Lite вступят в силу после перезапуска LiteBro.	The uBlock Origin Lite changes take effect after LiteBro restarts.
 Не удалось подготовить:	Could not prepare:
+# Служебная строка, не меняйте	# Service line, do not change

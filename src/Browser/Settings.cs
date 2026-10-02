@@ -85,10 +85,13 @@ sealed class Settings
     public int SuspendAfter = 1, UnloadAfter = 5;
     /// <summary>Buttons and tools switched off on the «Для разработчика» page (Dev.Ids), through spaces; the developer tools by default.</summary>
     public string DevOff = Dev.DefaultOff;
+    /// <summary>Which defaults the file was written with: an older file gets the values that changed since (Load).</summary>
+    public int Defaults = CurrentDefaults;
+    const int CurrentDefaults = 2;
 
     static readonly string[] Keys =
     {
-        "searchurl", "searchcountry", "theme", "language", "gpu", "extrabrowserargs", "localhosts", "otherbrowser", "localonly", "netjournal", "allowhosts", "ignorecors", "clearonexit", "autoreload", "stricttracking", "adblock", "tabmute", "trustlocalcerts", "freezetabs", "suspendafter", "unloadafter", "disabled",
+        "searchurl", "searchcountry", "theme", "language", "gpu", "extrabrowserargs", "localhosts", "otherbrowser", "localonly", "netjournal", "allowhosts", "ignorecors", "clearonexit", "autoreload", "stricttracking", "adblock", "tabmute", "trustlocalcerts", "freezetabs", "suspendafter", "unloadafter", "disabled", "defaults",
     };
 
     public static Settings Load()
@@ -101,6 +104,7 @@ sealed class Settings
             return s;
         }
         var seen = new HashSet<string>();
+        s.Defaults = 0; // a file without the line is older than it
         foreach (var raw in File.ReadAllLines(IniPath))
         {
             var line = raw.Trim();
@@ -139,9 +143,19 @@ sealed class Settings
                 case "suspendafter": s.SuspendAfter = Minutes(value, s.SuspendAfter, 1); break;
                 case "unloadafter": s.UnloadAfter = Minutes(value, s.UnloadAfter, 0); break;
                 case "disabled": s.DevOff = value; break;
+                case "defaults": s.Defaults = int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var d) ? d : 0; break;
             }
         }
         L.Set(s.Language); // before a rewrite below: its comments are in the language
+        // 2: ad blocking was on by default for a while, and a Disabled line written before «Не блокировать (uBlock)»
+        // existed does not name it; both are off by default now
+        if (s.Defaults < 2)
+        {
+            s.AdBlock = false;
+            if (seen.Contains("disabled") && !Dev.Parse(s.DevOff).Contains("unblock")) s.DevOff = (s.DevOff + " unblock").Trim();
+        }
+        bool migrated = s.Defaults < CurrentDefaults;
+        s.Defaults = CurrentDefaults;
         // A file from an older version lacks the newer keys or has ones since dropped: rewrite it, keeping the values
         if (!seen.All(Keys.Contains))
         {
@@ -149,7 +163,7 @@ sealed class Settings
             try { File.Copy(IniPath, IniPath + ".bak", true); }
             catch (Exception e) when (e is IOException || e is UnauthorizedAccessException) { }
         }
-        if (!Keys.All(seen.Contains) || !seen.All(Keys.Contains)) s.Save();
+        if (migrated || !Keys.All(seen.Contains) || !seen.All(Keys.Contains)) s.Save();
         return s;
     }
 
@@ -303,6 +317,8 @@ sealed class Settings
         L.T("# После установки выключены инструменты разработчика: ") + Dev.DefaultOff + L.T(". Пусто = всё включено."),
         L.T("# Саму страницу выключить нельзя."),
         "Disabled = " + DevOff,
+        L.T("# Служебная строка, не меняйте"),
+        "Defaults = " + Defaults.ToString(CultureInfo.InvariantCulture),
         "");
 
     static string PinnedPath => Path.Combine(Dir, "pinned.txt");

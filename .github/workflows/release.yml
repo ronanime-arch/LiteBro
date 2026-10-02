@@ -5,6 +5,8 @@ name: Release
 on:
   push:
     branches: [main]
+    # The site and the texts alone change nothing in the installer: no new release for them
+    paths-ignore: ['docs/**', '**.md']
   pull_request:
   workflow_dispatch:
 

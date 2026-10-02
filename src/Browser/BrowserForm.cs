@@ -2589,6 +2589,7 @@ sealed class BrowserForm : Form
                     ["adBlockState"] = AdBlock.State,
                     ["trustLocalCerts"] = App.Current.S.TrustLocalCerts,
                     ["tabMute"] = App.Current.S.TabMute,
+                    ["externalToMain"] = App.Current.S.ExternalToMain,
                     ["freezeTabs"] = App.Current.S.FreezeTabs,
                     ["suspendAfter"] = App.Current.S.SuspendAfter,
                     ["unloadAfter"] = App.Current.S.UnloadAfter,

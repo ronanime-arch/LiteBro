@@ -60,6 +60,8 @@ sealed class Settings
     public string ExtraBrowserArgs = "";
     public string LocalHosts = "";
     public string OtherBrowser = "";
+    /// <summary>Internet links from other programs go on to the main browser; off, LiteBro opens them too (Router.OpensHere).</summary>
+    public bool ExternalToMain = true;
     /// <summary>«Только localhost»: requests to the internet are blocked (see NetGuard).</summary>
     public bool LocalOnly;
     /// <summary>Journal the requests to the internet while LocalOnly is off too.</summary>
@@ -91,7 +93,7 @@ sealed class Settings
 
     static readonly string[] Keys =
     {
-        "searchurl", "searchcountry", "theme", "language", "gpu", "extrabrowserargs", "localhosts", "otherbrowser", "localonly", "netjournal", "allowhosts", "ignorecors", "clearonexit", "autoreload", "stricttracking", "adblock", "tabmute", "trustlocalcerts", "freezetabs", "suspendafter", "unloadafter", "disabled", "defaults",
+        "searchurl", "searchcountry", "theme", "language", "gpu", "extrabrowserargs", "localhosts", "otherbrowser", "externaltomain", "localonly", "netjournal", "allowhosts", "ignorecors", "clearonexit", "autoreload", "stricttracking", "adblock", "tabmute", "trustlocalcerts", "freezetabs", "suspendafter", "unloadafter", "disabled", "defaults",
     };
 
     public static Settings Load()
@@ -129,6 +131,7 @@ sealed class Settings
                 case "extrabrowserargs": s.ExtraBrowserArgs = value; break;
                 case "localhosts": s.LocalHosts = value; break;
                 case "otherbrowser": s.OtherBrowser = value; break;
+                case "externaltomain": s.ExternalToMain = IsTrue(value); break;
                 case "localonly": s.LocalOnly = IsTrue(value); break;
                 case "netjournal": s.NetJournal = IsTrue(value); break;
                 case "allowhosts": s.AllowHosts = value; break;
@@ -282,6 +285,8 @@ sealed class Settings
         L.T("# Куда сразу уходит всё остальное. Пусто = браузер, который открывает файлы .html"),
         L.T("# Пример: \"C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe\" --single-argument %1"),
         "OtherBrowser = " + OtherBrowser,
+        L.T("# false = адреса в интернете тоже открывает LiteBro (кроме режима «только localhost»)"),
+        "ExternalToMain = " + Bool(ExternalToMain),
         "",
         L.T("# --- Сеть ---"),
         L.T("# Режим «только localhost»: страницы не ходят в интернет, только на этот компьютер и в локальную сеть."),

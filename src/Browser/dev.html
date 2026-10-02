@@ -80,6 +80,8 @@ button:disabled { opacity: .45; cursor: default; background: transparent; }
     <label class="muted">Приостановить через <input type="number" id="suspendAfter" min="1" max="1440"> мин</label>
     <label class="muted">выгрузить из памяти через <input type="number" id="unloadAfter" min="0" max="1440"> мин (0 — не выгружать)</label>
   </div>
+  <h2>Ссылки из других программ</h2>
+  <section id="links"></section>
   <h2>Оформление и движок</h2>
   <div class="row">
     <select id="theme">
@@ -145,7 +147,7 @@ const ICONS = {
   reset: "\uE75C", country: "\uE774", emulation: "\uE90F", snapshot: "\uE722", storage: "\uEDA2", json: { text: "{ }" },
   mocks: "\uE8A5", split: "\uE89A", perms: "\uE8D7", unblock: "\uE733",
   shell: { svg: POWERSHELL, cls: "shell" }, localonly: { svg: SHIELD, cls: "net" }, netlog: "\uE8FD", console: { text: ">_", cls: "console" },
-  tabMute: "\uE767", adBlock: "\uE733", strictTracking: "\uEA18", trustLocalCerts: "\uE72E", freezeTabs: "\uE769", gpu: "\uE7F4",
+  tabMute: "\uE767", adBlock: "\uE733", strictTracking: "\uEA18", trustLocalCerts: "\uE72E", externalToMain: "\uE8A7", freezeTabs: "\uE769", gpu: "\uE7F4",
 };
 function icon(id) {
   const i = ICONS[id], span = document.createElement("span");
@@ -225,6 +227,7 @@ const SETTINGS = [
   ["protect", "trustLocalCerts", "Доверять сертификатам localhost", "Локальный сервер на https со своим сертификатом (vite --https, dotnet dev-certs) открывается без предупреждения. Только localhost, *.localhost, 127.x и ::1. Выключение действует после перезапуска браузера для уже открытых адресов."],
   ["tabsSection", "tabMute", "Выключение звука по значку на вкладке", "Клик по значку динамика выключает и включает звук вкладки, пункт есть и в меню вкладки. Выключено — значок только показывает, что вкладка играет."],
   ["tabsSection", "freezeTabs", "Заморозка фоновых вкладок", "Экономит память и процессор: вкладка в фоне приостанавливается, потом выгружается и загружается снова по клику. Не замораживаются вкладки со звуком, терминал и сайты работающих проектов."],
+  ["links", "externalToMain", "Открывать внешние ссылки в основном браузере", "Ссылка на сайт в интернете из другой программы (почта, мессенджер, документ) открывается в вашем основном браузере, обычно Chrome, а локальные адреса — в LiteBro. Выключено — LiteBro открывает и их. Работает, если LiteBro выбран для HTTP и HTTPS в «Приложениях по умолчанию». В режиме «только localhost» такие ссылки всё равно уходят в основной браузер."],
   ["engine", "gpu", "Видеокарта", "Страницы рисует видеокарта. Выключать только если на старом компьютере или драйвере страницы мерцают или рисуются с ошибками: без видеокарты всё рисует процессор, браузер заметно медленнее и сильнее нагружает процессор. Движок перезапустится."],
 ];
 const settingBoxes = {};

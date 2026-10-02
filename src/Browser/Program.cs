@@ -26,9 +26,9 @@ static class Program
         catch (Exception) { settings = new Settings(); } // a broken ini must not stop links from opening
         var argument = args.Select(a => a.Trim()).FirstOrDefault(a => a.Length > 0 && !a.StartsWith("--"));
         var url = argument != null && Uri.TryCreate(argument, UriKind.Absolute, out var parsed) ? parsed : null;
-        if (argument != null && (url == null || !Router.IsLocal(url, settings)))
+        if (argument != null && (url == null || !Router.OpensHere(url, settings)))
         {
-            // An internet address, a file or a mail link: straight on to the main browser, no window here
+            // An internet address (unless the switch keeps them here), a file or a mail link: straight on to the main browser
             Router.OpenElsewhere(Router.ForOtherBrowser(argument, url), settings);
             return;
         }
@@ -280,7 +280,9 @@ sealed class App : ApplicationContext
             else Show(last);
             return true;
         }
-        var window = open.OrderByDescending(f => f == lastActive).FirstOrDefault(f => f.TryFocusTabOn(address));
+        // A project's tab is taken again; an internet link gets a tab of its own, not the page open on that site
+        var local = Uri.TryCreate(address, UriKind.Absolute, out var url) && Router.IsLocal(url, S);
+        var window = local ? open.OrderByDescending(f => f == lastActive).FirstOrDefault(f => f.TryFocusTabOn(address)) : null;
         if (window == null)
         {
             window = last;
@@ -454,6 +456,7 @@ sealed class App : ApplicationContext
                 break;
             case "trustLocalCerts": S.Change(s => s.TrustLocalCerts = on); break;
             case "tabMute": S.Change(s => s.TabMute = on); break;
+            case "externalToMain": S.Change(s => s.ExternalToMain = on); break;
             case "freezeTabs": S.Change(s => s.FreezeTabs = on); break;
             case "suspendAfter" when minutes >= 1 && minutes <= Settings.MaxMinutes: S.Change(s => s.SuspendAfter = minutes); break;
             case "unloadAfter" when minutes >= 0 && minutes <= Settings.MaxMinutes: S.Change(s => s.UnloadAfter = minutes); break;

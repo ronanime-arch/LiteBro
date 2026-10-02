@@ -17,7 +17,8 @@ namespace LiteBro;
 
 /// <summary>
 /// Windows gives LiteBro every web link (it hands over http and https only together): local addresses
-/// open here, anything else goes straight on to the main browser, launched directly so it cannot come back.
+/// open here, anything else goes straight on to the main browser, launched directly so it cannot come back
+/// (unless ExternalToMain is off: then internet addresses open here too).
 /// </summary>
 static class Router
 {
@@ -58,6 +59,14 @@ static class Router
                 .Any(pattern => Regex.IsMatch(host, "^" + Regex.Escape(pattern).Replace(@"\*", ".*").Replace(@"\?", ".") + "$",
                     RegexOptions.IgnoreCase));
     }
+
+    /// <summary>
+    /// Whether a link from another program opens in LiteBro: a local address, and with ExternalToMain off any
+    /// web address, but not in local-only mode, where it would only be blocked.
+    /// </summary>
+    public static bool OpensHere(Uri url, Settings settings) =>
+        IsLocal(url, settings) || !settings.ExternalToMain && !settings.LocalOnly
+            && (url.Scheme == Uri.UriSchemeHttp || url.Scheme == Uri.UriSchemeHttps);
 
     /// <summary>Servers print 0.0.0.0 ("all interfaces"), which a browser on Windows cannot connect to.</summary>
     public static Uri Normalize(Uri url)

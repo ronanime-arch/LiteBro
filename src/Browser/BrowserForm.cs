@@ -1756,7 +1756,7 @@ sealed class BrowserForm : Form
         CoreWebView2ContextMenuItem Item(string label, Action act, CoreWebView2ContextMenuItemKind kind = CoreWebView2ContextMenuItemKind.Command, bool on = false)
         {
             var item = env.CreateContextMenuItem(label, null, kind);
-            if (kind == CoreWebView2ContextMenuItemKind.Radio) item.IsChecked = on;
+            if (kind is CoreWebView2ContextMenuItemKind.Radio or CoreWebView2ContextMenuItemKind.CheckBox) item.IsChecked = on;
             item.CustomItemSelected += (_, _) => BeginInvoke(act);
             return item;
         }
@@ -1776,6 +1776,14 @@ sealed class BrowserForm : Form
             tools.Add(Item(L.T("Сбросить кэш сайта и обновить") + (Dev.On("reset") ? " (Ctrl+Shift+R)" : ""), () => ResetSite(tab)));
         if (StoragePage.HasSite(core))
             tools.Add(Item(L.T("Хранилище сайта"), () => OpenStorage(tab)));
+        if (AdBlockSite(tab) is { } host)
+        {
+            var profile = tab.Profile;
+            tools.Add(Item(L.T("Не блокировать (uBlock)"), () => ToggleUnblock(tab, host), CoreWebView2ContextMenuItemKind.CheckBox,
+                AdBlock.Unfiltered(profile, host) == true));
+            // uBOL's own answer for the click and the next menu; not from inside the engine's event
+            BeginInvoke(new Action(async () => await AdBlock.IsUnfilteredAsync(Handle, profile, host)));
+        }
         var radio = CoreWebView2ContextMenuItemKind.Radio;
         var screens = new List<CoreWebView2ContextMenuItem> { Item(L.T("Обычный экран"), () => SetEmulation(tab, null, tab.Speed), radio, tab.Device == null) };
         screens.AddRange(Emulation.Devices.Select(d => Item($"{d.Name} ({d.Width}×{d.Height})", () => SetEmulation(tab, d, tab.Speed), radio, tab.Device == d)));
@@ -1933,8 +1941,27 @@ sealed class BrowserForm : Form
     }
 
     /// <summary>The site whose blocking the tools menu switches: with uBlock Origin Lite on, and its item on the developer page.</summary>
-    static string? AdBlockHost(Tab tab) =>
-        App.Current.S.AdBlock && Dev.On("unblock") && SiteOrigin(tab) is { } origin ? new Uri(origin).IdnHost : null;
+    static string? AdBlockHost(Tab tab) => Dev.On("unblock") ? AdBlockSite(tab) : null;
+
+    /// <summary>The site uBlock Origin Lite filters on the tab, while ad blocking is on; the right-click menu has it always.</summary>
+    static string? AdBlockSite(Tab tab) =>
+        App.Current.S.AdBlock && SiteOrigin(tab) is { } origin ? new Uri(origin).IdnHost : null;
+
+    /// <summary>
+    /// «Не блокировать (uBlock)» from the right-click menu: the engine's menu cannot follow an answer while it is open,
+    /// so the state is asked when it opens and, unknown yet, once more on the click; then the tab reloads.
+    /// </summary>
+    async void ToggleUnblock(Tab tab, string host)
+    {
+        var off = AdBlock.Unfiltered(tab.Profile, host) ?? await AdBlock.IsUnfilteredAsync(Handle, tab.Profile, host);
+        if (off == null || !await AdBlock.SetUnfilteredAsync(Handle, tab.Profile, host, !off.Value))
+        {
+            MessageBox.Show(this, L.T("uBlock Origin Lite не ответил. Попробуйте ещё раз через несколько секунд."),
+                "LiteBro", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            return;
+        }
+        if (!tab.Closed) ReloadTab(tab);
+    }
 
     /// <summary>
     /// «Не блокировать (uBlock)»: the site in uBOL's «без фильтрации» mode, as its popup (which WebView2 does not show)
@@ -3152,6 +3179,12 @@ sealed class BrowserForm : Form
         // Any page of a split may say where it is scrolled to; that moves nothing but the other half
         if (syncScroll && IsPane(tab)) OnScrolled(tab, e);
         OnPageNet(tab, e);
+        // The games of this browser's own page about a site that does not answer: a pick and records, nothing more
+        if (tab.ShowingInternalPage && tab.FailedUrl != null && IsInternal(e.Source) && !Home.Is(e.Source))
+        {
+            Games.Note(e.WebMessageAsJson);
+            return;
+        }
         if (!Home.Is(e.Source)) return;
         Dictionary<string, object>? m;
         try { m = ProjectStore.Json.Deserialize<Dictionary<string, object>>(e.WebMessageAsJson); }

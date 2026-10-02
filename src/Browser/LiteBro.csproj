@@ -26,6 +26,7 @@
     <EmbeddedResource Include="sitestorage.js" LogicalName="sitestorage.js" />
     <EmbeddedResource Include="jsonview.js" LogicalName="jsonview.js" />
     <EmbeddedResource Include="savepage.js" LogicalName="savepage.js" />
+    <EmbeddedResource Include="games.js" LogicalName="games.js" />
     <EmbeddedResource Include="en.tsv" LogicalName="en.tsv" />
     <EmbeddedResource Include="dev.html" LogicalName="dev.html" />
     <EmbeddedResource Include="term\index.html" LogicalName="term/index.html" />

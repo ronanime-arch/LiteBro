@@ -1,0 +1,261 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>LiteBro — лёгкий браузер для локальных проектов</title>
+<meta name="description" content="Браузер для Windows для localhost и локальных проектов: плитки проектов, консоль и терминал, журнал сети, режим «только localhost». На движке Edge WebView2, меньше памяти, чем Chrome.">
+<meta property="og:title" content="LiteBro — лёгкий браузер для локальных проектов">
+<meta property="og:description" content="Плитки проектов, консоль и терминал, журнал сети и режим «только localhost». Для Windows, бесплатно.">
+<meta property="og:image" content="https://ronanime-arch.github.io/LiteBro/preview.gif">
+<meta property="og:type" content="website">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' y1='0' x2='1' y2='1'%3E%3Cstop offset='0' stop-color='%237C3AED'/%3E%3Cstop offset='1' stop-color='%232563EB'/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect x='3' y='3' width='94' height='94' rx='22' fill='url(%23g)'/%3E%3Cg transform='translate(50 50) rotate(-45) scale(80) translate(-.55 0)' fill='%23fff'%3E%3Cpath d='M1 0C.75-.3.3-.28.18 0 .3.22.75.24 1 0Z'/%3E%3Cpath d='M.02 0H.3' stroke='%23fff' stroke-width='.07' stroke-linecap='round'/%3E%3C/g%3E%3C/svg%3E">
+<style>
+  :root {
+    --bg: #0f1115; --surface: #171a21; --line: #262b36; --text: #e8eaf0; --muted: #9aa3b2;
+    --accent: #4d6bfe; --accent-text: #fff; --violet: #7c3aed; --green: #37c46a;
+    color-scheme: dark;
+  }
+  @media (prefers-color-scheme: light) {
+    :root {
+      --bg: #f6f7fb; --surface: #fff; --line: #e3e6ee; --text: #161a22; --muted: #5b6474;
+      --accent: #3b5bfd; --accent-text: #fff; color-scheme: light;
+    }
+  }
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 16px/1.6 "Segoe UI", system-ui, -apple-system, sans-serif; }
+  a { color: var(--accent); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  .wrap { max-width: 1080px; margin: 0 auto; padding: 0 16px; }
+  html.en .ru, html:not(.en) .en { display: none; }
+
+  header { position: sticky; top: 0; z-index: 2; background: color-mix(in srgb, var(--bg) 85%, transparent); backdrop-filter: blur(10px); border-bottom: 1px solid var(--line); }
+  header .wrap { display: flex; align-items: center; gap: 20px; height: 60px; }
+  .brand { display: flex; align-items: center; gap: 10px; font-weight: 700; font-size: 18px; color: var(--text); }
+  .brand:hover { text-decoration: none; }
+  .brand svg { width: 30px; height: 30px; }
+  nav { display: flex; gap: 18px; margin-left: auto; font-size: 15px; }
+  nav a { color: var(--muted); }
+  nav a:hover { color: var(--text); text-decoration: none; }
+  .lang { border: 1px solid var(--line); background: var(--surface); color: var(--text); border-radius: 8px; padding: 4px 10px; font: 600 13px "Segoe UI", system-ui, sans-serif; cursor: pointer; }
+
+  .hero { padding-top: 72px; padding-bottom: 40px; display: grid; grid-template-columns: 1.05fr 1fr; gap: 48px; align-items: center; }
+  h1 { font-size: clamp(32px, 5vw, 50px); line-height: 1.12; margin: 0 0 18px; letter-spacing: -.02em; }
+  h1 em { font-style: normal; background: linear-gradient(90deg, var(--violet), var(--accent)); -webkit-background-clip: text; background-clip: text; color: transparent; }
+  .lead { font-size: 18px; color: var(--muted); margin: 0 0 28px; max-width: 34em; }
+  .actions { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; }
+  .btn { display: inline-flex; align-items: center; gap: 10px; padding: 12px 22px; border-radius: 10px; font-weight: 600; border: 1px solid var(--line); color: var(--text); background: var(--surface); }
+  .btn:hover { text-decoration: none; border-color: var(--muted); }
+  .btn.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-text); }
+  .btn.primary:hover { filter: brightness(1.08); }
+  .btn svg { width: 18px; height: 18px; flex: none; }
+  .meta { margin-top: 14px; font-size: 14px; color: var(--muted); }
+  .shot { border-radius: 12px; overflow: hidden; border: 1px solid var(--line); box-shadow: 0 24px 60px rgba(0,0,0,.35); background: #111; }
+  .shot img { display: block; width: 100%; height: auto; }
+
+  section { padding: 56px 0; }
+  h2 { font-size: 30px; margin: 0 0 8px; letter-spacing: -.01em; }
+  .sub { color: var(--muted); margin: 0 0 32px; }
+  .why { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; }
+  .why div { padding: 4px 0; }
+  .why h3 { margin: 0 0 6px; font-size: 18px; }
+  .why p { margin: 0; color: var(--muted); }
+  .why b { display: block; font-size: 30px; line-height: 1; margin-bottom: 12px; color: var(--accent); }
+
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 16px; }
+  .card { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 20px; }
+  .card h3 { margin: 0 0 6px; font-size: 17px; display: flex; align-items: center; gap: 10px; }
+  .card h3 i { width: 10px; height: 10px; border-radius: 3px; background: var(--c, var(--accent)); flex: none; }
+  .card p { margin: 0; color: var(--muted); font-size: 15px; }
+
+  ol.steps { list-style: none; counter-reset: s; padding: 0; margin: 0; display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+  ol.steps li { counter-increment: s; background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 20px; }
+  ol.steps li::before { content: counter(s); display: grid; place-items: center; width: 30px; height: 30px; border-radius: 50%; background: var(--accent); color: var(--accent-text); font-weight: 700; margin-bottom: 12px; }
+  ol.steps h3 { margin: 0 0 6px; font-size: 17px; }
+  ol.steps p { margin: 0; color: var(--muted); font-size: 15px; }
+  .note { margin-top: 20px; font-size: 14px; color: var(--muted); }
+
+  footer { border-top: 1px solid var(--line); padding: 28px 0 40px; color: var(--muted); font-size: 14px; }
+  footer .wrap { display: flex; flex-wrap: wrap; gap: 8px 24px; justify-content: space-between; }
+
+  @media (max-width: 860px) {
+    .hero { grid-template-columns: 1fr; padding-top: 40px; gap: 32px; }
+    .why, ol.steps { grid-template-columns: 1fr; }
+  }
+  @media (max-width: 560px) {
+    nav a.opt { display: none; }
+    header .wrap { gap: 12px; }
+    .btn { width: 100%; justify-content: center; }
+  }
+</style>
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <linearGradient id="logo-bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#7C3AED"/><stop offset="1" stop-color="#2563EB"/>
+    </linearGradient>
+    <!-- The gradient again in the feather's own coordinates, for the gaps cut into it -->
+    <linearGradient id="logo-cut" gradientUnits="userSpaceOnUse" x1=".55" y1="-.884" x2=".55" y2=".884">
+      <stop offset="0" stop-color="#7C3AED"/><stop offset="1" stop-color="#2563EB"/>
+    </linearGradient>
+    <symbol id="logo" viewBox="0 0 100 100">
+      <rect x="3" y="3" width="94" height="94" rx="22" fill="url(#logo-bg)"/>
+      <g transform="translate(50 50) rotate(-45) scale(80) translate(-.55 0)">
+        <path d="M1 0C.75-.3.3-.28.18 0 .3.22.75.24 1 0Z" fill="#fff"/>
+        <path d="M.02 0H.3" stroke="#fff" stroke-width=".069" stroke-linecap="round"/>
+        <path d="M.22 0H.88M.73-.25.6-.04M.5.22.4.04" stroke="url(#logo-cut)" stroke-width=".03" stroke-linecap="round"/>
+      </g>
+    </symbol>
+  </defs>
+</svg>
+
+<header>
+  <div class="wrap">
+    <a class="brand" href="#"><svg><use href="#logo"/></svg>LiteBro</a>
+    <nav>
+      <a class="opt" href="#features"><span class="ru">Возможности</span><span class="en">Features</span></a>
+      <a class="opt" href="#install"><span class="ru">Установка</span><span class="en">Install</span></a>
+      <a href="https://github.com/ronanime-arch/LiteBro">GitHub</a>
+    </nav>
+    <button class="lang" id="lang" type="button" aria-label="Language">EN</button>
+  </div>
+</header>
+
+<main>
+  <div class="wrap hero">
+    <div>
+      <h1>
+        <span class="ru">Лёгкий браузер для <em>локальных проектов</em></span>
+        <span class="en">A light browser for <em>local projects</em></span>
+      </h1>
+      <p class="lead">
+        <span class="ru">Плитки ваших проектов, консоль и терминал, журнал сети и режим «только localhost». На движке Edge, который уже есть в Windows, и с меньшим расходом памяти, чем Chrome: ресурсы остаются вашим программам.</span>
+        <span class="en">Tiles for your projects, a console and a terminal, a network log and a localhost-only mode. Built on the Edge engine Windows already has, and lighter on memory than Chrome, so your own programs keep the resources.</span>
+      </p>
+      <div class="actions">
+        <a class="btn primary" href="https://github.com/ronanime-arch/LiteBro/releases/latest/download/LiteBro-Setup.exe">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12M7 10l5 5 5-5M5 21h14"/></svg>
+          <span class="ru">Скачать для Windows</span><span class="en">Download for Windows</span>
+        </a>
+        <a class="btn" href="https://github.com/ronanime-arch/LiteBro">
+          <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 .5a11.5 11.5 0 0 0-3.64 22.41c.58.1.79-.25.79-.56v-2c-3.2.7-3.88-1.37-3.88-1.37-.53-1.34-1.29-1.7-1.29-1.7-1.05-.72.08-.7.08-.7 1.16.08 1.77 1.19 1.77 1.19 1.03 1.77 2.71 1.26 3.37.96.1-.75.4-1.26.73-1.55-2.55-.29-5.24-1.28-5.24-5.68 0-1.26.45-2.28 1.19-3.09-.12-.29-.52-1.46.11-3.05 0 0 .97-.31 3.17 1.18a11 11 0 0 1 5.77 0c2.2-1.49 3.17-1.18 3.17-1.18.63 1.59.23 2.76.11 3.05.74.81 1.19 1.83 1.19 3.09 0 4.41-2.69 5.39-5.25 5.67.41.36.78 1.06.78 2.14v3.17c0 .31.21.67.8.56A11.5 11.5 0 0 0 12 .5Z"/></svg>
+          GitHub
+        </a>
+      </div>
+      <p class="meta">
+        <span class="ru">Windows 10 и 11 · бесплатно · <span id="ver-ru">последняя версия</span></span>
+        <span class="en">Windows 10 and 11 · free · <span id="ver-en">latest version</span></span>
+      </p>
+    </div>
+    <div class="shot"><img src="preview.gif" width="1000" height="620" alt="LiteBro"></div>
+  </div>
+
+  <section>
+    <div class="wrap why">
+      <div>
+        <b>↗</b>
+        <h3><span class="ru">Локальное — здесь, остальное — в Chrome</span><span class="en">Local here, the rest in Chrome</span></h3>
+        <p><span class="ru">Ссылки на localhost, *.localhost и локальную сеть открываются в LiteBro, а остальные сразу уходят в ваш обычный браузер.</span><span class="en">Links to localhost, *.localhost and your local network open in LiteBro, the rest go straight to your usual browser.</span></p>
+      </div>
+      <div>
+        <b>≈</b>
+        <h3><span class="ru">Меньше памяти</span><span class="en">Less memory</span></h3>
+        <p><span class="ru">Фоновые вкладки сами отдают память, замораживаются и выгружаются. Хорошо, когда рядом на процессоре работает языковая модель.</span><span class="en">Background tabs give memory back, freeze and unload by themselves. Handy when a language model runs on the same CPU.</span></p>
+      </div>
+      <div>
+        <b>◉</b>
+        <h3><span class="ru">Ничего лишнего наружу</span><span class="en">Nothing leaks out</span></h3>
+        <p><span class="ru">Без телеметрии. Одна кнопка закрывает выход в интернет, а журнал показывает каждую попытку страницы выйти наружу.</span><span class="en">No telemetry. One button closes the way to the internet, and the log shows every attempt a page makes to get out.</span></p>
+      </div>
+    </div>
+  </section>
+
+  <section id="features">
+    <div class="wrap">
+      <h2><span class="ru">Возможности</span><span class="en">Features</span></h2>
+      <p class="sub"><span class="ru">Всё, что нужно при работе с локальным сайтом, — в одном окне.</span><span class="en">What working on a local site needs, in one window.</span></p>
+      <div class="grid">
+        <div class="card"><h3><i></i><span class="ru">Плитки проектов</span><span class="en">Project tiles</span></h3>
+          <p><span class="ru">Клик запускает программу проекта, ждёт и открывает его сайт. Зелёная точка — программа работает.</span><span class="en">A click starts the project's program, waits and opens its site. A green dot means the program is running.</span></p></div>
+        <div class="card" style="--c:var(--violet)"><h3><i></i><span class="ru">Консоль и терминал</span><span class="en">Console and terminal</span></h3>
+          <p><span class="ru">Живой вывод программы, команды в папке проекта и настоящий PowerShell во вкладке, где работают claude и vim.</span><span class="en">The program's live output, commands in the project folder and a real PowerShell in a tab, where claude and vim work.</span></p></div>
+        <div class="card" style="--c:var(--green)"><h3><i></i><span class="ru">Режим «только localhost»</span><span class="en">Localhost-only mode</span></h3>
+          <p><span class="ru">Одна кнопка закрывает интернет. Остаются этот компьютер, локальная сеть и сайты, которые вы разрешили.</span><span class="en">One button shuts the internet out. This computer, the local network and the sites you allow stay.</span></p></div>
+        <div class="card"><h3><i></i><span class="ru">Журнал сети</span><span class="en">Network log</span></h3>
+          <p><span class="ru">Каждый запрос наружу: куда, с какой страницы, со стеком вызова и IP. Фильтры как в Excel, выгрузка в JSON и CSV.</span><span class="en">Every request out: where to, from which page, with the call stack and IP. Excel-like filters, export to JSON and CSV.</span></p></div>
+        <div class="card" style="--c:var(--violet)"><h3><i></i><span class="ru">Заглушки API</span><span class="en">API mocks</span></h3>
+          <p><span class="ru">Подставные ответы сервера: фронтенд без готового бэкенда, ошибки 500, пустые списки. Можно сделать из строки журнала.</span><span class="en">Stand-in server answers: a front end without a back end, 500 errors, empty lists. One click from a line of the log.</span></p></div>
+        <div class="card" style="--c:var(--green)"><h3><i></i><span class="ru">Инструменты разработчика</span><span class="en">Developer tools</span></h3>
+          <p><span class="ru">Эмуляция телефонов и медленной сети, снимок всей страницы, хранилище сайта, просмотр JSON, сброс кэша сайта.</span><span class="en">Phone and slow network emulation, full-page screenshots, site storage, a JSON viewer, a site cache reset.</span></p></div>
+        <div class="card"><h3><i></i><span class="ru">Удобные вкладки</span><span class="en">Handy tabs</span></h3>
+          <p><span class="ru">Две вкладки рядом, закреплённые вкладки, открыть закрытую, все вкладки одной плиткой.</span><span class="en">Two tabs side by side, pinned tabs, reopen a closed tab, save all tabs as one tile.</span></p></div>
+        <div class="card" style="--c:var(--violet)"><h3><i></i><span class="ru">Блокировка рекламы</span><span class="en">Ad blocking</span></h3>
+          <p><span class="ru">uBlock Origin Lite по желанию: скачивается при включении и почти не тратит память.</span><span class="en">uBlock Origin Lite if you want it: downloaded when you turn it on, and nearly free on memory.</span></p></div>
+        <div class="card" style="--c:var(--green)"><h3><i></i><span class="ru">Пока сервер не отвечает</span><span class="en">While the server is down</span></h3>
+          <p><span class="ru">Десять мини-игр на странице «Сайт не отвечает»: раннер, змейка, понг, сапёр, косынка и другие.</span><span class="en">Ten mini-games on the page about a site that does not answer: a runner, snake, pong, minesweeper, solitaire and more.</span></p></div>
+      </div>
+    </div>
+  </section>
+
+  <section id="install">
+    <div class="wrap">
+      <h2><span class="ru">Установка</span><span class="en">Install</span></h2>
+      <p class="sub"><span class="ru">Три шага, около минуты.</span><span class="en">Three steps, about a minute.</span></p>
+      <ol class="steps">
+        <li><h3><span class="ru">Скачайте и запустите</span><span class="en">Download and run</span></h3>
+          <p><span class="ru"><a href="https://github.com/ronanime-arch/LiteBro/releases/latest/download/LiteBro-Setup.exe">LiteBro-Setup.exe</a> ставит браузер в Program Files, нужны права администратора.</span><span class="en"><a href="https://github.com/ronanime-arch/LiteBro/releases/latest/download/LiteBro-Setup.exe">LiteBro-Setup.exe</a> installs the browser into Program Files and needs administrator rights.</span></p></li>
+        <li><h3><span class="ru">Выберите для ссылок</span><span class="en">Pick it for links</span></h3>
+          <p><span class="ru">На шаге «Приложения по умолчанию» выберите LiteBro для HTTP и HTTPS. Внешние ссылки всё равно откроются в вашем основном браузере.</span><span class="en">At the Default apps step pick LiteBro for HTTP and HTTPS. Outside links still open in your main browser.</span></p></li>
+        <li><h3><span class="ru">Добавьте проект</span><span class="en">Add a project</span></h3>
+          <p><span class="ru">Плитка — это адрес, программа, которая его поднимает, и папка. Дальше проект открывается одним кликом.</span><span class="en">A tile is an address, the program that serves it and a folder. From then on a click opens the project.</span></p></li>
+      </ol>
+      <p class="note"><span class="ru">Установщик не подписан, поэтому Windows может предупредить о нём: «Подробнее» → «Выполнить в любом случае». Все выпуски — на странице <a href="https://github.com/ronanime-arch/LiteBro/releases">Releases</a>.</span><span class="en">The installer is not signed, so Windows may warn about it: More info → Run anyway. All versions are on the <a href="https://github.com/ronanime-arch/LiteBro/releases">Releases</a> page.</span></p>
+    </div>
+  </section>
+</main>
+
+<footer>
+  <div class="wrap">
+    <span>© 2026 ronanime-arch. <span class="ru">Все права защищены.</span><span class="en">All rights reserved.</span></span>
+    <span><a href="https://github.com/ronanime-arch/LiteBro">GitHub</a> · <a href="https://github.com/ronanime-arch/LiteBro/releases">Releases</a></span>
+  </div>
+</footer>
+
+<script>
+  // Russian for the languages of the region, English otherwise; the choice is remembered
+  (() => {
+    const root = document.documentElement, button = document.getElementById("lang");
+    let saved = null;
+    try { saved = localStorage.getItem("lang"); } catch { }
+    const auto = /^(ru|uk|be|kk|ky|uz|tg|hy|az|ka)\b/i.test(navigator.language || "") ? "ru" : "en";
+    const titles = { ru: document.title, en: "LiteBro — a light browser for local projects" };
+    function set(lang) {
+      root.classList.toggle("en", lang === "en");
+      root.lang = lang;
+      button.textContent = lang === "en" ? "RU" : "EN";
+      document.title = titles[lang];
+    }
+    set(saved === "ru" || saved === "en" ? saved : auto);
+    button.addEventListener("click", () => {
+      const lang = root.classList.contains("en") ? "ru" : "en";
+      set(lang);
+      try { localStorage.setItem("lang", lang); } catch { }
+    });
+
+    // The version and size of the latest release, when GitHub answers
+    fetch("https://api.github.com/repos/ronanime-arch/LiteBro/releases/latest")
+      .then(r => r.ok ? r.json() : null)
+      .then(r => {
+        const asset = r && (r.assets || []).find(a => a.name === "LiteBro-Setup.exe");
+        if (!asset) return;
+        const version = r.tag_name.replace(/^v/, ""), mb = (asset.size / 1048576).toFixed(1);
+        document.getElementById("ver-ru").textContent = "версия " + version + " · " + mb.replace(".", ",") + " МБ";
+        document.getElementById("ver-en").textContent = "version " + version + " · " + mb + " MB";
+      })
+      .catch(() => { });
+  })();
+</script>
+</body>
+</html>

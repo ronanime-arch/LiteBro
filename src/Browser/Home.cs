@@ -162,7 +162,7 @@ static class Pages
         (p != null && p.Exe.Trim().Length > 0
             ? L.T("<p>Это сайт проекта «") + H(p.Name) + L.T("». Чтобы запустить его программу, откройте плитку проекта на стартовой странице (Alt+Home).</p>")
             : "") +
-        "<p><a href=\"" + H(url) + L.T("\">Попробовать ещё раз</a> <span class=muted>(F5)</span></p>"));
+        "<p><a href=\"" + H(url) + L.T("\">Попробовать ещё раз</a> <span class=muted>(F5)</span></p>") + Games.Block());
 
     static string H(string s) => WebUtility.HtmlEncode(s);
 

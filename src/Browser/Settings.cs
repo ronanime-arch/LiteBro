@@ -74,8 +74,8 @@ sealed class Settings
     public bool AutoReload;
     /// <summary>Tracking prevention at its strict level (Edge's «Строгая»); else balanced, the engine's default.</summary>
     public bool StrictTracking;
-    /// <summary>Ads and trackers blocked by the built-in uBlock Origin Lite (AdBlock.cs); on by default.</summary>
-    public bool AdBlock = true;
+    /// <summary>Ads and trackers blocked by uBlock Origin Lite (AdBlock.cs); off by default: switched on, it downloads itself.</summary>
+    public bool AdBlock;
     /// <summary>A click on a tab's speaker mutes it; off by default.</summary>
     public bool TabMute;
     /// <summary>Certificate errors of servers on this machine are let through; off by default.</summary>
@@ -285,7 +285,7 @@ sealed class Settings
         "AutoReload = " + Bool(AutoReload),
         L.T("# Строгая защита от трекеров: блокируется больше счётчиков и рекламы, изредка ломается вход через другой сайт"),
         "StrictTracking = " + Bool(StrictTracking),
-        L.T("# Блокировать рекламу и трекеры встроенным uBlock Origin Lite"),
+        L.T("# Блокировать рекламу и трекеры uBlock Origin Lite; при первом включении скачивается с GitHub"),
         "AdBlock = " + Bool(AdBlock),
         L.T("# Доверять сертификатам серверов на этом компьютере (localhost, *.localhost, 127.x, ::1)"),
         "TrustLocalCerts = " + Bool(TrustLocalCerts),

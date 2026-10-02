@@ -1009,9 +1009,9 @@ sealed class BrowserForm : Form
         if (from.Core is not { } core) return;
         var url = await AdBlock.DashboardAsync(core.Profile);
         if (url != null) OpenNewTab(url, from);
-        else MessageBox.Show(this, App.Current.S.AdBlock
-                ? L.T("uBlock Origin Lite ещё не подключился: подождите несколько секунд и попробуйте снова.")
-                : L.T("Блокировка рекламы выключена: сначала включите её."),
+        else MessageBox.Show(this, !App.Current.S.AdBlock ? L.T("Блокировка рекламы выключена: сначала включите её.")
+                : AdBlock.State.Length > 0 ? AdBlock.State
+                : L.T("uBlock Origin Lite ещё не подключился: подождите несколько секунд и попробуйте снова."),
             "LiteBro", MessageBoxButtons.OK, MessageBoxIcon.Information);
     }
 
@@ -1884,7 +1884,7 @@ sealed class BrowserForm : Form
     void ShowEmulation(Tab tab)
     {
         bool on = tab.Device != null || tab.Speed != null;
-        bool any = Dev.On("emulation") || Dev.On("snapshot") || Dev.On("storage") || Dev.On("perms");
+        bool any = Dev.On("emulation") || Dev.On("snapshot") || Dev.On("storage") || Dev.On("perms") || AdBlockHost(tab) != null;
         emulate.Visible = on || (any && !tab.ShowingInternalPage && !IsInternal(tab.Site) && tab.Term == null);
         emulate.ForeColor = on ? Color.FromArgb(0x1f, 0x9d, 0x55) : Theme.Text;
         var what = string.Join(", ", new[] { tab.Device?.Name, tab.Speed?.Name }.OfType<string>());
@@ -1896,6 +1896,7 @@ sealed class BrowserForm : Form
     {
         if (active is not { } tab) return;
         var menu = NewMenu();
+        menu.ShowItemToolTips = true;
         if (Dev.On("emulation"))
             AddEmulationItems(menu, tab);
         if (Dev.On("snapshot"))
@@ -1916,6 +1917,11 @@ sealed class BrowserForm : Form
             menu.Items.Add(new ToolStripMenuItem(L.T("Разрешения сайта: камера, микрофон, местоположение"), null,
                 (_, _) => ShowPermissions(tab, emulate.PointToScreen(new Point(0, emulate.Height)))));
         }
+        if (AdBlockHost(tab) is { } host)
+        {
+            if (menu.Items.Count > 0) menu.Items.Add(new ToolStripSeparator());
+            menu.Items.Add(UnblockItem(tab, host));
+        }
         // An emulation left on is always switched off from here, the feature on or not
         if (tab.Device != null || tab.Speed != null)
         {
@@ -1924,6 +1930,46 @@ sealed class BrowserForm : Form
         }
         if (menu.Items.Count == 0) return;
         menu.Show(emulate, new Point(0, emulate.Height));
+    }
+
+    /// <summary>The site whose blocking the tools menu switches: with uBlock Origin Lite on, and its item on the developer page.</summary>
+    static string? AdBlockHost(Tab tab) =>
+        App.Current.S.AdBlock && Dev.On("unblock") && SiteOrigin(tab) is { } origin ? new Uri(origin).IdnHost : null;
+
+    /// <summary>
+    /// «Не блокировать (uBlock)»: the site in uBOL's «без фильтрации» mode, as its popup (which WebView2 does not show)
+    /// would set it. Ticked as uBOL last said; asked anew each time, the item follows while the menu is open.
+    /// </summary>
+    ToolStripMenuItem UnblockItem(Tab tab, string host)
+    {
+        var item = new ToolStripMenuItem(L.T("Не блокировать (uBlock)"));
+        var profile = tab.Profile;
+        void Show(bool? off)
+        {
+            item.Checked = off == true;
+            item.Enabled = off != null;
+        }
+        Show(AdBlock.Unfiltered(profile, host));
+        item.ToolTipText = L.T("Реклама и трекеры на ") + host + L.T(" не блокируются. Страница перезагрузится.");
+        Ask();
+        item.Click += async (_, _) =>
+        {
+            bool off = !item.Checked;
+            if (!await AdBlock.SetUnfilteredAsync(Handle, profile, host, off))
+            {
+                MessageBox.Show(this, L.T("uBlock Origin Lite не ответил. Попробуйте ещё раз через несколько секунд."),
+                    "LiteBro", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                return;
+            }
+            if (!tab.Closed) ReloadTab(tab);
+        };
+        return item;
+
+        async void Ask()
+        {
+            var off = await AdBlock.IsUnfilteredAsync(Handle, profile, host);
+            if (!item.IsDisposed && off != null) Show(off);
+        }
     }
 
     void AddEmulationItems(ContextMenuStrip menu, Tab tab)
@@ -2513,6 +2559,7 @@ sealed class BrowserForm : Form
                 {
                     ["strictTracking"] = App.Current.S.StrictTracking,
                     ["adBlock"] = App.Current.S.AdBlock,
+                    ["adBlockState"] = AdBlock.State,
                     ["trustLocalCerts"] = App.Current.S.TrustLocalCerts,
                     ["tabMute"] = App.Current.S.TabMute,
                     ["freezeTabs"] = App.Current.S.FreezeTabs,

@@ -7,12 +7,12 @@ using System.Linq;
 namespace LiteBro;
 
 /// <summary>
-/// The mini-games of the page about a site that does not answer (games.js): the game picked last and the records,
+/// The mini-games of the page about a site that does not answer (games.js, cards.js): the game picked last and the records,
 /// kept in games.txt next to settings.ini. The page sends them in web messages (BrowserForm.OnWebMessage).
 /// </summary>
 static class Games
 {
-    static readonly string[] Names = { "runner", "snake", "flappy" };
+    static readonly string[] Names = { "runner", "snake", "flappy", "pong", "breakout", "invaders", "mines", "klondike", "spider", "freecell" };
     const int MaxScore = 10_000_000;
     static string FilePath => Path.Combine(Settings.Dir, "games.txt");
     static string pick = "runner";
@@ -62,7 +62,10 @@ static class Games
             "#games canvas{display:block;width:100%;aspect-ratio:640/200;border-radius:10px;background:rgba(127,127,127,.08);" +
             "outline:none;touch-action:none;cursor:pointer}" +
             "#games p{margin:8px 0 0;font-size:13px}" +
-            "</style><div id=games></div><script>window.__litebroGames=" + state + ";</script><script>" + L.Text("games.js") + "</script>";
+            "#games .hud{display:flex;justify-content:flex-end;gap:16px;margin:0 4px 6px;font:600 14px Consolas,monospace}" +
+            "#games .hud .muted{opacity:.6}" +
+            "</style><div id=games></div><script>window.__litebroGames=" + state + ";</script>" +
+            "<script>" + L.Text("cards.js") + "</script><script>" + L.Text("games.js") + "</script>";
     }
 
     /// <summary>A message of the page: a game picked, or a record (only ever higher).</summary>

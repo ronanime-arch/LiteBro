@@ -245,6 +245,7 @@ static class TermPage
         ["/term/term.js"] = ("term/term.js", "text/javascript"),
         ["/term/xterm.js"] = ("term/xterm.js", "text/javascript"),
         ["/term/addon-fit.js"] = ("term/addon-fit.js", "text/javascript"),
+        ["/term/addon-web-links.js"] = ("term/addon-web-links.js", "text/javascript"),
         ["/term/xterm.css"] = ("term/xterm.css", "text/css"),
     };
 

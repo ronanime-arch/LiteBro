@@ -117,6 +117,7 @@ static class ProgramLog
         "#gt{font:13px Consolas,monospace;color:var(--muted);margin-left:-6px}" +
         "#line{flex:1;font:13px Consolas,monospace;padding:6px 8px;border:1px solid var(--line);border-radius:6px;background:transparent;color:inherit;outline:none}" +
         "#line:focus{border-color:var(--accent)}#line:disabled{opacity:.5}" +
+        "#out a{color:var(--accent);text-decoration:underline;cursor:pointer}" +
         "</style></head><body>" +
         "<header><h1>" + H(p.Name) + "</h1><span id=state></span>" +
         L.T("<button id=stop hidden>Остановить программу</button><button id=halt hidden>Прервать команду</button><button id=clear>Очистить экран</button><button id=term title='PowerShell в папке команд: работают claude, vim и другие программы с экраном. Ctrl+клик или колёсико — в новой вкладке'>Терминал</button>") +
@@ -128,6 +129,11 @@ static class ProgramLog
         "const id=" + Js(p.Id) + ",shell=" + (IsShell(p) ? "true" : "false") + ",$=s=>document.getElementById(s),out=$('out'),line=$('line'),state=$('state'),stopBtn=$('stop'),halt=$('halt'),mode=$('mode'),promptEl=$('prompt');" +
         "let from=-1,running=false,busy=false,cmd=true,command=false,dir='',typed=[],back=0;" +
         "const post=m=>window.chrome.webview.postMessage(m);" +
+        // Addresses in the output are links; a click asks the browser to open them, this page never leaves
+        "const URL_RE=/https?:\\/\\/[^\\s\"'<>`{}|\\\\^]*[^\\s\"'<>`{}|\\\\^.,:;!?)\\]]/g;" +
+        L.T("function add(t){let i=0;for(const m of t.matchAll(URL_RE)){if(m.index>i)out.append(t.slice(i,m.index));const a=document.createElement('a');a.href=a.textContent=m[0];a.title='Клик — открыть';out.append(a);i=m.index+m[0].length;}if(i<t.length)out.append(t.slice(i));}") +
+        "const opened=e=>{const a=e.target.closest&&e.target.closest('a');if(!a||(e.type==='auxclick'&&e.button!==1))return;e.preventDefault();post({type:'openLink',url:a.textContent});};" +
+        "out.addEventListener('click',opened);out.addEventListener('auxclick',opened);" +
         // Two ways to type: a command for cmd in the console's folder, or a line to the running program
         L.T("function modeShow(){mode.textContent=cmd?'Команда':'Программе';mode.className=cmd?'cmd':'';") +
         L.T("mode.title=cmd?'Строка выполняется в cmd в папке ниже; cd меняет папку. Нажмите, чтобы писать программе проекта':'Строка уходит на ввод программе проекта. Нажмите, чтобы выполнять команды';") +
@@ -146,9 +152,9 @@ static class ProgramLog
         "async function poll(){if(busy)return;busy=true;try{" +
         "const r=await fetch(location.pathname+'/text?from='+from,{cache:'no-store'});const d=await r.json();" +
         "const end=out.scrollHeight-out.scrollTop-out.clientHeight<24;" +
-        "if(d.reset)out.textContent='';if(d.text)out.append(d.text);from=d.size;show(d);" +
-        // Only a long log is cut: the page keeps the last lines, as a terminal does
-        "if(out.textContent.length>2000000)out.textContent=out.textContent.slice(-1000000);" +
+        "if(d.reset)out.textContent='';if(d.text)add(d.text);from=d.size;show(d);" +
+        // Only a long log is cut: the page keeps the last lines, as a terminal does, and their links
+        "let n=out.textContent.length;if(n>2000000)while(n>1000000&&out.firstChild){n-=out.firstChild.textContent.length;out.firstChild.remove();}" +
         "if(end||d.reset)out.scrollTop=out.scrollHeight;" +
         "}catch(e){}finally{busy=false;}}" +
         "$('send').addEventListener('submit',e=>{e.preventDefault();const t=line.value;" +

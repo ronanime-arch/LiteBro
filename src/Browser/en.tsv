@@ -762,3 +762,6 @@ uBlock Origin Lite не ответил. Попробуйте ещё раз че�
 Открывать внешние ссылки в основном браузере	Open outside links in the main browser
 Ссылка на сайт в интернете из другой программы (почта, мессенджер, документ) открывается в вашем основном браузере, обычно Chrome, а локальные адреса — в LiteBro. Выключено — LiteBro открывает и их. Работает, если LiteBro выбран для HTTP и HTTPS в «Приложениях по умолчанию». В режиме «только localhost» такие ссылки всё равно уходят в основной браузер.	A link to an internet site from another program (mail, a messenger, a document) opens in your main browser, usually Chrome, and local addresses open in LiteBro. Off, LiteBro opens those links too. Works when LiteBro is picked for HTTP and HTTPS in Default apps. In localhost-only mode such links still go to the main browser.
 # false = адреса в интернете тоже открывает LiteBro (кроме режима «только localhost»)	# false = LiteBro opens internet addresses too (except in localhost-only mode)
+Клик — открыть	Click to open
+Клик по адресу в терминале или консоли	Click an address in the terminal or a console
+Открыть: локальный — в новой вкладке, в интернете — в основном браузере	Open: a local one in a new tab, an internet one in the main browser

@@ -2379,6 +2379,18 @@ sealed class BrowserForm : Form
         return true;
     }
 
+    /// <summary>
+    /// An address a program printed, clicked in a terminal or a console: web addresses only. A local one opens in a
+    /// new tab beside; one on the internet goes the way of a link from another program (Router.OpensHere): the main
+    /// browser, unless the switch on the «Для разработчика» page keeps such links here.
+    /// </summary>
+    void OpenPrintedLink(Tab from, string address)
+    {
+        if (!Uri.TryCreate(address, UriKind.Absolute, out var url) || (url.Scheme != Uri.UriSchemeHttp && url.Scheme != Uri.UriSchemeHttps)) return;
+        if (Router.OpensHere(url, App.Current.S)) OpenNewTab(Router.Normalize(url).AbsoluteUri, from);
+        else Router.OpenElsewhere(url.AbsoluteUri, App.Current.S);
+    }
+
     /// <summary>Opens an address, or the start page, in a new tab in front: beside the tab it is opened from, else at the end.</summary>
     public async void OpenNewTab(string? url, Tab? from = null)
     {
@@ -3169,6 +3181,7 @@ sealed class BrowserForm : Form
         ["dev"] = new[] { "dev" }, ["lang"] = new[] { "dev" }, ["devReset"] = new[] { "dev" }, ["settingsReset"] = new[] { "dev" },
         ["storage"] = new[] { "storage" }, ["permsOpen"] = new[] { "dev" }, ["setting"] = new[] { "dev" }, ["adBlockOpen"] = new[] { "dev" },
         ["termStart"] = new[] { "term" }, ["termIn"] = new[] { "term" }, ["termSize"] = new[] { "term" },
+        ["openLink"] = new[] { "term", "console" },
     };
 
     /// <summary>
@@ -3331,6 +3344,9 @@ sealed class BrowserForm : Form
                 break;
             case "termSize":
                 tab.Term?.Resize(Number("cols"), Number("rows"));
+                break;
+            case "openLink" when Text("url") is { } printed:
+                OpenPrintedLink(tab, printed);
                 break;
             case "input" when project != null && Text("text") is { } typed:
                 if (App.Current.RunningIds.Contains(project.Id)) App.Current.LauncherFor(project).Send(typed);

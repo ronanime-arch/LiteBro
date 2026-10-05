@@ -7,6 +7,26 @@
       // Yellow and white of the dark palette are unreadable on white
       yellow: "#9a6700", brightYellow: "#7d5500", white: "#6e6e6e", brightWhite: "#3a3a3a" },
   };
+  const post = m => window.chrome.webview.postMessage(m);
+
+  // Addresses printed by programs: underlined under the mouse with a tip, and a click asks the browser to open
+  // them (a new tab beside, or the main browser for the internet). Links a program marks itself (OSC 8) the same
+  // way, without xterm's confirmation dialog. The page never navigates itself: that would end the shell.
+  const tip = document.getElementById("tip");
+  const link = {
+    activate: (e, uri) => {
+      tip.hidden = true;
+      // A drag that selected part of the address copies it, it does not open it
+      if (!term.hasSelection()) post({ type: "openLink", url: uri });
+    },
+    hover: (e, uri) => {
+      tip.firstElementChild.textContent = uri;
+      tip.hidden = false;
+      tip.style.left = Math.max(4, Math.min(e.clientX + 12, innerWidth - tip.offsetWidth - 4)) + "px";
+      tip.style.top = (e.clientY + 20 + tip.offsetHeight > innerHeight ? e.clientY - tip.offsetHeight - 8 : e.clientY + 20) + "px";
+    },
+    leave: () => { tip.hidden = true; },
+  };
   const term = new Terminal({
     fontFamily: "'Cascadia Mono', Consolas, monospace",
     fontSize: 14,
@@ -14,14 +34,15 @@
     scrollback: 5000,
     allowProposedApi: false,
     theme: dark.matches ? themes.dark : themes.light,
+    linkHandler: link,
   });
   const fit = new FitAddon.FitAddon();
   term.loadAddon(fit);
+  term.loadAddon(new WebLinksAddon.WebLinksAddon(link.activate, { hover: link.hover, leave: link.leave }));
   term.open(document.getElementById("term"));
   fit.fit();
   dark.addEventListener("change", () => { term.options.theme = dark.matches ? themes.dark : themes.light; });
 
-  const post = m => window.chrome.webview.postMessage(m);
   const note = document.getElementById("note");
   let ended = false;
 

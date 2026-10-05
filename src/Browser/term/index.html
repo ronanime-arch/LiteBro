@@ -11,13 +11,21 @@ html, body { margin: 0; height: 100%; background: #1e1e1e; overflow: hidden; }
 #term { position: absolute; inset: 6px 0 0 10px; }
 #note { position: fixed; left: 50%; bottom: 16px; transform: translateX(-50%); padding: 6px 14px; border-radius: 6px;
   font: 13px "Segoe UI", sans-serif; background: #4d6bfe; color: #fff; }
+#tip { position: fixed; z-index: 10; max-width: min(640px, 90vw); padding: 5px 9px; border-radius: 6px; pointer-events: none;
+  font: 12px "Segoe UI", sans-serif; background: #2b2b2b; color: #e8e8e8; border: 1px solid #4a4a4a; box-shadow: 0 4px 14px rgba(0,0,0,.35); }
+#tip span:first-child { display: block; font: 12px Consolas, monospace; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#tip span:last-child { opacity: .7; }
+#tip[hidden] { display: none; }
+@media (prefers-color-scheme: light) { #tip { background: #fff; color: #1f1f1f; border-color: #d0d0d0; box-shadow: 0 4px 14px rgba(0,0,0,.15); } }
 </style>
 </head>
 <body>
 <div id="term"></div>
 <div id="note" hidden></div>
+<div id="tip" hidden><span></span><span>Клик — открыть</span></div>
 <script src="/term/xterm.js"></script>
 <script src="/term/addon-fit.js"></script>
+<script src="/term/addon-web-links.js"></script>
 <script src="/term/term.js"></script>
 </body>
 </html>

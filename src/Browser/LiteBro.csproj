@@ -30,6 +30,7 @@
     <EmbeddedResource Include="cards.js" LogicalName="cards.js" />
     <EmbeddedResource Include="en.tsv" LogicalName="en.tsv" />
     <EmbeddedResource Include="dev.html" LogicalName="dev.html" />
+    <EmbeddedResource Include="profile.html" LogicalName="profile.html" />
     <EmbeddedResource Include="term\index.html" LogicalName="term/index.html" />
     <EmbeddedResource Include="term\term.js" LogicalName="term/term.js" />
     <EmbeddedResource Include="term\xterm.js" LogicalName="term/xterm.js" />

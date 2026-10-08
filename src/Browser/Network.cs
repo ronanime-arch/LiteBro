@@ -94,32 +94,41 @@ static class NetGuard
     /// <summary>Leaves this machine: what the journal writes down.</summary>
     public static bool IsOutside(Uri u) => IsNetwork(u) && !IsLocal(u);
 
-    public static bool ShouldBlock(Uri u) => LocalOnly && IsOutside(u) && !IsAllowed(u);
+    public static bool ShouldBlock(Uri u) => LocalOnly && Blocks(u);
+
+    /// <summary>What «только localhost» refuses, the browser's or a project's own (SiteSettings.LocalOnly).</summary>
+    public static bool Blocks(Uri u) => IsOutside(u) && !IsAllowed(u);
 
 
     /// <summary>
     /// The script of netpage.js with the current rules: stacks of fetch, XHR, sendBeacon and EventSource to outside
     /// hosts for the journal, and the web socket guard (sockets never reach WebResourceRequested).
     /// </summary>
-    public static string PageScript()
+    /// <param name="block">«Только localhost» on the tab: the browser's or its project's.</param>
+    /// <param name="trace">Its requests are journaled.</param>
+    public static string PageScript(bool block, bool trace)
     {
         var config = ProjectStore.Json.Serialize(new Dictionary<string, object>
         {
             ["names"] = Router.LocalNames().Concat(Patterns(App.Current.S.LocalHosts)).ToArray(),
             ["allow"] = Patterns(AllowText),
-            ["block"] = LocalOnly,
-            ["trace"] = Watching,
+            ["block"] = block,
+            ["trace"] = trace,
         });
         return L.Text("netpage.js").Replace("__CONFIG__", config);
     }
 
     /// <summary>What a blocked page shows in place of itself.</summary>
-    public static string BlockedPage(string url) =>
+    /// <param name="project">The project whose own «только localhost» refused it; null for the browser's mode.</param>
+    public static string BlockedPage(string url, Project? project = null) =>
         L.T("<!doctype html><meta charset=utf-8><title>Заблокировано</title><style>:root{color-scheme:light dark}") +
         "body{font:15px 'Segoe UI',sans-serif;max-width:640px;margin:15vh auto;padding:0 24px}h1{font-size:22px;font-weight:600}" +
         L.T("code{word-break:break-all}</style><h1>Заблокировано режимом «только localhost»</h1>") +
         L.T("<p>LiteBro не пустил страницу в интернет:</p><p><code>") + WebUtility.HtmlEncode(url) + "</code></p>" +
-        L.T("<p>Режим выключается переключателем справа на стартовой странице. Там же, в журнале сети, можно добавить сайт в разрешённые.</p>");
+        (project == null
+            ? L.T("<p>Режим выключается переключателем справа на стартовой странице. Там же, в журнале сети, можно добавить сайт в разрешённые.</p>")
+            : L.T("<p>Это режим проекта «") + WebUtility.HtmlEncode(project.Name) +
+              L.T("». Он выключается в настройке профиля проекта: кнопка «Настройка профиля» в консоли проекта. Разрешённые сайты — общие, в журнале сети.</p>"));
 }
 
 /// <summary>
@@ -145,7 +154,11 @@ static class NetLog
         /// <summary>The page it came from.</summary>
         public string Page { get; set; } = "";
         public string Stack { get; set; } = "";
+        /// <summary>The project the tab showed (its id), for the project's own journal; "" for none.</summary>
+        public string Project { get; set; } = "";
         internal DateTime Created = DateTime.UtcNow;
+        // Where it is written; no DNS lookup of its own in «только localhost» mode (Resolve)
+        internal bool ToShared, ToProject, NoDns;
     }
 
     const int Kept = 2000;
@@ -178,8 +191,17 @@ static class NetLog
 
     public static string FilePath => Path.Combine(Settings.Dir, "logs", "network.log");
 
-    public static void Add(string method, Uri url, string result, bool blocked, long size, string kind, string page, string stack = "")
+    /// <summary>A project's own journal (SiteSettings.Journal), beside the shared one.</summary>
+    public static string FileOf(string project) => project.Length == 0 ? FilePath : Path.Combine(Settings.Dir, "logs", "network-" + project + ".log");
+
+    /// <param name="project">The project of the tab (Tab.NetProject); its journal gets the entry while it is on.</param>
+    /// <param name="local">The tab is in «только localhost» mode: no DNS lookup of the host.</param>
+    public static void Add(string method, Uri url, string result, bool blocked, long size, string kind, string page, string stack = "",
+        string project = "", bool local = false)
     {
+        var site = project.Length > 0 ? ProjectStore.Find(project)?.Site : null;
+        bool toProject = site != null && (site.Journal || site.LocalOnly);
+        if (!NetGuard.Watching && !toProject) return;
         var e = new Entry
         {
             Time = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss.fff"),
@@ -192,6 +214,10 @@ static class NetLog
             Kind = kind,
             Page = page,
             Stack = stack,
+            Project = project,
+            ToShared = NetGuard.Watching,
+            ToProject = toProject,
+            NoDns = local || NetGuard.LocalOnly,
         };
         lock (queue)
         {
@@ -210,7 +236,7 @@ static class NetLog
         {
             // No lookup of its own for a blocked request, nor in «только localhost» mode at all: a page could
             // otherwise send data out in a host name to the attacker's DNS server
-            e.Ip = Resolve(e.Host, dns: !e.Blocked && !NetGuard.LocalOnly);
+            e.Ip = Resolve(e.Host, dns: !e.Blocked && !e.NoDns);
             // The page's message with the stack may come a moment after the request itself
             var wait = e.Created + StackWait - DateTime.UtcNow;
             if (e.Stack.Length == 0 && wait > TimeSpan.Zero && !stacks.ContainsKey(e.Url)) Thread.Sleep(wait);
@@ -221,24 +247,30 @@ static class NetLog
                 recent.AddLast(e);
                 if (recent.Count > Kept) recent.RemoveFirst();
             }
-            try
-            {
-                Directory.CreateDirectory(Path.GetDirectoryName(FilePath)!);
-                var file = new FileInfo(FilePath);
-                if (file.Exists && file.Length > MaxFile)
-                {
-                    var old = Path.Combine(file.DirectoryName!, "network.1.log");
-                    File.Delete(old);
-                    File.Move(FilePath, old);
-                }
-                bool header = !File.Exists(FilePath);
-                using var w = new StreamWriter(FilePath, append: true, new UTF8Encoding(false));
-                if (header) w.WriteLine(L.T("время\tметод\tрезультат\tразмер\tинициатор\tдомен\tIP\tадрес\tстраница\tстек"));
-                w.WriteLine(string.Join("\t", e.Time, e.Method, e.Result, e.Size < 0 ? "" : e.Size.ToString(), e.Kind,
-                    e.Host, e.Ip, e.Url, e.Page, e.Stack.Replace("\r", "").Replace("\n", " ⏎ ").Replace("\t", " ")));
-            }
-            catch (Exception ex) when (ex is IOException || ex is UnauthorizedAccessException) { }
+            if (e.ToShared) WriteTo(FilePath, e);
+            if (e.ToProject) WriteTo(FileOf(e.Project), e);
         }
+    }
+
+    static void WriteTo(string path, Entry e)
+    {
+        try
+        {
+            Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+            var file = new FileInfo(path);
+            if (file.Exists && file.Length > MaxFile)
+            {
+                var old = Path.ChangeExtension(path, ".1.log");
+                File.Delete(old);
+                File.Move(path, old);
+            }
+            bool header = !File.Exists(path);
+            using var w = new StreamWriter(path, append: true, new UTF8Encoding(false));
+            if (header) w.WriteLine(L.T("время\tметод\tрезультат\tразмер\tинициатор\tдомен\tIP\tадрес\tстраница\tстек"));
+            w.WriteLine(string.Join("\t", e.Time, e.Method, e.Result, e.Size < 0 ? "" : e.Size.ToString(), e.Kind,
+                e.Host, e.Ip, e.Url, e.Page, e.Stack.Replace("\r", "").Replace("\n", " ⏎ ").Replace("\t", " ")));
+        }
+        catch (Exception ex) when (ex is IOException || ex is UnauthorizedAccessException) { }
     }
 
     /// <summary>
@@ -268,14 +300,14 @@ static class NetLog
         lock (recent) return recent.FirstOrDefault(e => e.Seq == seq);
     }
 
-    /// <summary>Entries after a number, for the /net page; at most the last 500.</summary>
-    public static string Since(long after)
+    /// <summary>Entries after a number, for the /net page; at most the last 500. With a project, only its journal's.</summary>
+    public static string Since(long after, string project = "")
     {
         List<Entry> list;
         long last;
         lock (recent)
         {
-            list = recent.Where(e => e.Seq > after).ToList();
+            list = recent.Where(e => e.Seq > after && (project.Length == 0 ? e.ToShared : e.ToProject && e.Project == project)).ToList();
             last = seq;
         }
         if (list.Count > 500) list = list.Skip(list.Count - 500).ToList();
@@ -322,13 +354,27 @@ static class NetLog
         return s.IndexOfAny(new[] { ';', '"', '\r', '\n' }) < 0 ? s : "\"" + s.Replace("\"", "\"\"") + "\"";
     }
 
-    public static void Clear()
+    /// <summary>The shared journal, or a project's own: its entries in memory and its files.</summary>
+    public static void Clear(string project = "")
     {
-        lock (recent) recent.Clear();
+        lock (recent)
+        {
+            for (var node = recent.First; node != null;)
+            {
+                var next = node.Next;
+                var e = node.Value;
+                // An entry of both journals stays in the other one
+                if (project.Length == 0) e.ToShared = false;
+                else if (e.Project == project) e.ToProject = false;
+                if (!e.ToShared && !e.ToProject) recent.Remove(node);
+                node = next;
+            }
+        }
+        var path = FileOf(project);
         try
         {
-            File.Delete(FilePath);
-            File.Delete(Path.Combine(Path.GetDirectoryName(FilePath)!, "network.1.log"));
+            File.Delete(path);
+            File.Delete(Path.ChangeExtension(path, ".1.log"));
         }
         catch (Exception e) when (e is IOException || e is UnauthorizedAccessException) { }
     }
@@ -342,4 +388,15 @@ static class NetPage
 
     public static bool Is(string? uri) => Home.Is(uri) && new Uri(uri!).AbsolutePath == Path;
     public static Stream Html() => L.Stream("net.html");
+
+    /// <summary>A project's own journal: the same page, showing only that project's requests.</summary>
+    public static string UrlOf(Project p) => Url + "?project=" + Uri.EscapeDataString(p.Id);
+
+    /// <summary>The project of a journal page's address; "" for the shared journal.</summary>
+    public static string ProjectOf(string? uri)
+    {
+        if (!Uri.TryCreate(uri, UriKind.Absolute, out var u)) return "";
+        var m = System.Text.RegularExpressions.Regex.Match(u.Query, @"[?&]project=([^&]*)");
+        return m.Success ? Uri.UnescapeDataString(m.Groups[1].Value) : "";
+    }
 }

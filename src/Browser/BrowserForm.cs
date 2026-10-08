@@ -182,7 +182,7 @@ sealed class BrowserForm : Form
         {
             fitTimer.Stop();
             foreach (var tab in OnScreen)
-                if (tab.Device != null && tab.Core is { } core) _ = Emulation.ApplyAsync(core, tab.Device, tab.Speed, RoomOf(tab));
+                if (tab.Device != null && tab.Core is { } core) _ = Emulation.ApplyAsync(core, tab.Device, tab.Speed, RoomOf(tab), tab.NoCache);
         };
         host.Resize += (_, _) => LayoutPanes();
         address.HandleCreated += (_, _) => Theme.ApplyEdit(address.Handle);
@@ -237,19 +237,46 @@ sealed class BrowserForm : Form
             address.Invalidate();
         }
         foreach (var tab in tabs)
-            if (tab.Ctl is { } c) ApplyTheme(c);
+            if (tab.Ctl is { } c) ApplyTheme(c, tab.Profile);
     }
 
-    static void ApplyTheme(CoreWebView2Controller c)
+    static void ApplyTheme(CoreWebView2Controller c, string profile)
     {
         c.DefaultBackgroundColor = Theme.PageBackground;
-        // "auto" leaves pages to Windows' own choice, as the frame
-        c.CoreWebView2.Profile.PreferredColorScheme = App.Current.S.Theme switch
+        ApplyProfile(c.CoreWebView2, profile);
+    }
+
+    /// <summary>
+    /// What is set for a whole WebView2 profile: the pages' colour scheme, tracking prevention, autofill and passwords.
+    /// The shared profile follows the browser's settings; a project's own profile its «Настройка профиля» where set.
+    /// </summary>
+    static void ApplyProfile(CoreWebView2 core, string profile)
+    {
+        var site = profile.Length > 0 ? ProjectStore.All.FirstOrDefault(p => p.Profile == profile)?.Site : null;
+        var s = App.Current.S;
+        try
         {
-            "dark" => CoreWebView2PreferredColorScheme.Dark,
-            "light" => CoreWebView2PreferredColorScheme.Light,
-            _ => CoreWebView2PreferredColorScheme.Auto,
-        };
+            // "auto" leaves pages to Windows' own choice, as the frame
+            core.Profile.PreferredColorScheme = (site?.PageTheme is { Length: > 0 } theme ? theme : s.Theme) switch
+            {
+                "dark" => CoreWebView2PreferredColorScheme.Dark,
+                "light" => CoreWebView2PreferredColorScheme.Light,
+                _ => CoreWebView2PreferredColorScheme.Auto,
+            };
+            // Strict when switched on («Для разработчика»), else balanced, as Edge has it
+            core.Profile.PreferredTrackingPreventionLevel = site?.Tracking switch
+            {
+                "strict" => CoreWebView2TrackingPreventionLevel.Strict,
+                "balanced" => CoreWebView2TrackingPreventionLevel.Balanced,
+                "none" => CoreWebView2TrackingPreventionLevel.None,
+                _ => s.StrictTracking ? CoreWebView2TrackingPreventionLevel.Strict : CoreWebView2TrackingPreventionLevel.Balanced,
+            };
+            // Off unless asked for (/net, or the project's): each costs per page. Both are settings of the profile.
+            bool fill = site?.Autofill switch { "on" => true, "off" => false, _ => s.Autofill };
+            core.Settings.IsGeneralAutofillEnabled = fill;
+            core.Settings.IsPasswordAutosaveEnabled = fill;
+        }
+        catch (Exception) { } // an older runtime, or the WebView is closing
     }
 
     /// <summary>The toolbar's hints that do not change with the page (the others are set in ShowState).</summary>
@@ -380,7 +407,7 @@ sealed class BrowserForm : Form
     void Setup(Tab tab)
     {
         var c = tab.Ctl!;
-        ApplyTheme(c);
+        ApplyTheme(c, tab.Profile);
         c.Bounds = BoundsOf(tab);
         // A click into the tab beside brings it forward: the toolbar follows it
         c.GotFocus += (_, _) =>
@@ -391,14 +418,11 @@ sealed class BrowserForm : Form
         c.ZoomFactor = zoom;
         c.AcceleratorKeyPressed += OnAcceleratorKeyPressed;
         var core = c.CoreWebView2;
-        // Features this browser does not use, each with a per-page cost
-        core.Settings.IsGeneralAutofillEnabled = false;
-        core.Settings.IsPasswordAutosaveEnabled = false;
+        // A feature this browser does not use, with a per-page cost (autofill is in ApplyProfile)
         core.Settings.AreHostObjectsAllowed = false;
         // SmartScreen sends the addresses to Microsoft: no telemetry
         try { core.Settings.IsReputationCheckingRequired = false; }
         catch (Exception) { } // an older WebView2 runtime
-        ApplyTracking(core);
         // The start page is served from here and talks to the browser through web messages
         core.AddWebResourceRequestedFilter(Home.Url + "*", CoreWebView2WebResourceContext.All);
         core.WebResourceRequested += OnHomeRequest;
@@ -408,8 +432,11 @@ sealed class BrowserForm : Form
         tab.NetScript = null;
         tab.NetResponse = null;
         ApplyNet(tab);
-        // A new WebView (another profile, loaded again) keeps the tab's emulation
-        if (tab.Device != null || tab.Speed != null) _ = Emulation.ApplyAsync(core, tab.Device, tab.Speed, RoomOf(tab));
+        // A new WebView (another profile, loaded again) keeps the tab's emulation; the project's settings follow (ApplySite)
+        tab.NoCache = tab.ZoomBySite = false;
+        tab.SiteId = "";
+        if (tab.Device != null || tab.Speed != null) _ = Emulation.ApplyAsync(core, tab.Device, tab.Speed, RoomOf(tab), tab.NoCache);
+        ApplySite(tab);
         core.WebMessageReceived += (_, e) => OnWebMessage(tab, e);
         core.FaviconChanged += (_, _) =>
         {
@@ -431,6 +458,7 @@ sealed class BrowserForm : Form
             // A tab that was a terminal is an ordinary one once it leaves: a later /term there starts nothing
             if (tab.TermDir != null && !TermPage.Is(core.Source)) tab.TermDir = tab.TermCommand = null;
             tab.Address = core.Source;
+            ApplySite(tab);
             ShowState(tab);
             if (tab.Pinned) SavePinned();
         };
@@ -463,6 +491,25 @@ sealed class BrowserForm : Form
                 }));
                 return;
             }
+            // The project's scripts switch and device are set before its page loads: the navigation starts again with them
+            bool redo = tab.SiteRedo == e.Uri;
+            tab.SiteRedo = null;
+            if (e.NavigationKind == CoreWebView2NavigationKind.NewDocument && !e.IsRedirected && !redo && SiteChange(tab, e.Uri) is { } change)
+            {
+                e.Cancel = true;
+                var target = e.Uri;
+                BeginInvoke(new Action(async () =>
+                {
+                    if (tab.Core != core) return;
+                    await change();
+                    if (tab.Core != core) return;
+                    tab.SiteRedo = target;
+                    core.Navigate(target);
+                }));
+                return;
+            }
+            // The network rules of the page to come (its project's «только localhost»), before its first request
+            ApplyNet(tab, e.Uri, force: false);
             // A new page drops what was ahead, as the engine drops its own forward entries; this program's pages do not
             if (e.NavigationKind == CoreWebView2NavigationKind.NewDocument && !e.IsRedirected && !tab.Stepping && !e.Uri.StartsWith("data:"))
                 tab.Ahead.Clear();
@@ -528,17 +575,6 @@ sealed class BrowserForm : Form
         };
     }
 
-    /// <summary>Tracking prevention of the tab's profile: strict when switched on («Для разработчика»), else balanced.</summary>
-    static void ApplyTracking(CoreWebView2 core)
-    {
-        try
-        {
-            core.Profile.PreferredTrackingPreventionLevel = App.Current.S.StrictTracking
-                ? CoreWebView2TrackingPreventionLevel.Strict : CoreWebView2TrackingPreventionLevel.Balanced;
-        }
-        catch (Exception) { } // an older runtime, or the WebView is closing
-    }
-
     /// <summary>The profiles of the tabs with a WebView here, each with one of those WebViews.</summary>
     public IEnumerable<(string Name, CoreWebView2 Core)> LiveProfiles() =>
         tabs.Where(t => t.Core != null).GroupBy(t => t.Profile).Select(g => (g.Key, g.First().Core!));
@@ -594,6 +630,138 @@ sealed class BrowserForm : Form
     }
 
     static bool IsInternal(string uri) => uri.StartsWith("about:") || uri.StartsWith("data:") || Home.Is(uri);
+
+    /// <summary>A site or a file, not a page of this program.</summary>
+    static bool IsSitePage(string uri) =>
+        (uri.StartsWith("http:") || uri.StartsWith("https:") || uri.StartsWith("file:")) && !Home.Is(uri);
+
+    /// <summary>
+    /// The project whose «Настройка профиля» a tab follows: the project of its own profile, whatever page it shows
+    /// (a login on another site included), else the project the address belongs to.
+    /// </summary>
+    static Project? SiteProject(Tab tab, string? url = null)
+    {
+        if (tab.Profile.Length > 0) return ProjectStore.All.FirstOrDefault(p => p.Profile == tab.Profile);
+        url ??= tab.Site;
+        return !IsInternal(url) && Uri.TryCreate(url, UriKind.Absolute, out var u) ? OwnerOf(tab, u) : null;
+    }
+
+    Task ApplyEmulationAsync(Tab tab) =>
+        tab.Core is { } core ? Emulation.ApplyAsync(core, tab.Device, tab.Speed, RoomOf(tab), tab.NoCache) : Task.CompletedTask;
+
+    /// <summary>
+    /// What a page about to open needs before it loads: its project's scripts switch and device. Null when the tab has
+    /// them already, else the change to make before the page is opened again. The device the project gave goes when
+    /// the tab leaves the project; one the user picked stays.
+    /// </summary>
+    Func<Task>? SiteChange(Tab tab, string url)
+    {
+        if (tab.Core is not { } core) return null;
+        bool site = IsSitePage(url);
+        var p = site ? SiteProject(tab, url) : null;
+        bool scripts = p?.Site.NoScripts != true;
+        var device = p != null && p.Site.Device.Length > 0 ? Emulation.Find(p.Site.Device) : null;
+        var want = tab.Device;
+        bool bySite = tab.DeviceBySite;
+        if (device != null && (tab.Device == null || tab.DeviceBySite)) (want, bySite) = (device, true);
+        else if (site && tab.DeviceBySite) (want, bySite) = (null, false);
+        bool scriptsNow;
+        try { scriptsNow = core.Settings.IsScriptEnabled; }
+        catch (Exception) { return null; }
+        if (scriptsNow == scripts && want == tab.Device) return null;
+        // A page of this program given as a string cannot be opened again: its scripts are on for the next page
+        if (!site && !Home.Is(url))
+        {
+            core.Settings.IsScriptEnabled = true;
+            return null;
+        }
+        return async () =>
+        {
+            core.Settings.IsScriptEnabled = scripts;
+            if (want == tab.Device) return;
+            tab.Device = want;
+            tab.DeviceBySite = bySite;
+            await ApplyEmulationAsync(tab);
+            ShowState(tab);
+        };
+    }
+
+    /// <summary>
+    /// The project's settings that need no new page: the network rules, «Не хранить кэш», and the zoom when the tab comes
+    /// to the project (a zoom the user changes there stays until the tab leaves it).
+    /// </summary>
+    void ApplySite(Tab tab, bool force = false)
+    {
+        if (tab.Ctl is not { } c) return;
+        ApplyNet(tab, null, force);
+        var p = IsSitePage(tab.Site) || tab.Profile.Length > 0 ? SiteProject(tab) : null;
+        bool noCache = p?.Site.NoCache == true;
+        if (noCache != tab.NoCache)
+        {
+            tab.NoCache = noCache;
+            _ = ApplyEmulationAsync(tab);
+        }
+        var id = p?.Id ?? "";
+        if (id == tab.SiteId && !force) return;
+        tab.SiteId = id;
+        try
+        {
+            if (p?.Site.Zoom is > 0 and var z)
+            {
+                c.ZoomFactor = z / 100.0;
+                tab.ZoomBySite = true;
+            }
+            else if (tab.ZoomBySite)
+            {
+                c.ZoomFactor = zoom;
+                tab.ZoomBySite = false;
+            }
+        }
+        catch (Exception) { } // the WebView is closing
+    }
+
+    /// <summary>
+    /// «Настройка профиля» changed: the project's tabs follow. A new profile moves its tabs (they open their page again);
+    /// scripts and the device reload the page, the rest applies as it is.
+    /// </summary>
+    public async void SiteSettingsChanged(Project p, string key, bool profileMoved)
+    {
+        foreach (var tab in tabs.ToList())
+        {
+            if (tab.Core is not { } core) continue;
+            if (profileMoved && !tab.ShowingInternalPage && IsSitePage(tab.Site) && Uri.TryCreate(tab.Site, UriKind.Absolute, out var u)
+                && OwnerOf(tab, u) is { } owner && owner.Id == p.Id && owner.Profile != tab.Profile)
+            {
+                core.Navigate(tab.Site);
+                continue;
+            }
+            if (SiteProject(tab)?.Id != p.Id) continue;
+            ApplyProfile(core, tab.Profile);
+            ApplySite(tab, force: true);
+            if (key is "noScripts" or "device" && SiteChange(tab, tab.Site) is { } change)
+            {
+                await change();
+                if (!tab.Closed && tab.Core == core) ReloadTab(tab);
+            }
+        }
+        WatchFolders();
+        if (active != null) ShowState(active);
+    }
+
+    /// <summary>The tabs showing a project's sites load again.</summary>
+    public void ReloadProject(Project p)
+    {
+        foreach (var tab in tabs.ToList())
+            if (tab.Core != null && !tab.ShowingInternalPage && IsSitePage(tab.Site) && SiteProject(tab)?.Id == p.Id) ReloadTab(tab);
+    }
+
+    /// <summary>Reloading on file changes for a tab: its project's choice, else the browser's (/net).</summary>
+    static bool AutoReloads(Tab tab) => SiteProject(tab)?.Site.AutoReload switch
+    {
+        "on" => true,
+        "off" => false,
+        _ => App.Current.S.AutoReload,
+    };
 
     /// <summary>Same scheme, host and port.</summary>
     public static bool SameSite(Uri a, Uri b) =>
@@ -1570,7 +1738,7 @@ sealed class BrowserForm : Form
         finally
         {
             // Back to the tab's own screen: its emulated device, or none
-            if (tab.Device != null) await Emulation.ApplyAsync(core, tab.Device, tab.Speed, RoomOf(tab));
+            if (tab.Device != null) await Emulation.ApplyAsync(core, tab.Device, tab.Speed, RoomOf(tab), tab.NoCache);
             else
                 try { await core.CallDevToolsProtocolMethodAsync("Emulation.clearDeviceMetricsOverride", "{}"); }
                 catch (Exception) { }
@@ -2024,10 +2192,11 @@ sealed class BrowserForm : Form
     {
         bool reload = device != tab.Device;
         tab.Device = device;
+        tab.DeviceBySite = false; // the user's own pick stays when the tab leaves the project
         tab.Speed = speed;
         ShowState(tab);
         if (tab.Core is not { } core) return;
-        await Emulation.ApplyAsync(core, device, speed, RoomOf(tab));
+        await Emulation.ApplyAsync(core, device, speed, RoomOf(tab), tab.NoCache);
         // Pages read the user agent and touch support once, as they load
         if (reload && tab.Core == core && !tab.ShowingInternalPage)
             try { core.Reload(); } catch (Exception) { }
@@ -2132,7 +2301,9 @@ sealed class BrowserForm : Form
     /// </summary>
     static void OnCertificateError(object? sender, CoreWebView2ServerCertificateErrorDetectedEventArgs e)
     {
-        if (App.Current.S.TrustLocalCerts && Uri.TryCreate(e.RequestUri, UriKind.Absolute, out var u) && IsThisMachine(u))
+        if (!Uri.TryCreate(e.RequestUri, UriKind.Absolute, out var u)) return;
+        // This machine's servers (the browser's switch), or the sites of a project that trusts its own certificates
+        if ((App.Current.S.TrustLocalCerts && IsThisMachine(u)) || ProjectOf(u)?.Site.TrustCerts == true)
             e.Action = CoreWebView2ServerCertificateErrorAction.AlwaysAllow;
     }
 
@@ -2276,6 +2447,8 @@ sealed class BrowserForm : Form
         var c = tab.Ctl;
         tab.Ctl = null;
         c?.Close();
+        // The last tab of a project with «Не хранить кэш» in its own profile takes the cache along
+        App.Current.ProfileMaybeUnused(tab.Profile, Handle);
         if (tab == active)
         {
             active = null;
@@ -2325,6 +2498,8 @@ sealed class BrowserForm : Form
             if (tab.InactiveSince is not { } since || tab.Core is not { } core) continue;
             // Nor a terminal: what runs in it goes on printing
             if (core.IsDocumentPlayingAudio || tab.Term != null || App.Current.IsRunningSite(tab.Site)) continue;
+            // Nor a project's tab it says never to freeze («Настройка профиля»)
+            if (SiteProject(tab)?.Site.NoFreeze == true) continue;
             // Nor a site whose storage a storage page shows: it reads it from the live page
             if (tabs.Any(t => t.StorageOf == tab)) continue;
             // A page Chromium refused to pause is busy with something (a call, say): it is not closed either
@@ -2420,7 +2595,7 @@ sealed class BrowserForm : Form
     public void ApplyDev()
     {
         foreach (var tab in tabs)
-            if (tab.Core is { } core) ApplyTracking(core);
+            if (tab.Core is { } core) ApplyProfile(core, tab.Profile);
         // Muting switched off: no tab stays silent with no way to hear it again
         strip.MuteEnabled = App.Current.S.TabMute;
         if (!App.Current.S.TabMute)
@@ -2461,9 +2636,9 @@ sealed class BrowserForm : Form
     void WatchFolders()
     {
         var wanted = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        if (App.Current.S.AutoReload && !minimized)
+        if (!minimized)
             foreach (var tab in OnScreen)
-                if (FolderOf(tab) is { } dir) wanted.Add(dir);
+                if (AutoReloads(tab) && FolderOf(tab) is { } dir) wanted.Add(dir);
         foreach (var gone in watchers.Keys.Where(d => !wanted.Contains(d)).ToList())
         {
             watchers[gone].Dispose();
@@ -2517,36 +2692,46 @@ sealed class BrowserForm : Form
     {
         reloadTimer.Stop();
         foreach (var tab in OnScreen)
-            if (FolderOf(tab) is { } dir && changedFolders.Contains(dir) && tab.Core is { } core)
+            if (AutoReloads(tab) && FolderOf(tab) is { } dir && changedFolders.Contains(dir) && tab.Core is { } core)
                 try { core.Reload(); } catch (Exception) { }
         changedFolders.Clear();
     }
 
     /// <summary>
-    /// «Только localhost» on a tab: every request passes OnNetRequest (a cost per request, so only while the mode
-    /// is on), and new pages get the web socket guard. Pages already open keep their sockets until reloaded.
+    /// «Только localhost» on a tab, the browser's or its project's: every request passes OnNetRequest (a cost per request,
+    /// so only while the mode is on), and new pages get the web socket guard. Pages already open keep their sockets until
+    /// reloaded. The project's mode has no gateway: what the page script and the filter do not see (sockets of workers) goes.
     /// </summary>
-    async void ApplyNet(Tab tab)
+    /// <param name="url">The page about to open, whose project's rules are to apply; null for the page the tab shows.</param>
+    /// <param name="force">Put everything on anew (a switch changed); else only when the tab's rules differ.</param>
+    async void ApplyNet(Tab tab, string? url = null, bool force = true)
     {
         if (tab.Core is not { } core) return;
+        var project = SiteProject(tab, url);
+        bool local = NetGuard.LocalOnly || project?.Site.LocalOnly == true;
+        bool watch = NetGuard.Watching || project != null && (project.Site.LocalOnly || project.Site.Journal);
+        tab.NetProject = project?.Id ?? "";
+        if (!force && local == tab.LocalOnly && watch == tab.Watching) return;
+        tab.LocalOnly = local;
+        tab.Watching = watch;
         const CoreWebView2WebResourceRequestSourceKinds All = CoreWebView2WebResourceRequestSourceKinds.All;
         try
         {
-            if (NetGuard.Watching && tab.NetResponse == null)
+            if (watch && tab.NetResponse == null)
             {
                 tab.NetResponse = (_, e) => OnNetResponse(tab, e);
                 core.WebResourceResponseReceived += tab.NetResponse;
             }
-            else if (!NetGuard.Watching && tab.NetResponse != null)
+            else if (!watch && tab.NetResponse != null)
             {
                 core.WebResourceResponseReceived -= tab.NetResponse;
                 tab.NetResponse = null;
             }
-            if (NetGuard.LocalOnly && !tab.NetFilter)
+            if (local && !tab.NetFilter)
                 core.AddWebResourceRequestedFilter("*", CoreWebView2WebResourceContext.All, All);
-            else if (!NetGuard.LocalOnly && tab.NetFilter)
+            else if (!local && tab.NetFilter)
                 core.RemoveWebResourceRequestedFilter("*", CoreWebView2WebResourceContext.All, All);
-            tab.NetFilter = NetGuard.LocalOnly;
+            tab.NetFilter = local;
             // Mocks see only the requests to their own addresses
             var mocks = Dev.On("mocks") ? MockStore.Filters() : new HashSet<string>();
             foreach (var gone in tab.MockFilters.Except(mocks).ToList())
@@ -2566,13 +2751,14 @@ sealed class BrowserForm : Form
                 tab.NetScript = null;
                 core.RemoveScriptToExecuteOnDocumentCreated(old);
             }
-            var script = NetGuard.PageScript();
-            _ = core.ExecuteScriptAsync(script);
-            if (!NetGuard.Watching) return;
+            var script = NetGuard.PageScript(local, watch);
+            // About to open another page: the one shown keeps its rules
+            if (url == null) _ = core.ExecuteScriptAsync(script);
             // Two quick changes overlap here: only the latest one's script stays
             int generation = ++tab.NetGeneration;
+            if (!watch) return;
             var id = await core.AddScriptToExecuteOnDocumentCreatedAsync(script);
-            if (tab.Core == core && NetGuard.Watching && tab.NetScript == null && generation == tab.NetGeneration) tab.NetScript = id;
+            if (tab.Core == core && tab.Watching && tab.NetScript == null && generation == tab.NetGeneration) tab.NetScript = id;
             else core.RemoveScriptToExecuteOnDocumentCreated(id);
         }
         catch (Exception) { } // the WebView closed meanwhile
@@ -2590,6 +2776,8 @@ sealed class BrowserForm : Form
                 ["cors"] = NetGuard.IgnoreCors,
                 ["clearOnExit"] = App.Current.S.ClearOnExit,
                 ["autoReload"] = App.Current.S.AutoReload,
+                ["autofill"] = App.Current.S.Autofill,
+                ["devices"] = Emulation.Devices.Select(d => new Dictionary<string, object> { ["key"] = d.Key, ["name"] = d.Name }).ToList(),
                 ["file"] = NetLog.FilePath,
                 ["mocks"] = MockStore.Summary(),
                 ["off"] = Dev.OffList(),
@@ -2655,13 +2843,15 @@ sealed class BrowserForm : Form
     {
         var env = App.Current.ResponseEnv;
         if (env != null && TryMock(tab, e, env)) return;
-        if (env == null || !NetGuard.LocalOnly || !Uri.TryCreate(e.Request.Uri, UriKind.Absolute, out var url) || !NetGuard.ShouldBlock(url))
+        if (env == null || !tab.LocalOnly || !Uri.TryCreate(e.Request.Uri, UriKind.Absolute, out var url) || !NetGuard.Blocks(url))
             return;
         bool page = e.ResourceContext == CoreWebView2WebResourceContext.Document;
-        e.Response = env.CreateWebResourceResponse(page ? ProgramLog.Bytes(NetGuard.BlockedPage(url.AbsoluteUri)) : null,
+        // The browser's mode, or the project's own (it says how to switch it off)
+        var project = NetGuard.LocalOnly ? null : ProjectStore.Find(tab.NetProject);
+        e.Response = env.CreateWebResourceResponse(page ? ProgramLog.Bytes(NetGuard.BlockedPage(url.AbsoluteUri, project)) : null,
             403, BlockedReason, page ? "Content-Type: text/html; charset=utf-8" : "");
         NetLog.Add(e.Request.Method, url, L.T("заблокировано"), blocked: true, -1, KindOf(e.ResourceContext),
-            page ? "" : tab.Site);
+            page ? "" : tab.Site, project: tab.NetProject, local: true);
     }
 
     const string BlockedReason = "Blocked by LiteBro", MockReason = "LiteBro mock";
@@ -2691,9 +2881,9 @@ sealed class BrowserForm : Form
         bool empty = mock.Status is 204 or 304 || method == "HEAD";
         e.Response = env.CreateWebResourceResponse(empty ? null : new MemoryStream(body), mock.Status, MockReason,
             "Content-Type: " + mock.Type + "\r\nCache-Control: no-store\r\nX-LiteBro-Mock: 1\r\n" + cors);
-        if (NetGuard.Watching)
+        if (tab.Watching)
             NetLog.Add(method, url, L.T("заглушка ") + mock.Status, blocked: false, empty ? 0 : body.Length, KindOf(e.ResourceContext),
-                e.ResourceContext == CoreWebView2WebResourceContext.Document ? "" : tab.Site);
+                e.ResourceContext == CoreWebView2WebResourceContext.Document ? "" : tab.Site, project: tab.NetProject, local: tab.LocalOnly);
         return true;
     }
 
@@ -2759,7 +2949,7 @@ sealed class BrowserForm : Form
     /// <summary>A response from the internet: into the journal while it is on (always in «только localhost» mode).</summary>
     void OnNetResponse(Tab tab, CoreWebView2WebResourceResponseReceivedEventArgs e)
     {
-        if (!NetGuard.Watching || !Uri.TryCreate(e.Request.Uri, UriKind.Absolute, out var url) || !NetGuard.IsOutside(url)) return;
+        if (!tab.Watching || !Uri.TryCreate(e.Request.Uri, UriKind.Absolute, out var url) || !NetGuard.IsOutside(url)) return;
         var r = e.Response;
         if (r.ReasonPhrase is BlockedReason or MockReason) return; // journaled when refused or stubbed
         long size = -1;
@@ -2771,7 +2961,8 @@ sealed class BrowserForm : Form
         string kind;
         try { kind = KindOf(e.Request.Headers); }
         catch (Exception) { kind = ""; }
-        NetLog.Add(e.Request.Method, url, r.StatusCode + (NetGuard.LocalOnly ? L.T(" (разрешён)") : ""), blocked: false, size, kind, tab.Site);
+        NetLog.Add(e.Request.Method, url, r.StatusCode + (tab.LocalOnly ? L.T(" (разрешён)") : ""), blocked: false, size, kind, tab.Site,
+            project: tab.NetProject, local: tab.LocalOnly);
     }
 
     /// <summary>
@@ -2784,7 +2975,7 @@ sealed class BrowserForm : Form
         string text;
         try { text = e.TryGetWebMessageAsString(); }
         catch (ArgumentException) { return; }
-        if (!text.StartsWith(Prefix) || !NetGuard.Watching || text.Length > 20000) return;
+        if (!text.StartsWith(Prefix) || !tab.Watching || text.Length > 20000) return;
         try
         {
             var m = ProjectStore.Json.Deserialize<Dictionary<string, object>>(text.Substring(Prefix.Length));
@@ -2797,11 +2988,12 @@ sealed class BrowserForm : Form
                 case "stack":
                     NetLog.NoteStack(url.AbsoluteUri, stack);
                     break;
-                case "ws-blocked" when NetGuard.LocalOnly:
-                    NetLog.Add(method, url, L.T("заблокировано"), blocked: true, -1, "WebSocket", tab.Site, stack);
+                case "ws-blocked" when tab.LocalOnly:
+                    NetLog.Add(method, url, L.T("заблокировано"), blocked: true, -1, "WebSocket", tab.Site, stack, tab.NetProject, local: true);
                     break;
                 case "ws":
-                    NetLog.Add(method, url, L.T("соединение") + (NetGuard.LocalOnly ? L.T(" (разрешён)") : ""), blocked: false, -1, "WebSocket", tab.Site, stack);
+                    NetLog.Add(method, url, L.T("соединение") + (tab.LocalOnly ? L.T(" (разрешён)") : ""), blocked: false, -1, "WebSocket", tab.Site, stack,
+                        tab.NetProject, tab.LocalOnly);
                     break;
             }
         }
@@ -3113,7 +3305,7 @@ sealed class BrowserForm : Form
         // Only the pages themselves open anywhere (a frame of another site included, which frame-ancestors then refuses);
         // their data (a console's text, the journal, icons) goes to the browser's own pages alone
         bool document = path is "/" or NetPage.Path or Dev.Path or StoragePage.Path or "/term"
-            || (ProgramLog.Parse(path, out bool isText) != null && !isText);
+            || (ProgramLog.Parse(path, out bool isText) != null && !isText) || ProfilePage.Parse(path) != null;
         if (!(sender is CoreWebView2 asker && Home.Is(asker.Source))
             && (e.ResourceContext != CoreWebView2WebResourceContext.Document || !document))
         {
@@ -3141,11 +3333,15 @@ sealed class BrowserForm : Form
             e.Response = env.CreateWebResourceResponse(Dev.Html(), 200, "OK", ProgramLog.Headers);
         else if (path == StoragePage.Path)
             e.Response = env.CreateWebResourceResponse(StoragePage.Html(), 200, "OK", ProgramLog.Headers);
+        else if (ProfilePage.Parse(path) != null)
+            e.Response = env.CreateWebResourceResponse(ProfilePage.Html(), 200, "OK", ProgramLog.Headers);
         else if (path == NetPage.Path + "/log")
         {
             var m = Regex.Match(new Uri(e.Request.Uri).Query, @"[?&]after=(\d+)");
             long after = m.Success && long.TryParse(m.Groups[1].Value, out var n) ? n : 0;
-            e.Response = env.CreateWebResourceResponse(ProgramLog.Bytes(NetLog.Since(after)), 200, "OK", ProgramLog.JsonHeaders);
+            // A project's journal: only its own entries
+            var project = NetPage.ProjectOf(e.Request.Uri);
+            e.Response = env.CreateWebResourceResponse(ProgramLog.Bytes(NetLog.Since(after, project)), 200, "OK", ProgramLog.JsonHeaders);
         }
         else if (TermPage.File(path, out var headers) is { } file)
             e.Response = env.CreateWebResourceResponse(file, 200, "OK", headers);
@@ -3165,6 +3361,7 @@ sealed class BrowserForm : Form
         if (path == Dev.Path) return "dev";
         if (path == StoragePage.Path) return "storage";
         if (path == "/term") return "term";
+        if (ProfilePage.Parse(path) != null) return "profile";
         return ProgramLog.Parse(path, out bool text) != null && !text ? "console" : "";
     }
 
@@ -3175,13 +3372,15 @@ sealed class BrowserForm : Form
         ["open"] = new[] { "home" }, ["openAll"] = new[] { "home" }, ["log"] = new[] { "home" },
         ["stop"] = new[] { "home", "console" }, ["terminal"] = new[] { "home", "console" },
         ["command"] = new[] { "console" }, ["cd"] = new[] { "console" }, ["input"] = new[] { "console" }, ["stopCommand"] = new[] { "console" },
-        ["net"] = new[] { "home", "net" }, ["netOpen"] = new[] { "home", "dev" }, ["devOpen"] = new[] { "home", "net" },
+        ["net"] = new[] { "home", "net" }, ["netOpen"] = new[] { "home", "dev", "profile" }, ["devOpen"] = new[] { "home", "net" },
         ["netClear"] = new[] { "net" }, ["netExport"] = new[] { "net" }, ["mockFrom"] = new[] { "net" }, ["mockOpen"] = new[] { "net" },
         ["mockSave"] = new[] { "net" }, ["mockOn"] = new[] { "net" }, ["mockDelete"] = new[] { "net" },
         ["dev"] = new[] { "dev" }, ["lang"] = new[] { "dev" }, ["devReset"] = new[] { "dev" }, ["settingsReset"] = new[] { "dev" },
         ["storage"] = new[] { "storage" }, ["permsOpen"] = new[] { "dev" }, ["setting"] = new[] { "dev" }, ["adBlockOpen"] = new[] { "dev" },
         ["termStart"] = new[] { "term" }, ["termIn"] = new[] { "term" }, ["termSize"] = new[] { "term" },
         ["openLink"] = new[] { "term", "console" },
+        ["profileOpen"] = new[] { "console" }, ["site"] = new[] { "profile" }, ["siteClear"] = new[] { "profile" },
+        ["sitePerms"] = new[] { "profile" }, ["siteJournal"] = new[] { "profile" },
     };
 
     /// <summary>
@@ -3221,6 +3420,11 @@ sealed class BrowserForm : Form
                 break;
             case "net" when m.TryGetValue("autoReload", out var reloadOn):
                 App.Current.S.SaveAutoReload(reloadOn is true);
+                App.Current.ApplyNet();
+                break;
+            case "net" when m.TryGetValue("autofill", out var fill):
+                App.Current.S.SaveAutofill(fill is true);
+                App.Current.ApplyDev(); // every tab's profile follows (ApplyProfile)
                 App.Current.ApplyNet();
                 break;
             case "net" when m.TryGetValue("clearOnExit", out var clear):
@@ -3278,7 +3482,27 @@ sealed class BrowserForm : Form
                 StorageOp(tab, site, m);
                 break;
             case "netClear":
-                NetLog.Clear();
+                // The journal page of a project clears only that project's journal
+                NetLog.Clear(NetPage.ProjectOf(e.Source));
+                break;
+            case "profileOpen" when project != null:
+                OpenHereOrNew(tab, ProfilePage.Url(project), Flag("newTab"));
+                break;
+            // «Настройка профиля»: only for the project of the page's own address
+            case "site" when ProfilePage.Parse(new Uri(e.Source).AbsolutePath) is { } sp && Text("key") is { } siteKey:
+                m.TryGetValue("value", out var siteValue);
+                // Not from inside the WebView's own event: moving tabs into another profile closes WebViews
+                BeginInvoke(new Action(() => App.Current.SetSiteSetting(sp, siteKey, siteValue)));
+                break;
+            case "siteClear" when ProfilePage.Parse(new Uri(e.Source).AbsolutePath) is { } cp && Text("what") is "cache" or "cookies" or "storage" or "all":
+                ClearSite(tab, cp, Text("what")!);
+                break;
+            case "sitePerms" when ProfilePage.Parse(new Uri(e.Source).AbsolutePath) is { } pp:
+                var origin = SitePermissions.OriginOf(pp.Url);
+                BeginInvoke(new Action(() => new PermsPopup(Handle, origin != null ? pp.Profile : null, origin).ShowAt(this, Cursor.Position)));
+                break;
+            case "siteJournal" when ProfilePage.Parse(new Uri(e.Source).AbsolutePath) is { } jp:
+                OpenHereOrNew(tab, NetPage.UrlOf(jp), Flag("newTab"));
                 break;
             // The browser's pages open where they are clicked, Ctrl+click in a new tab
             case "netOpen":
@@ -3384,6 +3608,21 @@ sealed class BrowserForm : Form
         }
     }
 
+    /// <summary>«Очистить» of «Настройка профиля»; the page hears back when it is done or failed.</summary>
+    async void ClearSite(Tab page, Project p, string what)
+    {
+        string? error = null;
+        try { await App.Current.ClearSiteAsync(p, what, Handle); }
+        catch (Exception ex) { error = ex.Message; }
+        if (page.Core is { } core && ProfilePage.Is(core.Source))
+            core.PostWebMessageAsJson(ProjectStore.Json.Serialize(new Dictionary<string, object?>
+            {
+                ["type"] = "siteCleared",
+                ["what"] = what,
+                ["error"] = error,
+            }));
+    }
+
     static readonly Regex ColorPattern = new("^#[0-9a-fA-F]{6}$");
     const int MaxLinks = 20;
 
@@ -3422,6 +3661,9 @@ sealed class BrowserForm : Form
         var old = ProjectStore.Find(p.Id);
         if (old == null) p.Id = "";
         p.Icon = old?.Icon ?? ""; // pictures are named here, never by the page
+        p.Site = old?.Site ?? new(); // «Настройка профиля» has its own page
+        // Settings of a whole profile need the project's own: without it they would change the shared one
+        if (!p.OwnProfile) p.Site.Tracking = p.Site.PageTheme = p.Site.Autofill = "";
         ProjectStore.Save(p); // a new project gets its Id
 
         // The picture stays while its source does; a newly picked one replaces it
@@ -3438,6 +3680,9 @@ sealed class BrowserForm : Form
         }
         ProjectStore.Save(p);
         App.Current.ProjectSaved(p);
+        // The tabs on the project's sites move to the profile it has now
+        if (old != null && old.OwnProfile != p.OwnProfile)
+            foreach (var form in App.Current.Forms.ToList()) form.SiteSettingsChanged(p, "ownProfile", profileMoved: true);
         if (p.IconSource == "site" && p.Icon.Length == 0) App.Current.FetchSiteIcon(p);
     }
 
@@ -3649,6 +3894,13 @@ sealed class BrowserForm : Form
             BeginInvoke(new Action(() => OpenNewTab(target, from)));
             return;
         }
+        // The project's popup rule («Настройка профиля»): none, or only the ones a click opens
+        if (tabs.FirstOrDefault(t => t.Core == sender) is { } asking && SiteProject(asking)?.Site.Popups is { Length: > 0 } popups
+            && (popups == "none" || !e.IsUserInitiated))
+        {
+            e.Handled = true;
+            return;
+        }
         var deferral = e.GetDeferral();
         try
         {
@@ -3773,7 +4025,8 @@ sealed class BrowserForm : Form
         {
             var bounds = fullScreen != null ? beforeFullBounds : WindowState == FormWindowState.Normal ? Bounds : RestoreBounds;
             bool maximized = fullScreen != null ? beforeFullState == FormWindowState.Maximized : WindowState == FormWindowState.Maximized;
-            Settings.SaveWindow(bounds, maximized, active?.Ctl?.ZoomFactor ?? zoom);
+            // A project's own zoom is not the window's
+            Settings.SaveWindow(bounds, maximized, active is { ZoomBySite: false, Ctl: { } shown } ? shown.ZoomFactor : zoom);
         }
         foreach (var tab in tabs)
         {

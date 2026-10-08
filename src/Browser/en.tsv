@@ -765,3 +765,98 @@ uBlock Origin Lite не ответил. Попробуйте ещё раз че�
 Клик — открыть	Click to open
 Клик по адресу в терминале или консоли	Click an address in the terminal or a console
 Открыть: локальный — в новой вкладке, в интернете — в основном браузере	Open: a local one in a new tab, an internet one in the main browser
+# Автозаполнение форм и предложение сохранить пароль (у проекта может быть своё, в «Настройке профиля»)	# Form autofill and offers to save passwords (a project may have its own, in Profile settings)
+Свои настройки страниц проекта: кэш, защита, скрипты, масштаб, только localhost, журнал запросов. Ctrl+клик или колёсико — в новой вкладке	The project pages own settings: cache, protection, scripts, zoom, localhost only, request log. Ctrl+click or the wheel opens a new tab
+Настройка профиля	Profile settings
+Это режим проекта «	This is the mode of the project “
+». Он выключается в настройке профиля проекта: кнопка «Настройка профиля» в консоли проекта. Разрешённые сайты — общие, в журнале сети.	”. It is switched off in the project profile settings: the Profile settings button in the project console. Allowed sites are shared, in the network log.
+Журнал ведётся, пока в «Настройке профиля» проекта включён журнал запросов или режим «только localhost».	The log is kept while the request log or localhost-only mode is on in the project Profile settings.
+Подсказки в полях форм и предложение сохранить пароль. У проекта может быть своё значение: «Настройка профиля» в консоли проекта.	Suggestions in form fields and offers to save passwords. A project may have its own value: Profile settings in the project console.
+Автозаполнение форм и сохранение паролей	Form autofill and saving passwords
+Кнопка «Настройка профиля»	The Profile settings button
+Свои настройки страниц проекта: кэш, защита, скрипты, масштаб, устройство, только localhost, журнал запросов проекта	The project pages own settings: cache, protection, scripts, zoom, device, localhost only, the project request log
+Журнал проекта «	Project log: “
+Проекта больше нет: плитку удалили.	The project is gone: its tile was deleted.
+Настройка профиля:	Profile settings:
+Свои настройки для страниц этого проекта и его ссылок. Остальные сайты живут по общим настройкам браузера. Меняется сразу, без перезапуска.	Settings of its own for the pages of this project and its links. Other sites follow the browser settings. Changes apply at once, without a restart.
+Профиль и данные	Profile and data
+Отдельный профиль	Separate profile
+Свои cookies, хранилище и разрешения: проект не видит входы и данные других сайтов, а они — его. После переключения на сайт проекта придётся войти заново.	Its own cookies, storage and permissions: the project does not see the sign-ins and data of other sites, nor they its. After switching you will have to sign in to the project site again.
+Не хранить кэш	Do not keep the cache
+Очистить сейчас	Clear now
+Кэш	Cache
+Хранилище	Storage
+Всё	All
+Защита от трекеров	Tracking prevention
+Строгая блокирует больше счётчиков и рекламы, но изредка ломает вход через другой сайт.	Strict blocks more trackers and ads, but now and then breaks signing in through another site.
+Настройка всего профиля: нужен отдельный профиль.	A setting of the whole profile: needs a separate profile.
+Строгая	Strict
+Выключена	Off
+Камера, микрофон, местоположение, уведомления: что разрешено или запрещено сайту проекта, с отменой.	Camera, microphone, location, notifications: what the project site is allowed or denied, with undo.
+Открыть	Open
+Доверять сертификату сайта	Trust the site certificate
+Ошибки сертификата у сайтов проекта пропускаются (самоподписанный сертификат на сервере в локальной сети, например). Только для своих серверов: подменённый сертификат тоже пройдёт. Выключение действует после перезапуска LiteBro: движок помнит пропущенные сертификаты.	Certificate errors of the project sites are let through (a self-signed certificate on a server in the local network, say). Only for your own servers: a forged certificate gets through too. Switching it off takes effect after LiteBro restarts: the engine remembers the certificates it let through.
+Не блокировать рекламу	Do not block ads
+Журнал запросов проекта	Project request log
+Запросы страниц проекта в интернет: свой журнал с фильтрами и выгрузкой в JSON и CSV, файл	Requests of the project pages to the internet: a log of its own with filters and export to JSON and CSV, file
+. С режимом «только localhost» проекта ведётся всегда.	. With the project localhost-only mode it is always kept.
+Открыть журнал проекта	Open the project log
+Ctrl+клик или колёсико — в новой вкладке.	Ctrl+click or the wheel opens a new tab.
+Журнал	Log
+Только для всего браузера: это флаг движка, у профиля его нет. Переключатель — на странице «Сеть», вместе с общим режимом «только localhost».	Only for the whole browser: it is an engine flag, a profile has none. The switch is on the Network page, together with the browser localhost-only mode.
+Выключенный: скрипты сайтов проекта не работают. Открытые страницы проекта перезагрузятся.	Off: scripts of the project sites do not run. Open pages of the project reload.
+Всплывающие окна	Pop-ups
+Окна и вкладки, которые открывает сам сайт. По клику — только открытые кликом пользователя.	Windows and tabs the site opens itself. On click: only the ones a click of the user opens.
+Разрешены	Allowed
+Только по клику	Only on click
+Запрещены	Blocked
+Масштаб	Zoom
+Когда вкладка приходит на сайт проекта. Изменённый там же Ctrl+колёсиком остаётся, пока вкладка на проекте.	When a tab comes to the project site. Changed there with Ctrl+wheel, it stays while the tab is on the project.
+Тема страниц	Page theme
+Что сайт узнаёт о теме (prefers-color-scheme).	What the site learns about the theme (prefers-color-scheme).
+Светлая	Light
+Тёмная	Dark
+Страницы проекта открываются как на телефоне или планшете: экран, касания, user agent. Уходит, когда вкладка уходит с проекта; выбранное в меню «Инструменты» остаётся.	The project pages open as on a phone or tablet: screen, touch, user agent. It goes when the tab leaves the project; one picked in the Tools menu stays.
+Автозаполнение форм и пароли	Form autofill and passwords
+Подсказки в полях форм и предложение сохранить пароль.	Suggestions in form fields and offers to save passwords.
+Включено	On
+Выключено	Off
+Не замораживать вкладки проекта	Do not freeze the project tabs
+В фоне не приостанавливаются и не выгружаются из памяти, даже когда программа проекта не работает.	In the background they are not paused or unloaded from memory, even when the project program is not running.
+Обновлять при изменении файлов	Reload when files change
+Страница на экране загружается заново, когда в папке проекта сохраняют файл.	The page on screen loads again when a file is saved in the project folder.
+Да	Yes
+Нет	No
+Проект перейдёт в отдельный профиль, и на его сайт придётся войти заново.	The project moves to a separate profile, and you will have to sign in to its site again.
+Как в окне	As the window
+Включить отдельный профиль? На сайт проекта придётся войти заново.	Switch on a separate profile? You will have to sign in to the project site again.
+Выключить отдельный профиль? На сайт проекта придётся войти заново, а защита от трекеров, тема страниц и автозаполнение проекта станут как в браузере.	Switch off the separate profile? You will have to sign in to the project site again, and the project tracking prevention, page theme and autofill become as in the browser.
+Это настройка всего профиля.	This is a setting of the whole profile.
+Продолжить?	Continue?
+Удалить cookies проекта? На его сайт придётся войти заново.	Delete the project cookies? You will have to sign in to its site again.
+Удалить хранилище сайтов проекта: localStorage, IndexedDB, Cache Storage, Service Worker?	Delete the storage of the project sites: localStorage, IndexedDB, Cache Storage, Service Worker?
+Удалить cookies, кэш и хранилище проекта? На его сайт придётся войти заново.	Delete the project cookies, cache and storage? You will have to sign in to its site again.
+Кэш удалён.	Cache deleted.
+Cookies удалены.	Cookies deleted.
+Хранилище удалено.	Storage deleted.
+Удалено всё.	All deleted.
+Удаляю…	Deleting…
+Страницы проекта всегда загружаются с сервера, а кэш его профиля удаляется, когда закрыта последняя вкладка проекта и при выходе.	The project pages always load from the server, and its profile cache is deleted when the last project tab closes and on exit.
+Страницы проекта всегда загружаются с сервера, мимо кэша. Удалять сам кэш при закрытии можно только в отдельном профиле.	The project pages always load from the server, past the cache. Deleting the cache itself on closing needs a separate profile.
+Когда при выходе удаляются cookies и кэш (переключатель на странице «Сеть»), профиль проекта остаётся целым.	When cookies and cache are deleted on exit (the switch on the Network page), the project profile stays whole.
+Когда при выходе удаляются cookies и кэш (переключатель на странице «Сеть»), cookies сайтов проекта остаются. Кэш без отдельного профиля удаляется всё равно: движок не делит его по сайтам.	When cookies and cache are deleted on exit (the switch on the Network page), the cookies of the project sites stay. Without a separate profile the cache is deleted anyway: the engine does not split it by site.
+Удаляется в профиле проекта.	Deleted in the project profile.
+Удаляется у сайтов проекта. Кэш браузера движок по сайтам не делит: кнопка «Кэш» очищает его у всего общего профиля.	Deleted for the project sites. The engine does not split the browser cache by site: the Cache button clears it for the whole shared profile.
+Как в браузере (	As in the browser (
+строгая	strict
+обычная	balanced
+тёмная	dark
+светлая	light
+как в Windows	as in Windows
+включено	on
+выключено	off
+Блокировка рекламы выключена во всём браузере (страница «Для разработчика»).	Ad blocking is off in the whole browser (the For developers page).
+uBlock Origin Lite не трогает сайты проекта, как пункт «Не блокировать (uBlock)» в меню «Инструменты».	uBlock Origin Lite leaves the project sites alone, as the Do not block (uBlock) item of the Tools menu does.
+Сейчас включён общий режим «только localhost»: он действует на все вкладки, и этот проект тоже.	The browser localhost-only mode is on now: it applies to every tab, this project too.
+Страницы проекта ходят только на этот компьютер, в локальную сеть и на разрешённые сайты (список общий, на странице «Сеть»). Без перезапуска движка. В отличие от общего режима нет шлюза: запросы воркеров по веб-сокетам и WebRTC не перехватываются.	The project pages reach only this computer, the local network and the allowed sites (a shared list, on the Network page). No engine restart. Unlike the browser mode there is no gateway: web socket requests of workers and WebRTC are not caught.
+Не удалось:	Failed:

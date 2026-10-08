@@ -190,22 +190,121 @@ sealed class App : ApplicationContext
     /// Runs something on a profile's settings (its permissions): through a tab already in it, else a hidden WebView
     /// made for the purpose and closed after. Such a WebView shows no page: the profile is not one to clear on exit for it.
     /// </summary>
-    public async Task<T> WithProfileAsync<T>(string profile, IntPtr window, Func<CoreWebView2Profile, Task<T>> use)
+    public Task<T> WithProfileAsync<T>(string profile, IntPtr window, Func<CoreWebView2Profile, Task<T>> use) =>
+        WithCoreAsync(profile, window, core => use(core.Profile));
+
+    /// <summary>The same with a WebView of the profile: for the DevTools protocol and the cookie manager.</summary>
+    public async Task<T> WithCoreAsync<T>(string profile, IntPtr window, Func<CoreWebView2, Task<T>> use)
     {
         foreach (var form in forms)
-            if (form.CoreIn(profile) is { } core) return await use(core.Profile);
+            if (form.CoreIn(profile) is { } core) return await use(core);
         if (Env is not { } env) throw new InvalidOperationException(L.T("Движок браузера перезапускается"));
         var c = await CreateControllerAsync(env, window, profile, pages: false);
         try
         {
             c.IsVisible = false;
-            return await use(c.CoreWebView2.Profile);
+            return await use(c.CoreWebView2);
         }
         finally { c.Close(); }
     }
 
+    /// <summary>A tab in a project's own profile closed: with «Не хранить кэш», once no tab is left in it, its cache goes.</summary>
+    public async void ProfileMaybeUnused(string profile, IntPtr window)
+    {
+        if (profile.Length == 0 || !ProjectStore.All.Any(p => p.Profile == profile && p.Site.NoCache)) return;
+        await Task.Yield(); // after the tab's WebView is closed
+        if (forms.Any(f => f.CoreIn(profile) != null)) return;
+        try { await WithProfileAsync(profile, window, async data => { await data.ClearBrowsingDataAsync(CacheKinds); return true; }); }
+        catch (Exception) { } // the engine restarts or is gone
+    }
+
+    /// <summary>
+    /// «Очистить сейчас» of «Настройка профиля»: cache, cookies, site storage or all of it. An own profile is cleared
+    /// whole; in the shared one only the project's sites, but for the HTTP cache, which the engine keeps per profile.
+    /// </summary>
+    public async Task ClearSiteAsync(Project p, string what, IntPtr window)
+    {
+        bool cache = what is "cache" or "all", cookies = what is "cookies" or "all", storage = what is "storage" or "all";
+        if (p.Profile.Length > 0)
+        {
+            var kinds = (CoreWebView2BrowsingDataKinds)0;
+            if (cache) kinds |= CacheKinds | CoreWebView2BrowsingDataKinds.ServiceWorkers;
+            if (cookies) kinds |= CoreWebView2BrowsingDataKinds.Cookies;
+            if (storage) kinds |= CoreWebView2BrowsingDataKinds.AllDomStorage | CoreWebView2BrowsingDataKinds.ServiceWorkers;
+            await WithProfileAsync(p.Profile, window, async data => { await data.ClearBrowsingDataAsync(kinds); return true; });
+            return;
+        }
+        var origins = p.Addresses().Select(SitePermissions.OriginOf).OfType<string>().Distinct().ToList();
+        var types = string.Join(",", new[]
+        {
+            cache || storage ? "cache_storage,service_workers" : null,
+            storage ? "local_storage,indexeddb,websql,file_systems" : null,
+        }.OfType<string>());
+        await WithCoreAsync("", window, async core =>
+        {
+            foreach (var origin in origins)
+            {
+                if (types.Length > 0)
+                    await core.CallDevToolsProtocolMethodAsync("Storage.clearDataForOrigin",
+                        ProjectStore.Json.Serialize(new Dictionary<string, object> { ["origin"] = origin, ["storageTypes"] = types }));
+                if (cookies)
+                    foreach (var cookie in await core.CookieManager.GetCookiesAsync(origin))
+                        core.CookieManager.DeleteCookie(cookie);
+            }
+            if (cache) await core.CallDevToolsProtocolMethodAsync("Network.clearBrowserCache", "{}");
+            return true;
+        });
+    }
+
+    /// <summary>
+    /// A setting of «Настройка профиля»: saved with the tile, then every window follows. A setting of the whole profile
+    /// moves the project into its own (the page asked first).
+    /// </summary>
+    public void SetSiteSetting(Project p, string key, object? value)
+    {
+        bool on = value is true;
+        bool ownBefore = p.OwnProfile;
+        switch (key)
+        {
+            case "ownProfile":
+                p.OwnProfile = on;
+                // Without its own profile these would apply to the shared one: they go
+                if (!on) p.Site.Tracking = p.Site.PageTheme = p.Site.Autofill = "";
+                break;
+            case "keepData": p.KeepData = on; break;
+            default:
+                if (!p.Site.Set(key, value)) return;
+                if (p.Site.NeedsOwnProfile) p.OwnProfile = true;
+                break;
+        }
+        ProjectStore.Save(p);
+        ProjectSaved(p);
+        if (key == "noAdBlock" || (key == "ownProfile" && p.Site.NoAdBlock)) SetUnfiltered(p, p.Site.NoAdBlock);
+        foreach (var form in forms.ToList()) form.SiteSettingsChanged(p, key, p.OwnProfile != ownBefore);
+    }
+
+    /// <summary>«Не блокировать рекламу»: uBlock Origin Lite leaves each of the project's sites unfiltered, in its profile.</summary>
+    async void SetUnfiltered(Project p, bool off)
+    {
+        if (!S.AdBlock || forms.FirstOrDefault() is not { } form) return;
+        var hosts = p.Addresses().Select(a => Uri.TryCreate(a, UriKind.Absolute, out var u) && (u.Scheme is "http" or "https") ? u.IdnHost : null)
+            .OfType<string>().Distinct().ToList();
+        foreach (var host in hosts)
+            try { await AdBlock.SetUnfilteredAsync(form.Handle, p.Profile, host, off); }
+            catch (Exception) { }
+        // uBOL's rules apply to the pages loaded after
+        foreach (var f in forms.ToList()) f.ReloadProject(p);
+    }
+
     /// <summary>The last window is closing and cookies and cache are to go with it (ClearOnExit).</summary>
-    public bool ClearsOnClose(BrowserForm form) => S.ClearOnExit && Env != null && forms.Count == 1 && forms[0] == form;
+    /// A project's own profile with «Не хранить кэш» loses its cache then too.
+    public bool ClearsOnClose(BrowserForm form) => (S.ClearOnExit || NoCacheProfiles().Any()) && Env != null && forms.Count == 1 && forms[0] == form;
+
+    /// <summary>The own profiles of projects with «Не хранить кэш» that pages ran in this session.</summary>
+    IEnumerable<string> NoCacheProfiles() =>
+        ProjectStore.All.Where(p => p.Site.NoCache && p.Profile.Length > 0 && usedProfiles.Contains(p.Profile)).Select(p => p.Profile);
+
+    const CoreWebView2BrowsingDataKinds CacheKinds = CoreWebView2BrowsingDataKinds.DiskCache | CoreWebView2BrowsingDataKinds.CacheStorage;
 
     /// <summary>
     /// Deletes cookies and the HTTP cache of every profile used this session, through a hidden WebView in each.
@@ -218,15 +317,23 @@ sealed class App : ApplicationContext
         var projects = ProjectStore.All;
         var keptHosts = projects.Where(p => p.KeepData && p.Profile.Length == 0).SelectMany(p => p.Addresses())
             .Select(a => Uri.TryCreate(a, UriKind.Absolute, out var u) && !u.IsFile ? u.Host : null).OfType<string>().ToList();
+        var noCache = NoCacheProfiles().ToList();
         foreach (var profile in usedProfiles.ToList())
         {
-            if (profile.Length > 0 && projects.Any(p => p.KeepData && p.Profile == profile)) continue;
+            // Kept whole (or not cleared on exit at all), but for the cache of a project with «Не хранить кэш»
+            bool kept = !S.ClearOnExit || (profile.Length > 0 && projects.Any(p => p.KeepData && p.Profile == profile));
+            if (kept && !noCache.Contains(profile)) continue;
             CoreWebView2Controller? c = null;
             try
             {
                 c = await CreateControllerAsync(env, window, profile);
                 c.IsVisible = false;
                 var data = c.CoreWebView2.Profile;
+                if (kept)
+                {
+                    await data.ClearBrowsingDataAsync(CacheKinds);
+                    continue;
+                }
                 if (profile.Length > 0 || keptHosts.Count == 0)
                 {
                     await data.ClearBrowsingDataAsync(CoreWebView2BrowsingDataKinds.Cookies | CoreWebView2BrowsingDataKinds.DiskCache);
@@ -368,7 +475,8 @@ sealed class App : ApplicationContext
     /// <summary>A site already running gives its icon at once; one behind a login gives it when opened here.</summary>
     public async void FetchSiteIcon(Project p)
     {
-        if (!Uri.TryCreate(p.Url, UriKind.Absolute, out var url) || url.IsFile || Home.Is(p.Url) || NetGuard.ShouldBlock(url) || !ClaimIcon(p.Id)) return;
+        if (!Uri.TryCreate(p.Url, UriKind.Absolute, out var url) || url.IsFile || Home.Is(p.Url) || NetGuard.ShouldBlock(url)
+            || (p.Site.LocalOnly && NetGuard.Blocks(url)) || !ClaimIcon(p.Id)) return;
         SetSiteIcon(p.Id, await Favicons.FetchAsync(url));
     }
 

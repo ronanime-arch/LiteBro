@@ -47,7 +47,7 @@ sealed class Tab
     public Image? Icon;
     /// <summary>The site tab whose storage this tab's storage page shows; set only by the browser when it opens the page.</summary>
     public Tab? StorageOf;
-    /// <summary>The «только localhost» request filter and the web socket script are in place on the current WebView.</summary>
+    /// <summary>The «только localhost» request filter (the browser's or the project's) is in place on the current WebView.</summary>
     public bool NetFilter;
     /// <summary>The request filters of the mocks (MockStore) in place on the current WebView.</summary>
     public HashSet<string> MockFilters = new();
@@ -56,6 +56,20 @@ sealed class Tab
     public Emulation.Speed? Speed;
     public string? NetScript;
     public int NetGeneration;
+    /// <summary>
+    /// The tab's network rules as last put on its WebView: «только localhost» (the browser's or its project's),
+    /// journaling, and the project its journal entries go to (BrowserForm.ApplyNet).
+    /// </summary>
+    public bool LocalOnly, Watching;
+    public string NetProject = "";
+    /// <summary>The project's «Не хранить кэш» is on the WebView (DevTools' «Disable cache»).</summary>
+    public bool NoCache;
+    /// <summary>The device and the zoom were set by the project's settings: they go when the tab leaves the project.</summary>
+    public bool DeviceBySite, ZoomBySite;
+    /// <summary>The project whose zoom the tab was last given (BrowserForm.ApplySite); "" for none.</summary>
+    public string SiteId = "";
+    /// <summary>The page opened again after its project's settings were put on: it is not stopped a second time.</summary>
+    public string? SiteRedo;
     /// <summary>The journal's listener to responses, only while it is on: each response it hears crosses to this process.</summary>
     public EventHandler<CoreWebView2WebResourceResponseReceivedEventArgs>? NetResponse;
     /// <summary>

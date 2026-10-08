@@ -22,6 +22,8 @@ header > .row:first-child { padding-right: 330px; }
 #corner { position: absolute; top: 14px; right: 22px; display: flex; gap: 8px; }
 /* Mocks switched off on the «Для разработчика» page */
 body.nomocks .mockonly { display: none; }
+/* A project's own journal (?project=): its entries alone, without the browser's switches */
+body.project .shared, body:not(.project) .projectonly { display: none; }
 h1 { margin: 0; font-size: 20px; font-weight: 600; }
 .row { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 22px; }
 .muted { color: var(--muted); font-size: 12.5px; }
@@ -106,29 +108,32 @@ kbd { font: 12px Consolas, monospace; padding: 1px 6px; border: 1px solid var(--
 <body>
 <header>
   <div class="row">
-    <h1>Сеть</h1>
-    <label class="switch" title="Страницы ходят только на этот компьютер, в локальную сеть и на разрешённые сайты">
+    <h1 id="title">Сеть</h1>
+    <span class="muted projectonly">Журнал ведётся, пока в «Настройке профиля» проекта включён журнал запросов или режим «только localhost».</span>
+    <label class="switch shared" title="Страницы ходят только на этот компьютер, в локальную сеть и на разрешённые сайты">
       <input type="checkbox" id="localOnly"><span class="track"></span><span>Только localhost: блокировать запросы в интернет</span></label>
-    <label class="switch" id="corsBox" title="Отключает проверки CORS и same-origin во всех вкладках: любая открытая страница сможет читать другие сайты, в том числе ваши локальные. Работает только в режиме «только localhost». При переключении движок перезапускается: вкладки перезагрузятся, терминалы закроются.">
+    <label class="switch shared" id="corsBox" title="Отключает проверки CORS и same-origin во всех вкладках: любая открытая страница сможет читать другие сайты, в том числе ваши локальные. Работает только в режиме «только localhost». При переключении движок перезапускается: вкладки перезагрузятся, терминалы закроются.">
       <input type="checkbox" id="cors"><span class="track"></span><span>Игнорировать CORS</span></label>
-    <label class="switch" title="В режиме «только localhost» журнал ведётся всегда">
+    <label class="switch shared" title="В режиме «только localhost» журнал ведётся всегда">
       <input type="checkbox" id="journal"><span class="track"></span><span>Вести журнал и без режима</span></label>
-    <label class="switch" title="Когда закрывается последнее окно LiteBro. Хранилище сайтов (localStorage, IndexedDB) остаётся. Проекты с галочкой «Не удалять cookies и кэш при выходе» (в настройках плитки) сохраняют свои.">
+    <label class="switch shared" title="Когда закрывается последнее окно LiteBro. Хранилище сайтов (localStorage, IndexedDB) остаётся. Проекты с галочкой «Не удалять cookies и кэш при выходе» (в настройках плитки) сохраняют свои.">
       <input type="checkbox" id="clearOnExit"><span class="track"></span><span>Удалять cookies и кэш при выходе</span></label>
-    <label class="switch" title="Страница на экране загружается заново, когда в папке её проекта (из настроек плитки) или в папке открытого файла сохраняют файл. node_modules, .git, bin, obj, логи и временные файлы не считаются. Проектам на Vite, Next и подобных это не нужно: они обновляют страницу сами.">
+    <label class="switch shared" title="Страница на экране загружается заново, когда в папке её проекта (из настроек плитки) или в папке открытого файла сохраняют файл. node_modules, .git, bin, obj, логи и временные файлы не считаются. Проектам на Vite, Next и подобных это не нужно: они обновляют страницу сами.">
       <input type="checkbox" id="autoReload"><span class="track"></span><span>Обновлять страницу при изменении файлов</span></label>
+    <label class="switch shared" title="Подсказки в полях форм и предложение сохранить пароль. У проекта может быть своё значение: «Настройка профиля» в консоли проекта.">
+      <input type="checkbox" id="autofill"><span class="track"></span><span>Автозаполнение форм и сохранение паролей</span></label>
     <div id="corner">
       <button id="devOpen" title="Включить и выключить кнопки и инструменты браузера">Для разработчика</button>
       <button id="keysOpen" title="Все горячие клавиши и приёмы браузера с описанием">Быстрые команды</button>
     </div>
   </div>
-  <details id="allowBox">
+  <details id="allowBox" class="shared">
     <summary>Разрешённые сайты (<span id="allowCount">0</span>)</summary>
     <textarea id="allow" spellcheck="false" placeholder="Например:&#10;fonts.googleapis.com&#10;fonts.gstatic.com"></textarea>
     <div class="row"><button id="saveAllow">Сохранить</button>
       <span class="muted">По одному на строку. *.example.com пропускает сам сайт и все его поддомены. Уже открытые страницы получат список после обновления.</span></div>
   </details>
-  <details id="mockBox" class="mockonly">
+  <details id="mockBox" class="mockonly shared">
     <summary>Заглушки (<span id="mockCount">0</span>)</summary>
     <div class="row" style="margin-top:8px"><button id="mockNew">Новая заглушка</button>
       <span class="muted">Запрос на адрес заглушки получает её ответ от самого LiteBro и не уходит на сервер, в том числе в режиме «только localhost». Сделать заглушку из запроса — кнопка в подробностях строки журнала. * в адресе — любые символы; адрес без ? подходит с любыми параметрами.</span></div>
@@ -187,6 +192,9 @@ kbd { font: 12px Consolas, monospace; padding: 1px 6px; border: 1px solid var(--
 const $ = s => document.getElementById(s);
 const post = m => window.chrome.webview.postMessage(m);
 let last = 0, entries = [], busy = false;
+// A project's own journal: only its entries, its file
+const project = new URLSearchParams(location.search).get("project") || "";
+if (project) document.body.classList.add("project");
 
 function size(n) {
   if (n < 0) return "";
@@ -382,7 +390,7 @@ async function poll() {
   if (busy) return;
   busy = true;
   try {
-    const r = await fetch("/net/log?after=" + last, { cache: "no-store" });
+    const r = await fetch("/net/log?after=" + last + (project ? "&project=" + encodeURIComponent(project) : ""), { cache: "no-store" });
     const d = await r.json();
     // The journal was cleared (or the browser restarted): start over
     if (d.last < last) { entries = []; last = 0; expanded.clear(); }
@@ -447,6 +455,7 @@ const KEYS = [
   ]],
   ["Консоль проекта", [
     ["↑, ↓ в строке команды", "Предыдущие введённые команды"],
+    ["Кнопка «Настройка профиля»", "Свои настройки страниц проекта: кэш, защита, скрипты, масштаб, устройство, только localhost, журнал запросов проекта"],
   ]],
   ["Журнал сети", [
     ["Клик по названию колонки", "Сортировка: по возрастанию, по убыванию, снова новые сверху"],
@@ -496,6 +505,7 @@ $("localOnly").addEventListener("change", e => {
 $("journal").addEventListener("change", e => post({ type: "net", journal: e.target.checked }));
 $("clearOnExit").addEventListener("change", e => post({ type: "net", clearOnExit: e.target.checked }));
 $("autoReload").addEventListener("change", e => post({ type: "net", autoReload: e.target.checked }));
+$("autofill").addEventListener("change", e => post({ type: "net", autofill: e.target.checked }));
 $("saveAllow").addEventListener("click", () => post({ type: "net", allow: $("allow").value }));
 $("cors").addEventListener("change", e => {
   const question = e.target.checked
@@ -577,6 +587,12 @@ let allowShown = null;
 window.chrome.webview.addEventListener("message", e => {
   const m = e.data;
   if (m && m.type === "mockEdit") { editMock(m.mock); return; }
+  if (m && m.type === "projects" && project) {
+    const p = (m.projects || []).find(x => x.Id === project);
+    $("title").textContent = "Журнал проекта «" + (p ? p.Name : project) + "»";
+    document.title = $("title").textContent;
+    return;
+  }
   if (!m || m.type !== "net") return;
   if (m.mocks) drawMocks(m.mocks);
   document.body.classList.toggle("nomocks", (m.off || []).includes("mocks"));
@@ -585,10 +601,13 @@ window.chrome.webview.addEventListener("message", e => {
   $("cors").checked = m.cors;
   $("clearOnExit").checked = !!m.clearOnExit;
   $("autoReload").checked = !!m.autoReload;
+  $("autofill").checked = !!m.autofill;
   $("cors").disabled = !m.localOnly;
   $("corsBox").classList.toggle("off", !m.localOnly);
-  $("file").textContent = m.file;
-  $("file").title = m.file;
+  // A project's journal is a file of its own beside the shared one
+  const file = project ? m.file.replace(/network\.log$/, "network-" + project + ".log") : m.file;
+  $("file").textContent = file;
+  $("file").title = file;
   const list = m.allow ? m.allow.split(" ") : [];
   $("allowCount").textContent = list.length;
   // Not over what is being typed, unless it was just saved

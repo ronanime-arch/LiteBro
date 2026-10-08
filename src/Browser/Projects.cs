@@ -40,6 +40,9 @@ sealed class Project
     public bool OwnProfile { get; set; }
     /// <summary>Its cookies and cache stay when the browser clears them on exit (Settings.ClearOnExit).</summary>
     public bool KeepData { get; set; } = true; // tiles saved before the switch existed keep theirs too
+    /// <summary>«Настройка профиля»: how the project's pages are treated; changed only from that page (SiteSettings).</summary>
+    public SiteSettings Site { get => site; set => site = value ?? new(); }
+    SiteSettings site = new();
 
     /// <summary>The WebView2 profile of the project's pages; "" for the shared one.</summary>
     public string Profile => OwnProfile && Id.Length > 0 ? "project-" + Id : "";
@@ -52,6 +55,73 @@ sealed class Project
 
     /// <summary>Url and the links' addresses.</summary>
     public IEnumerable<string> Addresses() => new[] { Url }.Concat(Links.Select(l => l.Url));
+}
+
+/// <summary>
+/// A project's own settings for its pages («Настройка профиля», ProfilePage). Empty strings and false mean
+/// «as the browser does». Tracking, PageTheme and Autofill are settings of a whole WebView2 profile: they apply only
+/// with Project.OwnProfile. The rest apply to a tab while it shows the project (BrowserForm.SiteProject).
+/// </summary>
+sealed class SiteSettings
+{
+    /// <summary>Pages always load from the server (DevTools' «Disable cache»); in an own profile its cache also goes when the last tab closes.</summary>
+    public bool NoCache { get; set; }
+    /// <summary>"", "balanced", "strict", "none".</summary>
+    public string Tracking { get; set; } = "";
+    /// <summary>Certificate errors of the project's own sites are let through.</summary>
+    public bool TrustCerts { get; set; }
+    /// <summary>uBlock Origin Lite leaves the project's sites unfiltered.</summary>
+    public bool NoAdBlock { get; set; }
+    public bool NoScripts { get; set; }
+    /// <summary>"", "click" (only the ones a click opens), "none".</summary>
+    public string Popups { get; set; } = "";
+    /// <summary>Zoom in percent; 0 = the window's.</summary>
+    public int Zoom { get; set; }
+    /// <summary>"", "light", "dark".</summary>
+    public string PageTheme { get; set; } = "";
+    /// <summary>An emulated device (Emulation.Device.Key) the project's pages open on; "" for none.</summary>
+    public string Device { get; set; } = "";
+    /// <summary>Form autofill and saving passwords: "", "on", "off".</summary>
+    public string Autofill { get; set; } = "";
+    /// <summary>The project's tabs are never paused or unloaded in the background.</summary>
+    public bool NoFreeze { get; set; }
+    /// <summary>Reload on file changes: "", "on", "off".</summary>
+    public string AutoReload { get; set; } = "";
+    /// <summary>«Только localhost» for the project's pages alone: the request filter and the page script, no gateway.</summary>
+    public bool LocalOnly { get; set; }
+    /// <summary>The project's requests to the internet go into its own journal (logs\network-&lt;id&gt;.log).</summary>
+    public bool Journal { get; set; }
+
+    public static readonly int[] Zooms = { 0, 50, 67, 75, 80, 90, 100, 110, 125, 150, 175, 200 };
+
+    /// <summary>Takes one setting from the page; false for a key or value it could not have sent.</summary>
+    public bool Set(string key, object? value)
+    {
+        bool on = value is true;
+        string text = value as string ?? "";
+        switch (key)
+        {
+            case "noCache": NoCache = on; break;
+            case "tracking" when text is "" or "balanced" or "strict" or "none": Tracking = text; break;
+            case "trustCerts": TrustCerts = on; break;
+            case "noAdBlock": NoAdBlock = on; break;
+            case "noScripts": NoScripts = on; break;
+            case "popups" when text is "" or "click" or "none": Popups = text; break;
+            case "zoom" when value is int z && Array.IndexOf(Zooms, z) >= 0: Zoom = z; break;
+            case "pageTheme" when text is "" or "light" or "dark": PageTheme = text; break;
+            case "device" when text == "" || Emulation.Find(text) != null: Device = text; break;
+            case "autofill" when text is "" or "on" or "off": Autofill = text; break;
+            case "noFreeze": NoFreeze = on; break;
+            case "autoReload" when text is "" or "on" or "off": AutoReload = text; break;
+            case "localOnly": LocalOnly = on; break;
+            case "journal": Journal = on; break;
+            default: return false;
+        }
+        return true;
+    }
+
+    /// <summary>A setting of the whole profile is set: it needs the project's own profile.</summary>
+    public bool NeedsOwnProfile => Tracking.Length > 0 || PageTheme.Length > 0 || Autofill.Length > 0;
 }
 
 sealed class ProjectLink

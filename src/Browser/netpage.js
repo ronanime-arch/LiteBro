@@ -1,5 +1,5 @@
 // Put into every page while «только localhost» or the network journal is on, and run again on open pages when
-// the rules change. The browser puts the rules in place of the config marker: {names, allow, block, trace}.
+// the rules change. The browser puts the rules in place of the config marker: {names, allow, block, trace, rtc}.
 (() => {
   const cfg = __CONFIG__;
   // The browser's own pages talk to it directly
@@ -7,7 +7,7 @@
   if (window.__litebroNet) { window.__litebroNet(cfg); return; }
   if (!cfg.block && !cfg.trace) return;
   const hook = window.chrome && window.chrome.webview;
-  let names = [], allow = [], block = false, trace = false;
+  let names = [], allow = [], block = false, trace = false, rtc = false;
   const sockets = new Set();
 
   const esc = s => s.replace(/[.+^${}()|[\]\\]/g, "\\$&").replace(/\*/g, ".*").replace(/\?/g, ".");
@@ -47,6 +47,7 @@
     allow = c.allow.map(rx);
     block = c.block;
     trace = c.trace;
+    rtc = !!c.rtc;
     // Sockets the new rules forbid are closed now, not when the page is reloaded
     for (const s of sockets) if (refused(s.__litebroUrl)) try { s.close(4000, "LiteBro: только localhost"); } catch (e) {}
   }
@@ -103,4 +104,15 @@
       return s;
     },
   });
+
+  // A project's own «только localhost» has no gateway: WebRTC (STUN, peers over UDP) is refused here
+  for (const name of ["RTCPeerConnection", "webkitRTCPeerConnection"]) {
+    const R = window[name];
+    if (R) window[name] = new Proxy(R, {
+      construct(target, args, newTarget) {
+        if (rtc) throw new DOMException("WebRTC заблокирован режимом «только localhost» проекта", "NotAllowedError");
+        return Reflect.construct(target, args, newTarget);
+      },
+    });
+  }
 })();

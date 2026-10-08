@@ -17,6 +17,8 @@ static class Emulation
     {
         string name = "";
         public string Name { get => L.T(name); set => name = value; }
+        /// <summary>The untranslated name: what a project's settings keep (SiteSettings.Device).</summary>
+        public string Key => name;
         public int Width, Height;
         public double Scale;
         public bool Mobile;
@@ -54,13 +56,16 @@ static class Emulation
         new() { Name = "Офлайн", Offline = true },
     };
 
+    public static Device? Find(string key) => Array.Find(Devices, d => d.Key == key);
+
     static string N(double d) => d.ToString(CultureInfo.InvariantCulture);
 
     /// <summary>
     /// Puts the tab's device and network on its WebView; null takes the override away. A device larger than the room
     /// the page has is shrunk to fit.
     /// </summary>
-    public static async Task ApplyAsync(CoreWebView2 core, Device? device, Speed? speed, Size room)
+    /// <param name="noCache">The page always loads from the server (DevTools' «Disable cache»): it needs the network domain too.</param>
+    public static async Task ApplyAsync(CoreWebView2 core, Device? device, Speed? speed, Size room, bool noCache = false)
     {
         try
         {
@@ -85,9 +90,13 @@ static class Emulation
                 await core.CallDevToolsProtocolMethodAsync("Emulation.setEmitTouchEventsForMouse", "{\"enabled\":false}");
                 await core.CallDevToolsProtocolMethodAsync("Emulation.setUserAgentOverride", "{\"userAgent\":\"\"}");
             }
-            if (speed != null)
+            if (speed != null || noCache)
             {
                 await core.CallDevToolsProtocolMethodAsync("Network.enable", "{}");
+                await core.CallDevToolsProtocolMethodAsync("Network.setCacheDisabled", noCache ? "{\"cacheDisabled\":true}" : "{\"cacheDisabled\":false}");
+            }
+            if (speed != null)
+            {
                 await core.CallDevToolsProtocolMethodAsync("Network.emulateNetworkConditions",
                     $"{{\"offline\":{(speed.Offline ? "true" : "false")},\"latency\":{N(speed.Latency)}," +
                     $"\"downloadThroughput\":{N(speed.Offline ? 0 : speed.Down)},\"uploadThroughput\":{N(speed.Offline ? 0 : speed.Up)}}}");
@@ -96,8 +105,8 @@ static class Emulation
             {
                 await core.CallDevToolsProtocolMethodAsync("Network.emulateNetworkConditions",
                     "{\"offline\":false,\"latency\":0,\"downloadThroughput\":-1,\"uploadThroughput\":-1}");
-                // The network domain costs a little per request: on only while the network is emulated
-                await core.CallDevToolsProtocolMethodAsync("Network.disable", "{}");
+                // The network domain costs a little per request: on only while the network is emulated or the cache is off
+                if (!noCache) await core.CallDevToolsProtocolMethodAsync("Network.disable", "{}");
             }
         }
         catch (Exception) { } // the WebView closed meanwhile

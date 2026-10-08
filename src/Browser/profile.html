@@ -1,0 +1,318 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<title>Настройка профиля</title>
+<style>
+:root {
+  color-scheme: light dark;
+  --bg: #f2f3f6; --fg: #1b1d22; --muted: #6b7080; --card: #ffffff; --line: rgba(0, 0, 0, .12);
+  --accent: #1f9d55; --warn: #c77700; --text: "Segoe UI Variable Text", "Segoe UI", sans-serif;
+}
+@media (prefers-color-scheme: dark) {
+  :root { --bg: #121212; --fg: #e9eaee; --muted: #9a9fae; --card: #1c1d20; --line: rgba(255, 255, 255, .14); --warn: #f0a640; }
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; background: var(--bg); color: var(--fg); font: 14px/1.45 var(--text); }
+main { max-width: 820px; margin: 0 auto; padding: 22px 22px 40px; }
+h1 { margin: 0 0 4px; font-size: 20px; font-weight: 600; }
+h2 { margin: 26px 0 4px; font-size: 13px; color: var(--muted); font-weight: 600; text-transform: uppercase; letter-spacing: .04em; }
+.muted { color: var(--muted); font-size: 12.5px; margin: 0; }
+#site { font: 12.5px Consolas, monospace; color: var(--muted); word-break: break-all; }
+section { background: var(--card); border: 1px solid var(--line); border-radius: 8px; margin-top: 8px; }
+.item { display: flex; align-items: center; gap: 14px; padding: 10px 14px; }
+.item + .item { border-top: 1px solid var(--line); }
+label.item { cursor: pointer; user-select: none; }
+label.item:hover { background: rgba(127, 127, 127, .06); }
+.item .text { flex: 1; min-width: 0; }
+.item .name { font-weight: 600; }
+.item.off { opacity: .5; }
+.item.off, .item.off * { cursor: default; }
+.need { color: var(--warn); }
+.item input[type=checkbox] { position: absolute; opacity: 0; pointer-events: none; }
+.track { width: 38px; height: 22px; border-radius: 11px; background: rgba(127, 127, 127, .45); position: relative; transition: background .15s; flex: none; }
+.track::after { content: ""; position: absolute; top: 3px; left: 3px; width: 16px; height: 16px; border-radius: 50%; background: #fff; transition: left .15s; }
+.item input:checked + .track { background: var(--accent); }
+.item input:checked + .track::after { left: 19px; }
+.item input:focus-visible + .track { outline: 2px solid var(--accent); outline-offset: 2px; }
+button { font: 13px var(--text); padding: 4px 12px; border: 1px solid var(--line); border-radius: 6px; background: transparent; color: inherit; cursor: pointer; white-space: nowrap; }
+button:hover { background: rgba(127, 127, 127, .15); }
+button:disabled { opacity: .45; cursor: default; background: transparent; }
+select { font: 13px var(--text); padding: 4px 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--card); color: inherit; max-width: 230px; }
+.buttons { display: flex; flex-wrap: wrap; gap: 8px; }
+#cleared { min-height: 18px; }
+#missing { margin-top: 30px; }
+</style>
+</head>
+<body>
+<main>
+  <div id="missing" hidden>
+    <h1>Настройка профиля</h1>
+    <p class="muted">Проекта больше нет: плитку удалили.</p>
+  </div>
+  <div id="page" hidden>
+  <h1>Настройка профиля: <span id="name"></span></h1>
+  <div id="site"></div>
+  <p class="muted">Свои настройки для страниц этого проекта и его ссылок. Остальные сайты живут по общим настройкам браузера. Меняется сразу, без перезапуска.</p>
+
+  <h2>Профиль и данные</h2>
+  <section>
+    <label class="item"><span class="text"><span class="name">Отдельный профиль</span>
+      <div class="muted">Свои cookies, хранилище и разрешения: проект не видит входы и данные других сайтов, а они — его. После переключения на сайт проекта придётся войти заново.</div></span>
+      <input type="checkbox" data-key="ownProfile"><span class="track"></span></label>
+    <label class="item"><span class="text"><span class="name">Не хранить кэш</span>
+      <div class="muted" id="noCacheNote"></div></span>
+      <input type="checkbox" data-key="noCache"><span class="track"></span></label>
+    <label class="item"><span class="text"><span class="name">Не удалять cookies и кэш при выходе</span>
+      <div class="muted" id="keepNote"></div></span>
+      <input type="checkbox" data-key="keepData"><span class="track"></span></label>
+    <div class="item"><span class="text"><span class="name">Очистить сейчас</span>
+      <div class="muted" id="clearNote"></div>
+      <div class="muted" id="cleared"></div></span>
+      <span class="buttons">
+        <button data-clear="cache">Кэш</button>
+        <button data-clear="cookies">Cookies</button>
+        <button data-clear="storage">Хранилище</button>
+        <button data-clear="all">Всё</button>
+      </span></div>
+  </section>
+
+  <h2>Защита</h2>
+  <section>
+    <div class="item"><span class="text"><span class="name">Защита от трекеров</span>
+      <div class="muted">Строгая блокирует больше счётчиков и рекламы, но изредка ломает вход через другой сайт. <span class="need">Настройка всего профиля: нужен отдельный профиль.</span></div></span>
+      <select data-key="tracking">
+        <option value="" id="trackingDefault"></option>
+        <option value="balanced">Обычная</option>
+        <option value="strict">Строгая</option>
+        <option value="none">Выключена</option>
+      </select></div>
+    <div class="item"><span class="text"><span class="name">Разрешения сайта</span>
+      <div class="muted">Камера, микрофон, местоположение, уведомления: что разрешено или запрещено сайту проекта, с отменой.</div></span>
+      <button id="perms">Открыть</button></div>
+    <label class="item"><span class="text"><span class="name">Доверять сертификату сайта</span>
+      <div class="muted">Ошибки сертификата у сайтов проекта пропускаются (самоподписанный сертификат на сервере в локальной сети, например). Только для своих серверов: подменённый сертификат тоже пройдёт. Выключение действует после перезапуска LiteBro: движок помнит пропущенные сертификаты.</div></span>
+      <input type="checkbox" data-key="trustCerts"><span class="track"></span></label>
+    <label class="item" id="adBlockItem"><span class="text"><span class="name">Не блокировать рекламу</span>
+      <div class="muted" id="adBlockNote"></div></span>
+      <input type="checkbox" data-key="noAdBlock"><span class="track"></span></label>
+  </section>
+
+  <h2>Сеть</h2>
+  <section>
+    <label class="item" id="localItem"><span class="text"><span class="name">Только localhost</span>
+      <div class="muted" id="localNote"></div></span>
+      <input type="checkbox" data-key="localOnly"><span class="track"></span></label>
+    <label class="item" id="journalItem"><span class="text"><span class="name">Журнал запросов проекта</span>
+      <div class="muted">Запросы страниц проекта в интернет: свой журнал с фильтрами и выгрузкой в JSON и CSV, файл <span id="journalFile"></span>. С режимом «только localhost» проекта ведётся всегда.</div></span>
+      <input type="checkbox" data-key="journal"><span class="track"></span></label>
+    <div class="item"><span class="text"><span class="name">Открыть журнал проекта</span>
+      <div class="muted">Ctrl+клик или колёсико — в новой вкладке.</div></span>
+      <button id="journalOpen">Журнал</button></div>
+    <div class="item"><span class="text"><span class="name">Игнорировать CORS</span>
+      <div class="muted">Только для всего браузера: это флаг движка, у профиля его нет. Переключатель — на странице «Сеть», вместе с общим режимом «только localhost».</div></span>
+      <button id="netOpen">Сеть</button></div>
+  </section>
+
+  <h2>Страница</h2>
+  <section>
+    <label class="item"><span class="text"><span class="name">JavaScript</span>
+      <div class="muted">Выключенный: скрипты сайтов проекта не работают. Открытые страницы проекта перезагрузятся.</div></span>
+      <input type="checkbox" id="scripts"><span class="track"></span></label>
+    <div class="item"><span class="text"><span class="name">Всплывающие окна</span>
+      <div class="muted">Окна и вкладки, которые открывает сам сайт. По клику — только открытые кликом пользователя.</div></span>
+      <select data-key="popups">
+        <option value="">Разрешены</option>
+        <option value="click">Только по клику</option>
+        <option value="none">Запрещены</option>
+      </select></div>
+    <div class="item"><span class="text"><span class="name">Масштаб</span>
+      <div class="muted">Когда вкладка приходит на сайт проекта. Изменённый там же Ctrl+колёсиком остаётся, пока вкладка на проекте.</div></span>
+      <select data-key="zoom" id="zoom"></select></div>
+    <div class="item"><span class="text"><span class="name">Тема страниц</span>
+      <div class="muted">Что сайт узнаёт о теме (prefers-color-scheme). <span class="need">Настройка всего профиля: нужен отдельный профиль.</span></div></span>
+      <select data-key="pageTheme">
+        <option value="" id="themeDefault"></option>
+        <option value="light">Светлая</option>
+        <option value="dark">Тёмная</option>
+      </select></div>
+    <div class="item"><span class="text"><span class="name">Устройство</span>
+      <div class="muted">Страницы проекта открываются как на телефоне или планшете: экран, касания, user agent. Уходит, когда вкладка уходит с проекта; выбранное в меню «Инструменты» остаётся.</div></span>
+      <select data-key="device" id="device"></select></div>
+    <div class="item"><span class="text"><span class="name">Автозаполнение форм и пароли</span>
+      <div class="muted">Подсказки в полях форм и предложение сохранить пароль. <span class="need">Настройка всего профиля: нужен отдельный профиль.</span></div></span>
+      <select data-key="autofill">
+        <option value="" id="autofillDefault"></option>
+        <option value="on">Включено</option>
+        <option value="off">Выключено</option>
+      </select></div>
+  </section>
+
+  <h2>Вкладки</h2>
+  <section>
+    <label class="item"><span class="text"><span class="name">Не замораживать вкладки проекта</span>
+      <div class="muted">В фоне не приостанавливаются и не выгружаются из памяти, даже когда программа проекта не работает.</div></span>
+      <input type="checkbox" data-key="noFreeze"><span class="track"></span></label>
+    <div class="item"><span class="text"><span class="name">Обновлять при изменении файлов</span>
+      <div class="muted">Страница на экране загружается заново, когда в папке проекта сохраняют файл.</div></span>
+      <select data-key="autoReload">
+        <option value="" id="reloadDefault"></option>
+        <option value="on">Да</option>
+        <option value="off">Нет</option>
+      </select></div>
+  </section>
+  </div>
+</main>
+<script>
+"use strict";
+const $ = id => document.getElementById(id);
+const post = m => window.chrome.webview.postMessage(m);
+const id = decodeURIComponent(location.pathname.split("/")[2] || "");
+let project = null, net = null;
+// Settings of a whole profile: the project moves into its own first
+const WHOLE = ["tracking", "pageTheme", "autofill"];
+const RELOGIN = "Проект перейдёт в отдельный профиль, и на его сайт придётся войти заново.";
+
+const zoom = $("zoom");
+for (const z of [0, 50, 67, 75, 80, 90, 100, 110, 125, 150, 175, 200]) {
+  const o = document.createElement("option");
+  o.value = String(z);
+  o.textContent = z ? z + " %" : "Как в окне";
+  zoom.append(o);
+}
+
+function send(key, value) { post({ type: "site", key, value }); }
+
+for (const box of document.querySelectorAll("input[data-key]")) {
+  box.addEventListener("change", () => {
+    const key = box.dataset.key;
+    if (key === "ownProfile") {
+      const q = box.checked
+        ? "Включить отдельный профиль? На сайт проекта придётся войти заново."
+        : "Выключить отдельный профиль? На сайт проекта придётся войти заново, а защита от трекеров, тема страниц и автозаполнение проекта станут как в браузере.";
+      if (!confirm(q)) { box.checked = !box.checked; return; }
+    }
+    send(key, box.checked);
+  });
+}
+$("scripts").addEventListener("change", e => send("noScripts", !e.target.checked));
+
+for (const sel of document.querySelectorAll("select[data-key]")) {
+  sel.addEventListener("change", () => {
+    const key = sel.dataset.key;
+    const value = key === "zoom" ? parseInt(sel.value, 10) : sel.value;
+    if (WHOLE.includes(key) && value && project && !project.OwnProfile
+        && !confirm("Это настройка всего профиля. " + RELOGIN + " Продолжить?")) {
+      show();
+      return;
+    }
+    send(key, value);
+  });
+}
+
+const CLEAR_ASK = {
+  cookies: "Удалить cookies проекта? На его сайт придётся войти заново.",
+  storage: "Удалить хранилище сайтов проекта: localStorage, IndexedDB, Cache Storage, Service Worker?",
+  all: "Удалить cookies, кэш и хранилище проекта? На его сайт придётся войти заново.",
+};
+const CLEAR_DONE = { cache: "Кэш удалён.", cookies: "Cookies удалены.", storage: "Хранилище удалено.", all: "Удалено всё." };
+for (const b of document.querySelectorAll("button[data-clear]")) {
+  b.addEventListener("click", () => {
+    const what = b.dataset.clear;
+    if (CLEAR_ASK[what] && !confirm(CLEAR_ASK[what])) return;
+    $("cleared").textContent = "Удаляю…";
+    post({ type: "siteClear", what });
+  });
+}
+$("perms").addEventListener("click", () => post({ type: "sitePerms" }));
+$("journalOpen").addEventListener("click", e => post({ type: "siteJournal", newTab: e.ctrlKey }));
+$("journalOpen").addEventListener("mousedown", e => { if (e.button === 1) e.preventDefault(); });
+$("journalOpen").addEventListener("auxclick", e => { if (e.button === 1) { e.preventDefault(); post({ type: "siteJournal", newTab: true }); } });
+$("netOpen").addEventListener("click", e => post({ type: "netOpen", newTab: e.ctrlKey }));
+
+function setOff(item, off) {
+  item.classList.toggle("off", off);
+  const box = item.querySelector("input");
+  if (box) box.disabled = off;
+}
+
+function show() {
+  if (!project) return;
+  const p = project, s = p.Site || {}, own = !!p.OwnProfile;
+  document.title = "Настройка профиля: " + p.Name;
+  $("name").textContent = p.Name;
+  $("site").textContent = [p.Url].concat((p.Links || []).map(l => l.Url)).join("  ·  ");
+  for (const box of document.querySelectorAll("input[data-key]")) {
+    const k = box.dataset.key;
+    box.checked = k === "ownProfile" ? own : k === "keepData" ? p.KeepData !== false : !!s[k[0].toUpperCase() + k.slice(1)];
+  }
+  $("scripts").checked = !s.NoScripts;
+  for (const sel of document.querySelectorAll("select[data-key]")) {
+    const k = sel.dataset.key, v = s[k[0].toUpperCase() + k.slice(1)];
+    sel.value = k === "zoom" ? String(v || 0) : v || "";
+  }
+  $("noCacheNote").textContent = own
+    ? "Страницы проекта всегда загружаются с сервера, а кэш его профиля удаляется, когда закрыта последняя вкладка проекта и при выходе."
+    : "Страницы проекта всегда загружаются с сервера, мимо кэша. Удалять сам кэш при закрытии можно только в отдельном профиле.";
+  $("keepNote").textContent = own
+    ? "Когда при выходе удаляются cookies и кэш (переключатель на странице «Сеть»), профиль проекта остаётся целым."
+    : "Когда при выходе удаляются cookies и кэш (переключатель на странице «Сеть»), cookies сайтов проекта остаются. Кэш без отдельного профиля удаляется всё равно: движок не делит его по сайтам.";
+  $("clearNote").textContent = own
+    ? "Удаляется в профиле проекта."
+    : "Удаляется у сайтов проекта. Кэш браузера движок по сайтам не делит: кнопка «Кэш» очищает его у всего общего профиля.";
+  $("journalFile").textContent = "logs\\network-" + p.Id + ".log";
+  showNet();
+}
+
+function showNet() {
+  if (!net || !project) return;
+  const st = net.settings || {};
+  const word = (v, a, b) => v ? a : b;
+  $("trackingDefault").textContent = "Как в браузере (" + word(st.strictTracking, "строгая", "обычная") + ")";
+  const theme = { dark: "тёмная", light: "светлая", auto: "как в Windows" }[st.theme] || "";
+  $("themeDefault").textContent = "Как в браузере (" + theme + ")";
+  $("autofillDefault").textContent = "Как в браузере (" + word(net.autofill, "включено", "выключено") + ")";
+  $("reloadDefault").textContent = "Как в браузере (" + word(net.autoReload, "да", "нет") + ")";
+  const device = $("device");
+  if (!device.options.length && net.devices) {
+    const none = document.createElement("option");
+    none.value = "";
+    none.textContent = "Обычный экран";
+    device.append(none);
+    for (const d of net.devices) {
+      const o = document.createElement("option");
+      o.value = d.key;
+      o.textContent = d.name;
+      device.append(o);
+    }
+    show();
+  }
+  const adOff = !st.adBlock;
+  setOff($("adBlockItem"), adOff);
+  $("adBlockNote").textContent = adOff
+    ? "Блокировка рекламы выключена во всём браузере (страница «Для разработчика»)."
+    : "uBlock Origin Lite не трогает сайты проекта, как пункт «Не блокировать (uBlock)» в меню «Инструменты».";
+  $("localNote").textContent = net.localOnly
+    ? "Сейчас включён общий режим «только localhost»: он действует на все вкладки, и этот проект тоже."
+    : "Страницы проекта ходят только на этот компьютер, в локальную сеть и на разрешённые сайты (список общий, на странице «Сеть»). Без перезапуска движка. В отличие от общего режима нет шлюза: запросы воркеров по веб-сокетам и WebRTC не перехватываются.";
+}
+
+window.chrome.webview.addEventListener("message", e => {
+  const m = e.data;
+  if (!m) return;
+  if (m.type === "projects") {
+    project = (m.projects || []).find(p => p.Id === id) || null;
+    $("page").hidden = !project;
+    $("missing").hidden = !!project;
+    show();
+  } else if (m.type === "net") {
+    net = m;
+    showNet();
+  } else if (m.type === "siteCleared") {
+    $("cleared").textContent = m.error ? "Не удалось: " + m.error : CLEAR_DONE[m.what] || "";
+  }
+});
+post({ type: "ready" });
+</script>
+</body>
+</html>

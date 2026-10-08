@@ -74,6 +74,8 @@ sealed class Settings
     public bool ClearOnExit;
     /// <summary>A page on screen loads again when a file in its project's folder (or its own folder, for a file) changes.</summary>
     public bool AutoReload;
+    /// <summary>Form autofill and offers to save passwords in the shared profile (a project may set its own); off by default.</summary>
+    public bool Autofill;
     /// <summary>Tracking prevention at its strict level (Edge's «Строгая»); else balanced, the engine's default.</summary>
     public bool StrictTracking;
     /// <summary>Ads and trackers blocked by uBlock Origin Lite (AdBlock.cs); off by default: switched on, it downloads itself.</summary>
@@ -93,7 +95,7 @@ sealed class Settings
 
     static readonly string[] Keys =
     {
-        "searchurl", "searchcountry", "theme", "language", "gpu", "extrabrowserargs", "localhosts", "otherbrowser", "externaltomain", "localonly", "netjournal", "allowhosts", "ignorecors", "clearonexit", "autoreload", "stricttracking", "adblock", "tabmute", "trustlocalcerts", "freezetabs", "suspendafter", "unloadafter", "disabled", "defaults",
+        "searchurl", "searchcountry", "theme", "language", "gpu", "extrabrowserargs", "localhosts", "otherbrowser", "externaltomain", "localonly", "netjournal", "allowhosts", "ignorecors", "clearonexit", "autoreload", "autofill", "stricttracking", "adblock", "tabmute", "trustlocalcerts", "freezetabs", "suspendafter", "unloadafter", "disabled", "defaults",
     };
 
     public static Settings Load()
@@ -138,6 +140,7 @@ sealed class Settings
                 case "ignorecors": s.IgnoreCors = IsTrue(value); break;
                 case "clearonexit": s.ClearOnExit = IsTrue(value); break;
                 case "autoreload": s.AutoReload = IsTrue(value); break;
+                case "autofill": s.Autofill = IsTrue(value); break;
                 case "stricttracking": s.StrictTracking = IsTrue(value); break;
                 case "adblock": s.AdBlock = IsTrue(value); break;
                 case "tabmute": s.TabMute = IsTrue(value); break;
@@ -206,6 +209,13 @@ sealed class Settings
     public void SaveAutoReload(bool on)
     {
         AutoReload = on;
+        Save();
+    }
+
+    /// <summary>Remembers the switch of form autofill and saving passwords (/net).</summary>
+    public void SaveAutofill(bool on)
+    {
+        Autofill = on;
         Save();
     }
 
@@ -302,6 +312,8 @@ sealed class Settings
         "ClearOnExit = " + Bool(ClearOnExit),
         L.T("# Обновлять страницу на экране, когда меняется файл в папке её проекта (или в папке открытого файла)"),
         "AutoReload = " + Bool(AutoReload),
+        L.T("# Автозаполнение форм и предложение сохранить пароль (у проекта может быть своё, в «Настройке профиля»)"),
+        "Autofill = " + Bool(Autofill),
         L.T("# Строгая защита от трекеров: блокируется больше счётчиков и рекламы, изредка ломается вход через другой сайт"),
         "StrictTracking = " + Bool(StrictTracking),
         L.T("# Блокировать рекламу и трекеры uBlock Origin Lite; при первом включении скачивается с GitHub"),

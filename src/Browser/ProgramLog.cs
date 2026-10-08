@@ -121,6 +121,8 @@ static class ProgramLog
         "</style></head><body>" +
         "<header><h1>" + H(p.Name) + "</h1><span id=state></span>" +
         L.T("<button id=stop hidden>Остановить программу</button><button id=halt hidden>Прервать команду</button><button id=clear>Очистить экран</button><button id=term title='PowerShell в папке команд: работают claude, vim и другие программы с экраном. Ctrl+клик или колёсико — в новой вкладке'>Терминал</button>") +
+        // The project's own settings for its pages; PowerShell's console has no project
+        (IsShell(p) ? "" : L.T("<button id=profile title='Свои настройки страниц проекта: кэш, защита, скрипты, масштаб, только localhost, журнал запросов. Ctrl+клик или колёсико — в новой вкладке'>Настройка профиля</button>")) +
         "<span id=path title='" + H(LogPath(p.Id)) + "'>" + H(LogPath(p.Id)) + "</span></header>" +
         "<pre id=out></pre>" +
         "<form id=send><button type=button id=mode></button><input id=prompt autocomplete=off spellcheck=false><span id=gt>&gt;</span>" +
@@ -170,6 +172,9 @@ static class ProgramLog
         "$('term').addEventListener('click',e=>post({type:'terminal',id,newTab:e.ctrlKey}));" +
         "$('term').addEventListener('mousedown',e=>{if(e.button===1)e.preventDefault();});" +
         "$('term').addEventListener('auxclick',e=>{if(e.button===1){e.preventDefault();post({type:'terminal',id,newTab:true});}});" +
+        "const prof=$('profile');if(prof){prof.addEventListener('click',e=>post({type:'profileOpen',id,newTab:e.ctrlKey}));" +
+        "prof.addEventListener('mousedown',e=>{if(e.button===1)e.preventDefault();});" +
+        "prof.addEventListener('auxclick',e=>{if(e.button===1){e.preventDefault();post({type:'profileOpen',id,newTab:true});}});}" +
         // The browser tells the start pages when a program starts or stops: this page listens too
         "window.chrome.webview.addEventListener('message',e=>{if(e.data&&e.data.type==='projects')poll();});" +
         "modeShow();poll();setInterval(()=>{if(!document.hidden)poll();},700);line.focus();" +

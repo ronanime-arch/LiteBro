@@ -47,6 +47,11 @@ input[type=number] { width: 70px; font: 13px var(--text); padding: 3px 6px; bord
 .item.off .icon { opacity: .45; }
 #timing.off { opacity: .5; }
 button:disabled { opacity: .45; cursor: default; background: transparent; }
+dialog { max-width: 460px; padding: 18px 20px 14px; border: 1px solid var(--line); border-radius: 8px; background: var(--card); color: var(--fg); }
+dialog::backdrop { background: rgba(0, 0, 0, .45); }
+dialog p { margin: 0 0 16px; }
+dialog div { display: flex; justify-content: flex-end; gap: 8px; }
+#askYes { background: var(--accent); border-color: var(--accent); color: #fff; }
 </style>
 </head>
 <body>
@@ -104,6 +109,11 @@ button:disabled { opacity: .45; cursor: default; background: transparent; }
     и строки settings.ini. Плитки проектов, заглушки, cookies и входы на сайты не трогаются. Перед сбросом браузер спросит подтверждение.</p>
   <div class="row"><button id="defaults">Вернуть настройки по умолчанию…</button></div>
 </main>
+<!-- In-page question: a native confirm() from a select's change hangs the window in WebView2 -->
+<dialog id="ask">
+  <p id="askText"></p>
+  <div><button id="askNo">Отмена</button><button id="askYes">Продолжить</button></div>
+</dialog>
 <script>
 "use strict";
 const $ = id => document.getElementById(id);
@@ -211,9 +221,23 @@ $("langTitle").textContent = "Language \u00b7 \u042f\u0437\u044b\u043a";
 $("langRu").textContent = "\u0420\u0443\u0441\u0441\u043a\u0438\u0439";
 $("langAuto").textContent = "Auto (Windows) \u00b7 \u041a\u0430\u043a \u0432 Windows";
 let language = "auto";
-$("lang").addEventListener("change", () => {
+/** Resolves true on Continue; Esc and Cancel resolve false. */
+function ask(text) {
+  const d = $("ask");
+  $("askText").textContent = text;
+  d.returnValue = "";
+  d.showModal();
+  $("askYes").focus();
+  return new Promise(done => {
+    $("askYes").onclick = () => d.close("yes");
+    $("askNo").onclick = () => d.close("no");
+    d.onclose = () => done(d.returnValue === "yes");
+  });
+}
+
+$("lang").addEventListener("change", async () => {
   const value = $("lang").value;
-  if (!confirm("Сменить язык? Движок браузера перезапустится: все вкладки перезагрузятся, открытые терминалы закроются. Программы проектов продолжат работать.")) {
+  if (!await ask("Сменить язык? Движок браузера перезапустится: все вкладки перезагрузятся, открытые терминалы закроются. Программы проектов продолжат работать.")) {
     $("lang").value = language;
     return;
   }

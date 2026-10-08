@@ -42,6 +42,11 @@ select { font: 13px var(--text); padding: 4px 8px; border: 1px solid var(--line)
 .buttons { display: flex; flex-wrap: wrap; gap: 8px; }
 #cleared { min-height: 18px; }
 #missing { margin-top: 30px; }
+dialog { max-width: 460px; padding: 18px 20px 14px; border: 1px solid var(--line); border-radius: 8px; background: var(--card); color: var(--fg); }
+dialog::backdrop { background: rgba(0, 0, 0, .45); }
+dialog p { margin: 0 0 16px; }
+dialog .buttons { justify-content: flex-end; }
+#askYes { background: var(--accent); border-color: var(--accent); color: #fff; }
 </style>
 </head>
 <body>
@@ -163,6 +168,11 @@ select { font: 13px var(--text); padding: 4px 8px; border: 1px solid var(--line)
   </section>
   </div>
 </main>
+<!-- In-page question: a native confirm() from a select's change hung the window in WebView2 -->
+<dialog id="ask">
+  <p id="askText"></p>
+  <div class="buttons"><button id="askNo">Отмена</button><button id="askYes">Продолжить</button></div>
+</dialog>
 <script>
 "use strict";
 const $ = id => document.getElementById(id);
@@ -183,14 +193,28 @@ for (const z of [0, 50, 67, 75, 80, 90, 100, 110, 125, 150, 175, 200]) {
 
 function send(key, value) { post({ type: "site", key, value }); }
 
+/** Resolves true on Continue; Esc and Cancel resolve false. */
+function ask(text) {
+  const d = $("ask");
+  $("askText").textContent = text;
+  d.returnValue = "";
+  d.showModal();
+  $("askYes").focus();
+  return new Promise(done => {
+    $("askYes").onclick = () => d.close("yes");
+    $("askNo").onclick = () => d.close("no");
+    d.onclose = () => done(d.returnValue === "yes");
+  });
+}
+
 for (const box of document.querySelectorAll("input[data-key]")) {
-  box.addEventListener("change", () => {
+  box.addEventListener("change", async () => {
     const key = box.dataset.key;
     if (key === "ownProfile") {
       const q = box.checked
         ? "Включить отдельный профиль? На сайт проекта придётся войти заново."
         : "Выключить отдельный профиль? На сайт проекта придётся войти заново, а защита от трекеров, тема страниц и автозаполнение проекта станут как в браузере.";
-      if (!confirm(q)) { box.checked = !box.checked; return; }
+      if (!await ask(q)) { box.checked = !box.checked; return; }
     }
     send(key, box.checked);
   });
@@ -198,11 +222,11 @@ for (const box of document.querySelectorAll("input[data-key]")) {
 $("scripts").addEventListener("change", e => send("noScripts", !e.target.checked));
 
 for (const sel of document.querySelectorAll("select[data-key]")) {
-  sel.addEventListener("change", () => {
+  sel.addEventListener("change", async () => {
     const key = sel.dataset.key;
     const value = key === "zoom" ? parseInt(sel.value, 10) : sel.value;
     if (WHOLE.includes(key) && value && project && !project.OwnProfile
-        && !confirm("Это настройка всего профиля. " + RELOGIN + " Продолжить?")) {
+        && !await ask("Это настройка всего профиля. " + RELOGIN + " Продолжить?")) {
       show();
       return;
     }
@@ -217,9 +241,9 @@ const CLEAR_ASK = {
 };
 const CLEAR_DONE = { cache: "Кэш удалён.", cookies: "Cookies удалены.", storage: "Хранилище удалено.", all: "Удалено всё." };
 for (const b of document.querySelectorAll("button[data-clear]")) {
-  b.addEventListener("click", () => {
+  b.addEventListener("click", async () => {
     const what = b.dataset.clear;
-    if (CLEAR_ASK[what] && !confirm(CLEAR_ASK[what])) return;
+    if (CLEAR_ASK[what] && !await ask(CLEAR_ASK[what])) return;
     $("cleared").textContent = "Удаляю…";
     post({ type: "siteClear", what });
   });
@@ -294,7 +318,7 @@ function showNet() {
     : "uBlock Origin Lite не трогает сайты проекта, как пункт «Не блокировать (uBlock)» в меню «Инструменты».";
   $("localNote").textContent = net.localOnly
     ? "Сейчас включён общий режим «только localhost»: он действует на все вкладки, и этот проект тоже."
-    : "Страницы проекта ходят только на этот компьютер, в локальную сеть и на разрешённые сайты (список общий, на странице «Сеть»). Без перезапуска движка. В отличие от общего режима нет шлюза: запросы воркеров по веб-сокетам и WebRTC не перехватываются.";
+    : "Страницы проекта ходят только на этот компьютер, в локальную сеть и на разрешённые сайты (список общий, на странице «Сеть»). Без перезапуска движка. В отличие от общего режима нет шлюза: запросы воркеров по веб-сокетам не перехватываются, а WebRTC на сайтах проекта выключен.";
 }
 
 window.chrome.webview.addEventListener("message", e => {

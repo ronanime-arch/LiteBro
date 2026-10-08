@@ -148,6 +148,7 @@ sealed class BrowserForm : Form
         strip.Menu += ShowTabMenu;
         strip.StripMenu += ShowStripMenu;
         strip.Mute += ToggleMute;
+        strip.Moved += MoveTab;
         strip.MuteEnabled = App.Current.S.TabMute;
         host.Controls.Add(divider);
         host.Controls.Add(stripeLeft);
@@ -1366,6 +1367,20 @@ sealed class BrowserForm : Form
         }
         SetTabs();
         SavePinned();
+    }
+
+    /// <summary>A tab dragged on the strip: to its new place among the pinned tabs or among the rest.</summary>
+    void MoveTab(Tab tab, int to)
+    {
+        int from = tabs.IndexOf(tab), pinned = PinnedCount;
+        if (from < 0 || to < 0 || to >= tabs.Count || to == from) return;
+        if (tab.Pinned ? to >= pinned : to < pinned) return;
+        tabs.RemoveAt(from);
+        tabs.Insert(to, tab);
+        // Put by hand: new tabs from its opener no longer line up after it
+        tab.OpenedFrom = null;
+        SetTabs();
+        if (tab.Pinned) SavePinned();
     }
 
     /// <summary>Writes the pinned tabs of every window to pinned.txt, in the strip's order.</summary>
@@ -2751,7 +2766,7 @@ sealed class BrowserForm : Form
                 tab.NetScript = null;
                 core.RemoveScriptToExecuteOnDocumentCreated(old);
             }
-            var script = NetGuard.PageScript(local, watch);
+            var script = NetGuard.PageScript(local, watch, rtc: local && !NetGuard.LocalOnly);
             // About to open another page: the one shown keeps its rules
             if (url == null) _ = core.ExecuteScriptAsync(script);
             // Two quick changes overlap here: only the latest one's script stays

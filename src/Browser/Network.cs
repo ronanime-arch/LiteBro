@@ -106,7 +106,8 @@ static class NetGuard
     /// </summary>
     /// <param name="block">«Только localhost» on the tab: the browser's or its project's.</param>
     /// <param name="trace">Its requests are journaled.</param>
-    public static string PageScript(bool block, bool trace)
+    /// <param name="rtc">Refuse WebRTC: a project's own mode, which has no gateway to stop its UDP.</param>
+    public static string PageScript(bool block, bool trace, bool rtc = false)
     {
         var config = ProjectStore.Json.Serialize(new Dictionary<string, object>
         {
@@ -114,6 +115,7 @@ static class NetGuard
             ["allow"] = Patterns(AllowText),
             ["block"] = block,
             ["trace"] = trace,
+            ["rtc"] = rtc,
         });
         return L.Text("netpage.js").Replace("__CONFIG__", config);
     }

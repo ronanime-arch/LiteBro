@@ -121,6 +121,13 @@ sealed class TabStrip : Control
     /// <summary>A right click on the strip beside the tabs: the menu of the window's tabs.</summary>
     public event Action<Point>? StripMenu;
     public event Action? NewTab;
+    /// <summary>A tab dragged to another place among the tabs of its kind (pinned or not): the index it goes to.</summary>
+    public event Action<Tab, int>? Moved;
+
+    // Dragging a tab: the one held, where the button went down, and whether it has moved far enough to drag
+    Tab? held;
+    Point heldAt;
+    bool dragging;
 
     public TabStrip()
     {
@@ -400,6 +407,7 @@ sealed class TabStrip : Control
     protected override void OnMouseMove(MouseEventArgs e)
     {
         base.OnMouseMove(e);
+        if (held != null && (e.Button & MouseButtons.Left) != 0 && Drag(e.Location)) return;
         int h = Hit(e.Location, out bool close, out bool sound);
         if (h == hover && close == overClose && sound == overSound) return;
         hover = h;
@@ -414,6 +422,62 @@ sealed class TabStrip : Control
         if (text == tipText) return;
         tipText = text;
         tip.SetToolTip(this, text);
+    }
+
+    /// <summary>Moves the held tab under the mouse once it passes the middle of a neighbour; true while dragging.</summary>
+    bool Drag(Point p)
+    {
+        if (!dragging)
+        {
+            var size = SystemInformation.DragSize;
+            if (Math.Abs(p.X - heldAt.X) < size.Width && Math.Abs(p.Y - heldAt.Y) < size.Height) return false;
+            dragging = true;
+            Cursor = Cursors.SizeWE;
+            tip.SetToolTip(this, tipText = "");
+        }
+        int from = IndexOf(held!);
+        if (from < 0) return true;
+        // Pinned tabs move among the pinned, the rest among the rest
+        int pinned = PinnedCount;
+        int first = held!.Pinned ? 0 : pinned, last = held.Pinned ? pinned - 1 : tabs.Count - 1;
+        int to = from;
+        while (to > first && p.X < Middle(to - 1)) to--;
+        while (to < last && p.X > Middle(to + 1)) to++;
+        if (to != from)
+        {
+            hover = to;
+            overClose = overSound = false;
+            Moved?.Invoke(held, to);
+        }
+        return true;
+    }
+
+    int Middle(int i)
+    {
+        var r = TabRect(i);
+        return r.Left + r.Width / 2;
+    }
+
+    int IndexOf(Tab tab)
+    {
+        for (int i = 0; i < tabs.Count; i++) if (tabs[i] == tab) return i;
+        return -1;
+    }
+
+    /// <summary>The end of a drag; true if a tab was dragged (then the button going up does nothing else).</summary>
+    bool EndDrag()
+    {
+        bool was = dragging;
+        held = null;
+        dragging = false;
+        if (was) Cursor = Cursors.Default;
+        return was;
+    }
+
+    protected override void OnMouseCaptureChanged(EventArgs e)
+    {
+        base.OnMouseCaptureChanged(e);
+        if (!Capture) EndDrag();
     }
 
     static string Tip(Tab tab)
@@ -439,12 +503,20 @@ sealed class TabStrip : Control
         int h = Hit(e.Location, out bool close, out bool sound);
         if (h == tabs.Count) NewTab?.Invoke();
         else if (h >= 0 && sound) Mute?.Invoke(tabs[h]);
-        else if (h >= 0 && !close) Picked?.Invoke(tabs[h]);
+        else if (h >= 0 && !close)
+        {
+            var tab = tabs[h];
+            held = tab;
+            heldAt = e.Location;
+            dragging = false;
+            Picked?.Invoke(tab);
+        }
     }
 
     protected override void OnMouseUp(MouseEventArgs e)
     {
         base.OnMouseUp(e);
+        if (e.Button == MouseButtons.Left && EndDrag()) return;
         int h = Hit(e.Location, out bool close);
         if (h < 0 || h >= tabs.Count)
         {

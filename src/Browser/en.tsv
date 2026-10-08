@@ -860,3 +860,4 @@ uBlock Origin Lite не трогает сайты проекта, как пун�
 Сейчас включён общий режим «только localhost»: он действует на все вкладки, и этот проект тоже.	The browser localhost-only mode is on now: it applies to every tab, this project too.
 Страницы проекта ходят только на этот компьютер, в локальную сеть и на разрешённые сайты (список общий, на странице «Сеть»). Без перезапуска движка. В отличие от общего режима нет шлюза: запросы воркеров по веб-сокетам и WebRTC не перехватываются.	The project pages reach only this computer, the local network and the allowed sites (a shared list, on the Network page). No engine restart. Unlike the browser mode there is no gateway: web socket requests of workers and WebRTC are not caught.
 Не удалось:	Failed:
+WebRTC заблокирован режимом «только localhost» проекта	WebRTC is blocked by the project localhost-only mode

@@ -72,6 +72,10 @@
 - Отвергнуто ради памяти: `--in-process-gpu` (без песочницы GPU), `--disable-gpu`, V8 lite mode (тратят CPU).
 - dsh (DeepSeek harness) запускать только с `--no-open`, иначе он сам открывает Chrome.
 
+## iOS (`ios/`, задача пользователя 2026-11-24)
+
+Отдельное приложение для iOS 16, ставится через TrollStore (решение пользователя: не App Store). SwiftUI + `WKWebView` (другого движка на iOS нет), проект — XcodeGen (`ios/project.yml`, `.xcodeproj` не хранится). Собирает только macOS: `.github/workflows/ios.yml` — `xcodebuild` без подписи, `ldid -S TrollStore.entitlements`, `LiteBro.tipa`; у PR — файл запуска, у push в main — выпуск-пререлиз `ios` (файл заменяется). `release.yml` изменения только в `ios/` не выпускает. Тексты — `L("…")` по-русски, английский — `ios/LiteBro/Resources/en.lproj/Localizable.strings` (не `en.tsv`). Что есть и чего нет — `ios/README.md`. Загрузчик: скрипт `MediaSniffer` во всех фреймах + MIME ответов → файлы через `URLSession` с cookies страницы, HLS через `AVAssetDownloadURLSession` и экспорт passthrough в mp4, YouTube — `youtubei/v1/player` клиентом IOS (константы в `YouTube.swift`). Блокировщик рекламы и телеметрии — свой список `WKContentRuleList` (`AdBlock.swift`, по умолчанию включён) и перемотка рекламы YouTube; «только localhost» — свой список (`LocalNet.swift`), списки компилируются отдельно, потому что `ignore-previous-rules` действует внутри списка. Не проверено на устройстве: всё (облако не собирает iOS, проверяет только сборка в Actions).
+
 ## Не проверено в 1.9.5
 
 Ctrl+клик по плитке, защита вкладок со звуком и с проектом, реальные сроки заморозки, несколько окон.

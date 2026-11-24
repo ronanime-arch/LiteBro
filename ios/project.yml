@@ -1,0 +1,48 @@
+# XcodeGen spec: `xcodegen generate` makes LiteBro.xcodeproj (not committed).
+name: LiteBro
+options:
+  bundleIdPrefix: io.github.ronanime-arch
+  deploymentTarget:
+    iOS: "16.0"
+  developmentLanguage: en
+settings:
+  base:
+    SWIFT_VERSION: "5.0"
+    MARKETING_VERSION: "1.9.0"
+    CURRENT_PROJECT_VERSION: "1"
+targets:
+  LiteBro:
+    type: application
+    platform: iOS
+    sources:
+      - path: LiteBro
+    info:
+      path: LiteBro/Info.plist
+      properties:
+        CFBundleDisplayName: LiteBro
+        CFBundleDevelopmentRegion: en
+        CFBundleLocalizations: [en, ru]
+        UILaunchScreen: {}
+        UIFileSharingEnabled: true
+        LSSupportsOpeningDocumentsInPlace: true
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationPortrait
+          - UIInterfaceOrientationLandscapeLeft
+          - UIInterfaceOrientationLandscapeRight
+        UISupportedInterfaceOrientations~ipad:
+          - UIInterfaceOrientationPortrait
+          - UIInterfaceOrientationPortraitUpsideDown
+          - UIInterfaceOrientationLandscapeLeft
+          - UIInterfaceOrientationLandscapeRight
+        NSAppTransportSecurity:
+          NSAllowsArbitraryLoads: true
+        NSLocalNetworkUsageDescription: LiteBro opens sites on your local network.
+        NSPhotoLibraryAddUsageDescription: LiteBro saves downloaded videos to Photos.
+        UIBackgroundModes: [audio]
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: io.github.ronanime-arch.LiteBro
+        TARGETED_DEVICE_FAMILY: "1,2"
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        GENERATE_INFOPLIST_FILE: NO
+        CODE_SIGN_STYLE: Automatic

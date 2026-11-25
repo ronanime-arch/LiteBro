@@ -29,16 +29,28 @@ struct MediaSheet: View {
                     }
                     .task(id: id) { ask(id) }
                 }
+                let visible = tab.media.filter { $0.variantOf == nil }
+                let playing = visible.filter(\.playing)
+                let rest = visible.filter { !$0.playing }.sorted { $0.weight > $1.weight }
+                if !playing.isEmpty {
+                    Section(L("Сейчас играет")) { ForEach(playing) { row($0) } }
+                }
                 Section {
-                    if tab.media.isEmpty {
+                    if visible.isEmpty {
                         Text(L("Видео на странице не найдено. Запустите его в плеере и откройте это окно снова."))
                             .foregroundStyle(.secondary)
                     }
-                    ForEach(Array(tab.media.reversed())) { row($0) }
+                    ForEach(rest.filter { !$0.isShort }) { row($0) }
+                    let short = rest.filter(\.isShort)
+                    if !short.isEmpty {
+                        DisclosureGroup(L("Короткие, скорее всего реклама") + " (\(short.count))") {
+                            ForEach(short) { row($0) }
+                        }
+                    }
                 } header: {
-                    Text(L("На странице"))
+                    Text(playing.isEmpty ? L("На странице") : L("Ещё на странице"))
                 } footer: {
-                    Text(L("Находятся файлы (mp4, webm, mp3…) и потоки HLS (m3u8): HLS сохраняется в mp4 в лучшем качестве. Видео с защитой DRM (Netflix, Apple TV и т. п.) скачать нельзя."))
+                    Text(L("Сверху — то, что играет, дальше — самое длинное. Качество HLS выбирается лучшее. Видео с защитой DRM (Netflix, Apple TV и т. п.) скачать нельзя."))
                 }
             }
             .navigationTitle(L("Скачать видео"))
@@ -60,7 +72,7 @@ struct MediaSheet: View {
                 .foregroundStyle(.secondary).frame(width: 26)
             VStack(alignment: .leading, spacing: 2) {
                 Text(verbatim: m.note.isEmpty ? m.label : m.note).lineLimit(2)
-                Text(verbatim: m.url.host ?? "").font(.caption).foregroundStyle(.secondary)
+                Text(verbatim: m.details).font(.caption).foregroundStyle(.secondary)
             }
             Spacer()
             if started.contains(m.url) {

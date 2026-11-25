@@ -11,12 +11,20 @@ enum Prefs {
     static let searchKey = "search"          // google, duckduckgo
     static let adBlockKey = "adBlock"        // on by default: built in, costs almost nothing
     static let adBlockOffKey = "adBlockOff"  // sites without blocking, one per line
+    static let protectKey = "protect"        // malicious and phishing sites, on by default
 
     private static var d: UserDefaults { .standard }
 
     static var localOnly: Bool { d.bool(forKey: localOnlyKey) }
     static var unloadAfter: Int { d.object(forKey: unloadKey) as? Int ?? 5 }
     static var adBlock: Bool { d.object(forKey: adBlockKey) as? Bool ?? true }
+    static var protect: Bool { d.object(forKey: protectKey) as? Bool ?? true }
+
+    /// Sites where LiteBro never offers to save a password
+    static var vaultNever: [String] {
+        get { d.stringArray(forKey: "vaultNever") ?? [] }
+        set { d.set(newValue, forKey: "vaultNever") }
+    }
 
     static var adBlockOff: [String] {
         get { (d.string(forKey: adBlockOffKey) ?? "").split(separator: "\n").map(String.init) }

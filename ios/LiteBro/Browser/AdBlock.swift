@@ -1,3 +1,4 @@
+import CryptoKit
 import Foundation
 import WebKit
 
@@ -52,39 +53,48 @@ enum AdBlock {
         "ytm-promoted-video-renderer", "ytd-player-legacy-desktop-watch-ads-renderer",
     ]
 
-    static func rules(except: [String]) -> String {
+    /// The built-in rules (a JSON array without brackets): they work at once, the full lists come later
+    static func builtinRules() -> String {
         var r: [[String: Any]] = []
         func block(_ f: String) { r.append(["trigger": ["url-filter": f], "action": ["type": "block"]]) }
         for d in ads + telemetry {
-            let e = NSRegularExpression.escapedPattern(for: d)
-            block("^[a-z]+://" + e + "[:/]")
-            block("^[a-z]+://[^/]*\\." + e + "[:/]")
+            block("^[a-z]+://([^/:]*\\.)?" + NSRegularExpression.escapedPattern(for: d) + "[:/]")
         }
-        for p in paths {
-            block("^[a-z]+://" + p)
-            block("^[a-z]+://[^/]*\\." + p)
-        }
+        for p in paths { block("^[a-z]+://([^/:]*\\.)?" + p) }
         r.append(["trigger": ["url-filter": ".*"],
                   "action": ["type": "css-display-none", "selector": hide.joined(separator: ", ")]])
         r.append(["trigger": ["url-filter": ".*", "if-domain": ["*youtube.com"]],
                   "action": ["type": "css-display-none", "selector": hideYouTube.joined(separator: ", ")]])
-        // "Do not block on this site": rules of this list stop for pages of these sites
-        if !except.isEmpty {
-            r.append(["trigger": ["url-filter": ".*", "if-domain": except.map { "*" + $0 }],
-                      "action": ["type": "ignore-previous-rules"]])
-        }
-        let data = try! JSONSerialization.data(withJSONObject: r)
-        return String(decoding: data, as: UTF8.self)
+        return FilterLists.json(r)
     }
 
-    static func compile(_ done: @escaping (WKContentRuleList?) -> Void) {
-        let json = rules(except: Prefs.adBlockOff)
-        WKContentRuleListStore.default().compileContentRuleList(forIdentifier: "adBlock-\(json.hashValue)",
-                                                                encodedContentRuleList: json) { list, error in
-            if let error { NSLog("LiteBro: ad rules: \(error)") }
-            done(list)
+    /// "Do not block on this site": the rules of a list stop for pages of these sites
+    static func siteExceptions(_ sites: [String]) -> String {
+        guard !sites.isEmpty else { return "" }
+        return FilterLists.json([["trigger": ["url-filter": ".*", "if-domain": sites.map { "*" + $0 }],
+                                  "action": ["type": "ignore-previous-rules"]]])
+    }
+
+    /// All ad lists: the built-in one and the parts of the full lists. An exception works only inside
+    /// its own list, so every list gets the exceptions at its end.
+    static func compile(_ done: @escaping ([WKContentRuleList]) -> Void) {
+        let sites = siteExceptions(Prefs.adBlockOff)
+        DispatchQueue.global(qos: .utility).async {
+            var lists: [(id: String, json: () -> String)] = []
+            let builtin = builtinRules()
+            lists.append((RuleStore.id("ads-builtin", builtin + sites), { "[" + join(builtin, sites) + "]" }))
+            if let full = FilterLists.built() {
+                let stamp = FilterLists.updated.map { String(Int($0.timeIntervalSince1970)) } ?? "0"
+                for (i, part) in full.parts.enumerated() {
+                    lists.append((RuleStore.id("ads-\(i)", stamp + "\(full.count)" + sites),
+                                  { "[" + join(part, full.exceptions, sites) + "]" }))
+                }
+            }
+            RuleStore.load(lists, prefix: "ads-") { done($0) }
         }
     }
+
+    private static func join(_ parts: String...) -> String { parts.filter { !$0.isEmpty }.joined(separator: ",") }
 
     /// YouTube serves its video ads from its own servers: the player is fast-forwarded through them
     /// and the skip button pressed. Once a second and only while the page is visible.
@@ -120,5 +130,52 @@ enum AdBlock {
         guard let s = site(of: url) else { return false }
         let h = url?.host?.lowercased() ?? s
         return Prefs.adBlockOff.contains { h == $0 || h.hasSuffix("." + $0) }
+    }
+}
+
+/// Compiled lists are kept by WebKit between launches: a list is compiled only when its id is new
+enum RuleStore {
+    static func id(_ name: String, _ content: String) -> String {
+        let d = SHA256.hash(data: Data(content.utf8))
+        return name + "-" + d.prefix(8).map { String(format: "%02x", $0) }.joined()
+    }
+
+    /// Looks the lists up or compiles them, in order, then forgets old lists with the same prefix
+    static func load(_ lists: [(id: String, json: () -> String)], prefix: String,
+                     done: @escaping ([WKContentRuleList]) -> Void) {
+        DispatchQueue.main.async {
+            guard let store = WKContentRuleListStore.default() else { return done([]) }
+            var out: [WKContentRuleList] = []
+            func next(_ i: Int) {
+                guard i < lists.count else {
+                    let keep = Set(lists.map(\.id))
+                    store.getAvailableContentRuleListIdentifiers { ids in
+                        for id in ids ?? [] where id.hasPrefix(prefix) && !keep.contains(id) {
+                            store.removeContentRuleList(forIdentifier: id) { _ in }
+                        }
+                    }
+                    return done(out)
+                }
+                let item = lists[i]
+                store.lookUpContentRuleList(forIdentifier: item.id) { found, _ in
+                    if let found {
+                        out.append(found)
+                        return next(i + 1)
+                    }
+                    // Big lists take seconds: the text is made off the main thread
+                    DispatchQueue.global(qos: .utility).async {
+                        let json = item.json()
+                        DispatchQueue.main.async {
+                            store.compileContentRuleList(forIdentifier: item.id, encodedContentRuleList: json) { list, error in
+                                if let error { NSLog("LiteBro: rules \(item.id): \(error)") }
+                                if let list { out.append(list) }
+                                next(i + 1)
+                            }
+                        }
+                    }
+                }
+            }
+            next(0)
+        }
     }
 }

@@ -25,14 +25,48 @@ struct SettingsView: View {
                 }
 
                 Section {
+                    Button {
+                        if let u = URL(string: UIApplication.openSettingsURLString) { UIApplication.shared.open(u) }
+                    } label: {
+                        Label(L("Сделать браузером по умолчанию"), systemImage: "safari")
+                    }
+                } footer: {
+                    Text(L("Откроются настройки LiteBro: «Приложение браузера по умолчанию» → LiteBro. Тогда ссылки из других приложений открываются здесь."))
+                }
+
+                Section {
                     Toggle(L("Блокировать рекламу и телеметрию"), isOn: Binding(get: { browser.adBlock }, set: { browser.setAdBlock($0) }))
+                    Toggle(L("Защита от вредных сайтов"), isOn: Binding(get: { Prefs.protect }, set: { browser.setProtect($0) }))
                     if !Prefs.adBlockOff.isEmpty {
                         NavigationLink(L("Сайты без блокировки")) { AdBlockSites() }
                     }
+                    HStack {
+                        Text(L("Списки фильтров"))
+                        Spacer()
+                        if let st = browser.listsState {
+                            ProgressView().padding(.trailing, 4)
+                            Text(st).foregroundStyle(.secondary)
+                        } else if let d = FilterLists.updated {
+                            Text(d.formatted(date: .abbreviated, time: .shortened)).foregroundStyle(.secondary)
+                        } else {
+                            Text(L("встроенный список")).foregroundStyle(.secondary)
+                        }
+                    }
+                    Button(L("Обновить списки")) { browser.refreshLists(force: true) }
+                        .disabled(browser.listsState != nil)
                 } header: {
                     Text(L("Защита"))
                 } footer: {
-                    Text(L("Рекламные сети, счётчики, запись сеансов и отчёты об ошибках блокирует сам движок, почти без затрат памяти. Реклама в видео YouTube проматывается. Проверка адресов Safe Browsing выключена."))
+                    Text(L("Реклама и счётчики — списки EasyList, RU AdList и EasyPrivacy, их применяет сам движок, почти без затрат памяти; реклама в видео YouTube проматывается. Вредные сайты — списки uBlock Badware, URLhaus и Phishing Army и проверка Safe Browsing: такой сайт не откроется без вашего согласия. Списки обновляются раз в 4 дня."))
+                }
+
+                Section {
+                    NavigationLink { PasswordsView() } label: { Label(L("Пароли"), systemImage: "key") }
+                    NavigationLink { CardsView() } label: { Label(L("Способы оплаты"), systemImage: "creditcard") }
+                } header: {
+                    Text(L("Пароли и карты"))
+                } footer: {
+                    Text(L("Хранятся в связке ключей этого устройства, без iCloud, и подставляются только после Face ID или код-пароля. Кнопка «Пароли» над клавиатурой — это пароли iCloud, их тоже можно выбрать."))
                 }
 
                 Section {

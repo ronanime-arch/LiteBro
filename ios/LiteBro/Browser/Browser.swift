@@ -10,7 +10,11 @@ final class Browser: NSObject, ObservableObject {
     @Published private(set) var localOnly = Prefs.localOnly
     @Published private(set) var adBlock = Prefs.adBlock
 
-    private let content = WKUserContentController()
+    /// What the filter lists are doing now, for the settings
+    @Published var listsState: String?
+    private var listsBusy = false
+
+    let content = WKUserContentController()
     private var timer: Timer?
 
     var current: BrowserTab? { tabs.first { $0.id == currentID } ?? tabs.first }
@@ -18,10 +22,13 @@ final class Browser: NSObject, ObservableObject {
     override init() {
         super.init()
         content.add(WeakHandler(self), name: "litebroMedia")
+        content.add(WeakHandler(self), contentWorld: .defaultClient, name: "litebroVault")
         restoreSession()
         // The first page waits for the rules, so nothing leaks out in the localhost-only mode
+        if Prefs.protect { DispatchQueue.global(qos: .utility).async { FilterLists.loadMalware() } }
         applyRules { [weak self] in
             if let self, let tab = self.current { self.show(tab) }
+            self?.refreshLists()
         }
 
         timer = Timer.scheduledTimer(withTimeInterval: 30, repeats: true) { [weak self] _ in self?.unloadIdle() }
@@ -44,12 +51,13 @@ final class Browser: NSObject, ObservableObject {
             c.mediaTypesRequiringUserActionForPlayback = .audio
             c.allowsPictureInPictureMediaPlayback = true
             c.defaultWebpagePreferences.preferredContentMode = .mobile
-            // No address checks sent out (Safe Browsing), as SmartScreen is off on Windows
-            c.preferences.isFraudulentWebsiteWarningEnabled = false
+            // Safe Browsing of WebKit: hashed address prefixes are checked through Apple
+            c.preferences.isFraudulentWebsiteWarningEnabled = Prefs.protect
             return c
         }()
         let w = WKWebView(frame: .zero, configuration: c)
         w.allowsBackForwardNavigationGestures = true
+        w.isFindInteractionEnabled = true
         w.isOpaque = false
         w.backgroundColor = .systemBackground
         if #available(iOS 16.4, *) { w.isInspectable = true }   // Safari › Develop on a Mac
@@ -140,6 +148,7 @@ final class Browser: NSObject, ObservableObject {
         UserDefaults.standard.set(on, forKey: Prefs.adBlockKey)
         adBlock = on
         applyRules { [weak self] in self?.current?.reload() }
+        if on { refreshLists() }
     }
 
     /// "Do not block on this site", then the page loads again
@@ -165,6 +174,8 @@ final class Browser: NSObject, ObservableObject {
         content.removeAllUserScripts()
         content.addUserScript(WKUserScript(source: MediaSniffer.source, injectionTime: .atDocumentStart,
                                            forMainFrameOnly: false))
+        content.addUserScript(WKUserScript(source: VaultScript.source, injectionTime: .atDocumentEnd,
+                                           forMainFrameOnly: false, in: .defaultClient))
         if Prefs.adBlock {
             content.addUserScript(WKUserScript(source: AdBlock.youTubeScript(except: Prefs.adBlockOff),
                                                injectionTime: .atDocumentEnd, forMainFrameOnly: false))
@@ -178,7 +189,7 @@ final class Browser: NSObject, ObservableObject {
         }
         if Prefs.adBlock {
             group.enter()
-            AdBlock.compile { l in if let l { lists.append(l) }; group.leave() }
+            AdBlock.compile { ls in lists.append(contentsOf: ls); group.leave() }
         }
         group.notify(queue: .main) { [weak self] in
             guard let self else { return }
@@ -187,6 +198,46 @@ final class Browser: NSObject, ObservableObject {
             done()
         }
     }
+
+    /// Downloads the full lists when they are missing or old, then applies them
+    func refreshLists(force: Bool = false) {
+        guard !listsBusy else { return }
+        let ads = Prefs.adBlock, protect = Prefs.protect
+        guard ads || protect else { return }
+        listsBusy = true
+        listsState = L("Загружаю списки…")
+        Task.detached(priority: .utility) { [weak self] in
+            if protect {
+                _ = await FilterLists.refresh(FilterLists.malware, force: force)
+                FilterLists.loadMalware()
+            }
+            var rebuilt = false
+            if ads {
+                let fresh = await FilterLists.refresh(FilterLists.ads, force: force)
+                if fresh || FilterLists.built() == nil {
+                    await MainActor.run { self?.listsState = L("Готовлю правила…") }
+                    rebuilt = FilterLists.build()
+                }
+            }
+            let didRebuild = rebuilt
+            await MainActor.run {
+                guard let self else { return }
+                self.listsBusy = false
+                self.listsState = nil
+                if didRebuild { self.applyRules {} }
+                self.objectWillChange.send()
+            }
+        }
+    }
+
+    func setProtect(_ on: Bool) {
+        UserDefaults.standard.set(on, forKey: Prefs.protectKey)
+        objectWillChange.send()
+        if on { refreshLists() }
+    }
+
+    /// A malicious site the user chose to open anyway, until the app quits
+    var trusted: Set<String> = []
 
     // MARK: Session
 
@@ -215,9 +266,37 @@ final class Browser: NSObject, ObservableObject {
 
 extension Browser: WKScriptMessageHandler {
     func userContentController(_ c: WKUserContentController, didReceive message: WKScriptMessage) {
+        if message.name == "litebroVault" { return vault(message) }
         guard let w = message.webView, let tab = tabs.first(where: { $0.webView === w }),
               let body = message.body as? [String: Any], let s = body["url"] as? String, let u = URL(string: s) else { return }
-        tab.addMedia(u, hls: body["hls"] as? Bool ?? false, title: body["title"] as? String)
+        tab.addMedia(u, hls: body["hls"] as? Bool ?? false, title: body["title"] as? String,
+                     duration: body["duration"] as? Double, playing: body["playing"] as? Bool ?? false,
+                     mse: body["mse"] as? Bool ?? false)
+    }
+}
+
+extension Browser {
+    /// From the password script: forms on the page and passwords sent. The site is the origin of
+    /// the frame (never what the page says), and only https or local pages get anything filled.
+    fileprivate func vault(_ message: WKScriptMessage) {
+        guard let w = message.webView, let tab = tabs.first(where: { $0.webView === w }),
+              let body = message.body as? [String: Any], let type = body["type"] as? String else { return }
+        let origin = message.frameInfo.securityOrigin
+        let host = origin.host.lowercased()
+        guard origin.protocol == "https" || LocalNet.isLocal(host: host), !host.isEmpty else { return }
+        let vault = Vault.shared
+        switch type {
+        case "login":
+            if !vault.logins(for: host).isEmpty { tab.offer = .login(host: host, frame: message.frameInfo) }
+        case "card":
+            if !vault.cards.isEmpty && origin.protocol == "https" { tab.offer = .card(frame: message.frameInfo) }
+        case "save":
+            guard let pass = body["pass"] as? String, !pass.isEmpty else { return }
+            let user = body["user"] as? String ?? ""
+            if Prefs.vaultNever.contains(host) || vault.isSaved(host: host, user: user, pass: pass) { return }
+            tab.offer = .save(host: host, user: user, pass: pass)
+        default: break
+        }
     }
 }
 

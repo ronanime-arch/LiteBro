@@ -23,12 +23,26 @@ struct TabScreen: View {
     @EnvironmentObject var downloads: DownloadManager
     @ObservedObject var tab: BrowserTab
     @State private var sheet: Sheet?
+    /// While typing, the toolbar steps aside: the page and the keyboard get the room
+    @State private var typing = false
 
     var body: some View {
         VStack(spacing: 0) {
-            AddressBar(tab: tab)
+            AddressBar(tab: tab, sheet: $sheet)
             ZStack {
-                if tab.showsHome || (tab.webView == nil && tab.blocked == nil) {
+                if let u = tab.danger {
+                    Notice(icon: "exclamationmark.octagon.fill", title: L("Опасный сайт"),
+                           detail: (u.host ?? "") + "\n" + L("Сайт есть в списках вредоносных и фишинговых сайтов: он может украсть пароли и данные карт или заразить устройство."),
+                           action: L("Назад"), tint: .red) {
+                        tab.goBack()
+                    } extra: {
+                        Button(L("Всё равно открыть")) {
+                            if let h = u.host?.lowercased() { browser.trusted.insert(h) }
+                            tab.load(u)
+                        }
+                        .font(.footnote)
+                    }
+                } else if tab.showsHome || (tab.webView == nil && tab.blocked == nil) {
                     HomeView(tab: tab, sheet: $sheet)
                 } else if let u = tab.blocked {
                     Notice(icon: "lock.shield", title: L("Заблокировано режимом «только localhost»"),
@@ -47,8 +61,11 @@ struct TabScreen: View {
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-            Toolbar(tab: tab, sheet: $sheet)
+            OfferBar(tab: tab)
+            if !typing { Toolbar(tab: tab, sheet: $sheet) }
         }
+        .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillShowNotification)) { _ in typing = true }
+        .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillHideNotification)) { _ in typing = false }
         .sheet(item: $sheet) { s in
             switch s {
             case .tabs: TabsView { sheet = nil }
@@ -87,20 +104,29 @@ struct WebContainer: UIViewRepresentable {
     }
 }
 
+extension Notice where Extra == EmptyView {
+    init(icon: String, title: String, detail: String, action: String, run: @escaping () -> Void) {
+        self.init(icon: icon, title: title, detail: detail, action: action, run: run, extra: { EmptyView() })
+    }
+}
+
 /// The page that stands in for the engine's error pages
-struct Notice: View {
+struct Notice<Extra: View>: View {
     let icon: String
     let title: String
     let detail: String
     let action: String
+    var tint: Color = .accentColor
     let run: () -> Void
+    @ViewBuilder var extra: () -> Extra
 
     var body: some View {
         VStack(spacing: 14) {
             Image(systemName: icon).font(.system(size: 44)).foregroundStyle(.secondary)
             Text(title).font(.title3.bold()).multilineTextAlignment(.center)
             Text(detail).font(.footnote).foregroundStyle(.secondary).multilineTextAlignment(.center).lineLimit(6)
-            Button(action, action: run).buttonStyle(.borderedProminent)
+            Button(action, action: run).buttonStyle(.borderedProminent).tint(tint)
+            extra()
         }
         .padding(28)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -110,7 +136,9 @@ struct Notice: View {
 
 struct AddressBar: View {
     @EnvironmentObject var browser: Browser
+    @EnvironmentObject var tiles: TileStore
     @ObservedObject var tab: BrowserTab
+    @Binding var sheet: Sheet?
     @State private var text = ""
     @FocusState private var editing: Bool
 
@@ -134,6 +162,14 @@ struct AddressBar: View {
                 if editing && !text.isEmpty {
                     Button { text = "" } label: { Image(systemName: "xmark.circle.fill").foregroundStyle(.secondary) }
                 } else if !tab.showsHome {
+                    if let u = tab.url, ["http", "https", "file"].contains(u.scheme ?? "") {
+                        // Gold when the address is already a tile or a link of one, as on Windows
+                        Button { sheet = .newTile } label: {
+                            Image(systemName: tiles.contains(u) ? "star.fill" : "star")
+                                .foregroundStyle(tiles.contains(u) ? Color.yellow : Color.secondary)
+                        }
+                        .accessibilityLabel(L("Сохранить плиткой"))
+                    }
                     Button { if tab.isLoading { tab.webView?.stopLoading() } else { tab.reload() } } label: {
                         Image(systemName: tab.isLoading ? "xmark" : "arrow.clockwise")
                     }
@@ -200,6 +236,15 @@ struct Toolbar: View {
                     ShareLink(item: u) { Label(L("Поделиться"), systemImage: "square.and.arrow.up") }
                     Button { UIPasteboard.general.string = u.absoluteString } label: {
                         Label(L("Копировать ссылку"), systemImage: "link")
+                    }
+                    Button { tab.webView?.findInteraction?.presentFindNavigator(showingReplace: false) } label: {
+                        Label(L("Найти на странице"), systemImage: "doc.text.magnifyingglass")
+                    }
+                    if let t = Translate.url(for: u) {
+                        Button { tab.load(t) } label: { Label(L("Перевести страницу"), systemImage: "character.bubble") }
+                    }
+                    if let c = Translate.chrome(u), UIApplication.shared.canOpenURL(c) {
+                        Button { UIApplication.shared.open(c) } label: { Label(L("Открыть в Chrome"), systemImage: "globe") }
                     }
                 }
                 if browser.adBlock, AdBlock.site(of: tab.url) != nil, !tab.showsHome {

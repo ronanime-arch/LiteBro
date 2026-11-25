@@ -39,6 +39,12 @@ targets:
         NSLocalNetworkUsageDescription: LiteBro opens sites on your local network.
         NSPhotoLibraryAddUsageDescription: LiteBro saves downloaded videos to Photos.
         UIBackgroundModes: [audio]
+        NSFaceIDUsageDescription: LiteBro asks for Face ID before filling in passwords and cards.
+        # Links from other apps (LiteBro as the default browser)
+        CFBundleURLTypes:
+          - CFBundleURLName: Web
+            CFBundleURLSchemes: [http, https]
+        LSApplicationQueriesSchemes: [googlechrome, googlechromes]
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: io.github.ronanime-arch.LiteBro

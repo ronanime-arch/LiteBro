@@ -20,6 +20,8 @@ struct LiteBroApp: App {
                 .environmentObject(tiles)
                 .environmentObject(downloads)
                 .preferredColorScheme(theme == "dark" ? .dark : theme == "light" ? .light : nil)
+                // A link from another app: a new tab, as on Windows
+                .onOpenURL { url in browser.newTab(url) }
         }
     }
 }

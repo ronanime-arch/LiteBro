@@ -67,10 +67,6 @@ enum LocalNet {
 
     static func compile(_ done: @escaping (WKContentRuleList?) -> Void) {
         let json = rules()
-        let id = "localOnly-\(json.hashValue)"
-        WKContentRuleListStore.default().compileContentRuleList(forIdentifier: id, encodedContentRuleList: json) { list, error in
-            if let error { NSLog("LiteBro: local rules: \(error)") }
-            done(list)
-        }
+        RuleStore.load([(RuleStore.id("localOnly", json), { json })], prefix: "localOnly") { done($0.first) }
     }
 }

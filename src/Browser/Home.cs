@@ -18,7 +18,7 @@ static class Home
     public const string Url = "https://" + Host + "/";
     // Nothing but the page's own script and pictures, and no site may frame it to trick a click on a tile
     public const string Headers = "Content-Type: text/html; charset=utf-8\r\nContent-Security-Policy: default-src 'none'; " +
-        "script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src 'self' data:; frame-ancestors 'none'\r\n" + Isolation;
+        "script-src 'unsafe-inline' " + Url + "qrcode.js; style-src 'unsafe-inline'; img-src 'self' data:; frame-ancestors 'none'\r\n" + Isolation;
     /// <summary>
     /// No other site loads these pages' files. No COOP: its process swap on the page's load cut the page off from the
     /// browser after an engine restart (no tiles, no switches); a site's window.open is handled in OnNewWindowRequested.

@@ -10,9 +10,12 @@ struct BrowserView: View {
     @EnvironmentObject var browser: Browser
 
     var body: some View {
-        if let tab = browser.current {
-            TabScreen(tab: tab).id(tab.id)
+        ZStack {
+            if let tab = browser.current {
+                TabScreen(tab: tab).id(tab.id)
+            }
         }
+        .fullScreenCover(isPresented: $browser.showTerminal) { TerminalHome(path: browser.terminalPath) }
     }
 }
 
@@ -230,6 +233,7 @@ struct Toolbar: View {
             Menu {
                 Button { browser.newTab() } label: { Label(L("Новая вкладка"), systemImage: "plus.square") }
                 Button { sheet = .downloads } label: { Label(L("Загрузки"), systemImage: "tray.and.arrow.down") }
+                Button { browser.openTerminal() } label: { Label(L("Терминал ПК"), systemImage: "terminal") }
                 if !tab.showsHome, let u = tab.url {
                     Button { sheet = .newTile } label: {
                         Label(L("Сохранить плиткой"), systemImage: tiles.contains(u) ? "star.fill" : "star")

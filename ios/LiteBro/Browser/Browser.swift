@@ -12,6 +12,9 @@ final class Browser: NSObject, ObservableObject {
 
     /// What the filter lists are doing now, for the settings
     @Published var listsState: String?
+    /// The terminal to the computer (full screen), opened at a computer when it came from its QR code
+    @Published var showTerminal = false
+    var terminalPath: [UUID] = []
     private var listsBusy = false
 
     let content = WKUserContentController()
@@ -52,6 +55,9 @@ final class Browser: NSObject, ObservableObject {
             c.mediaTypesRequiringUserActionForPlayback = .audio
             c.allowsPictureInPictureMediaPlayback = true
             c.defaultWebpagePreferences.preferredContentMode = .mobile
+            // As Safari: without "Version/… Safari/…" sites (claude.ai, Google sign-in) take it for an in-app view
+            let v = ProcessInfo.processInfo.operatingSystemVersion
+            c.applicationNameForUserAgent = "Version/\(v.majorVersion).\(v.minorVersion) Mobile/15E148 Safari/604.1"
             // Safe Browsing of WebKit: hashed address prefixes are checked through Apple
             c.preferences.isFraudulentWebsiteWarningEnabled = Prefs.protect
             return c
@@ -239,6 +245,11 @@ final class Browser: NSObject, ObservableObject {
         UserDefaults.standard.set(on, forKey: Prefs.protectKey)
         objectWillChange.send()
         if on { refreshLists() }
+    }
+
+    func openTerminal(at host: UUID? = nil) {
+        terminalPath = host.map { [$0] } ?? []
+        showTerminal = true
     }
 
     /// The page console from the start of every page, not only after it is opened

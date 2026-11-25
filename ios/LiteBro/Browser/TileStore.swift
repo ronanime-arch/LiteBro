@@ -38,6 +38,22 @@ final class TileStore: ObservableObject {
         if let data = try? Data(contentsOf: file), let list = try? JSONDecoder().decode([Tile].self, from: data) {
             tiles = list
         }
+        addStarters()
+    }
+
+    /// Claude and ChatGPT once, for new and old installs; a removed one does not come back
+    private func addStarters() {
+        let d = UserDefaults.standard
+        guard d.integer(forKey: "starterTiles") < 1 else { return }
+        d.set(1, forKey: "starterTiles")
+        let starters = [
+            Tile(name: "Claude", url: "https://claude.ai/new",
+                 links: [TileLink(name: "Claude Code", url: "https://claude.ai/code")], color: 3),
+            Tile(name: "ChatGPT", url: "https://chatgpt.com/", color: 2),
+        ]
+        for t in starters where !tiles.contains(where: { URL(string: $0.url)?.host == URL(string: t.url)?.host }) {
+            tiles.append(t)
+        }
     }
 
     private func save() {

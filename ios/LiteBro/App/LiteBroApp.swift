@@ -20,8 +20,14 @@ struct LiteBroApp: App {
                 .environmentObject(tiles)
                 .environmentObject(downloads)
                 .preferredColorScheme(theme == "dark" ? .dark : theme == "light" ? .light : nil)
-                // A link from another app: a new tab, as on Windows
-                .onOpenURL { url in browser.newTab(url) }
+                // A link from another app: a new tab, as on Windows; the QR code of the terminal: that computer
+                .onOpenURL { url in
+                    if url.scheme?.lowercased() == "litebro" {
+                        if let h = SSHStore.shared.add(from: url) { browser.openTerminal(at: h.id) }
+                    } else {
+                        browser.newTab(url)
+                    }
+                }
         }
     }
 }

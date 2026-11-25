@@ -10,12 +10,31 @@ settings:
     SWIFT_VERSION: "5.0"
     MARKETING_VERSION: "1.9.0"
     CURRENT_PROJECT_VERSION: "1"
+packages:
+  # SSH for the terminal to the computer (Apache 2.0) and the terminal view (MIT)
+  SwiftNIO:
+    url: https://github.com/apple/swift-nio
+    from: 2.81.0
+  SwiftNIOSSH:
+    url: https://github.com/apple/swift-nio-ssh
+    exactVersion: 0.15.2
+  SwiftTerm:
+    url: https://github.com/migueldeicaza/SwiftTerm
+    exactVersion: 1.20.0
 targets:
   LiteBro:
     type: application
     platform: iOS
     sources:
       - path: LiteBro
+    dependencies:
+      - package: SwiftNIO
+        product: NIOCore
+      - package: SwiftNIO
+        product: NIOPosix
+      - package: SwiftNIOSSH
+        product: NIOSSH
+      - package: SwiftTerm
     info:
       path: LiteBro/Info.plist
       properties:
@@ -44,6 +63,9 @@ targets:
         CFBundleURLTypes:
           - CFBundleURLName: Web
             CFBundleURLSchemes: [http, https]
+          # The QR code of the terminal in LiteBro on Windows: litebro://ssh?host=…
+          - CFBundleURLName: LiteBro
+            CFBundleURLSchemes: [litebro]
         LSApplicationQueriesSchemes: [googlechrome, googlechromes]
     settings:
       base:

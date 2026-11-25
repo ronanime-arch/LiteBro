@@ -22,7 +22,7 @@ static class Dev
         // features
         "reset", "country", "emulation", "snapshot", "storage", "json", "mocks", "split", "perms", "unblock",
         // start page
-        "shell", "localonly", "netlog", "console",
+        "shell", "localonly", "netlog", "phone", "console",
     };
 
     /// <summary>A new install, or settings back to their defaults: the developer tools wait to be switched on.</summary>

@@ -60,7 +60,7 @@ final class Vault: ObservableObject {
 
     /// Biometrics or the passcode for every read; a device without a passcode cannot have that,
     /// then the item is kept without it (still encrypted, only while the device is unlocked)
-    private func protect(_ q: inout [String: Any]) {
+    func protect(_ q: inout [String: Any]) {
         if LAContext().canEvaluatePolicy(.deviceOwnerAuthentication, error: nil),
            let acl = SecAccessControlCreateWithFlags(nil, kSecAttrAccessibleWhenUnlockedThisDeviceOnly, .userPresence, nil) {
             q[kSecAttrAccessControl as String] = acl
@@ -167,10 +167,39 @@ final class Vault: ObservableObject {
         }
     }
 
+    // MARK: Other secrets (the terminal's passwords and key)
+
+    func setSecret(_ data: Data, service: String, account: String) {
+        let base: [String: Any] = [kSecClass as String: kSecClassGenericPassword,
+                                   kSecAttrService as String: service, kSecAttrAccount as String: account]
+        SecItemDelete(base as CFDictionary)
+        var add = base
+        add[kSecValueData as String] = data
+        add[kSecAttrSynchronizable as String] = false
+        protect(&add)
+        let status = SecItemAdd(add as CFDictionary, nil)
+        if status != errSecSuccess { NSLog("LiteBro: keychain add \(status)") }
+    }
+
+    /// Whether it is there; asks nothing (the attributes are not protected, only the data)
+    func hasSecret(service: String, account: String) -> Bool {
+        items(kSecClassGenericPassword, service: service).contains { $0[kSecAttrAccount as String] as? String == account }
+    }
+
+    func secret(service: String, account: String, reason: String, done: @escaping (Data?) -> Void) {
+        read([kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: service,
+              kSecAttrAccount as String: account], reason: reason, done: done)
+    }
+
+    func deleteSecret(service: String, account: String) {
+        SecItemDelete([kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: service,
+                       kSecAttrAccount as String: account] as CFDictionary)
+    }
+
     // MARK: Reading
 
     /// Face ID comes from the keychain itself; the read waits for it off the main thread
-    private func read(_ query: [String: Any], reason: String, done: @escaping (Data?) -> Void) {
+    func read(_ query: [String: Any], reason: String, done: @escaping (Data?) -> Void) {
         let ctx = LAContext()
         ctx.localizedReason = reason
         var q = query

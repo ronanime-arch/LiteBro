@@ -38,6 +38,7 @@ jobs:
           xcodebuild -project LiteBro.xcodeproj -scheme LiteBro -configuration Release \
             -sdk iphoneos -destination 'generic/platform=iOS' -derivedDataPath build \
             CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" \
+            -skipPackagePluginValidation -skipMacroValidation \
             build | tee build.log | grep -E '(error|warning: unre|BUILD)' || true
           test -d build/Build/Products/Release-iphoneos/LiteBro.app || { tail -100 build.log; exit 1; }
 

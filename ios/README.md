@@ -33,7 +33,7 @@
 
 TrollStore работает на iOS 14.0 – 16.6.1, 16.7 RC (20H18) и 17.0. На 16.7.x (кроме RC) и новее — нет.
 
-1. Скачайте `LiteBro.tipa`: страница **Releases** репозитория, выпуск «LiteBro для iOS (TrollStore)», или вкладка **Actions** → запуск «iOS» → файл `LiteBro-iOS` (ZIP, внутри `.tipa`).
+1. Скачайте `LiteBro-iOS.zip`: страница **Releases** репозитория, выпуск «LiteBro для iOS (TrollStore)», или вкладка **Actions** → запуск «iOS» → файл `LiteBro-iOS`. Внутри — `LiteBro.tipa`: распакуйте его в «Файлах» (нажать на архив).
 2. На iPhone откройте файл: «Поделиться» → **TrollStore** → Install. Или в TrollStore «+» → Install IPA File.
 3. Обновление — так же, поверх: данные (плитки, вкладки, загрузки, входы на сайты) остаются.
 

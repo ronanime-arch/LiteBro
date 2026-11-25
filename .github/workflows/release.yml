@@ -1,5 +1,6 @@
 # The installer built on Windows by build.ps1. A pull request gets it as a download of the run (to try before the merge);
 # every push to main publishes it as a release «LiteBro 1.9.x» (the version build.ps1 gives the file), with the merged PRs.
+# The release holds LiteBro-Setup.zip with the installer inside: public files only in zip (user's rule 2026-11-25).
 name: Release
 
 on:
@@ -45,11 +46,12 @@ jobs:
         run: |
           $version = (Get-Item dist/LiteBro-Setup.exe).VersionInfo.FileVersion
           $tag = "v$version"
+          Compress-Archive -Path dist/LiteBro-Setup.exe -DestinationPath dist/LiteBro-Setup.zip -Force
           # Run again for the same commit: the file is replaced
           gh release view $tag *> $null
           if ($LASTEXITCODE -eq 0) {
-            gh release upload $tag dist/LiteBro-Setup.exe --clobber
+            gh release upload $tag dist/LiteBro-Setup.zip --clobber
           } else {
-            gh release create $tag dist/LiteBro-Setup.exe --target $env:GITHUB_SHA --title "LiteBro $version" --generate-notes
+            gh release create $tag dist/LiteBro-Setup.zip --target $env:GITHUB_SHA --title "LiteBro $version" --generate-notes
           }
           if ($LASTEXITCODE) { exit 1 }

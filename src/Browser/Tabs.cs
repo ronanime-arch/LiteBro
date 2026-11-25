@@ -496,11 +496,18 @@ sealed class TabStrip : Control
         Invalidate();
     }
 
+    // Where a button went down: a tab closes only if the button goes up on the same one, so the button
+    // going up after «+» never closes the new tab that slid under the mouse (the tabs narrow as one is added)
+    Tab? pressed;
+    bool pressedClose;
+
     protected override void OnMouseDown(MouseEventArgs e)
     {
         base.OnMouseDown(e);
-        if (e.Button != MouseButtons.Left) return;
         int h = Hit(e.Location, out bool close, out bool sound);
+        pressed = h >= 0 && h < tabs.Count ? tabs[h] : null;
+        pressedClose = close;
+        if (e.Button != MouseButtons.Left) return;
         if (h == tabs.Count) NewTab?.Invoke();
         else if (h >= 0 && sound) Mute?.Invoke(tabs[h]);
         else if (h >= 0 && !close)
@@ -524,8 +531,12 @@ sealed class TabStrip : Control
             if (e.Button == MouseButtons.Right) StripMenu?.Invoke(e.Location);
             return;
         }
-        if (e.Button == MouseButtons.Middle || (e.Button == MouseButtons.Left && close)) Closing?.Invoke(tabs[h]);
-        else if (e.Button == MouseButtons.Right) Menu?.Invoke(tabs[h], e.Location);
+        var tab = tabs[h];
+        bool same = tab == pressed;
+        pressed = null;
+        if (!same) return;
+        if (e.Button == MouseButtons.Middle || (e.Button == MouseButtons.Left && close && pressedClose)) Closing?.Invoke(tab);
+        else if (e.Button == MouseButtons.Right) Menu?.Invoke(tab, e.Location);
     }
 
     protected override void Dispose(bool disposing)

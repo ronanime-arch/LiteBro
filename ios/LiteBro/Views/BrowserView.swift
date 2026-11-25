@@ -2,7 +2,7 @@ import SwiftUI
 import WebKit
 
 enum Sheet: String, Identifiable {
-    case tabs, media, downloads, settings, newTile
+    case tabs, media, downloads, settings, newTile, console
     var id: String { rawValue }
 }
 
@@ -72,6 +72,7 @@ struct TabScreen: View {
             case .media: MediaSheet(tab: tab)
             case .downloads: DownloadsView()
             case .settings: SettingsView()
+            case .console: ConsoleSheet(tab: tab)
             case .newTile:
                 TileEditor(tile: Tile(name: tab.title.isEmpty ? (tab.url?.host ?? "") : tab.title,
                                       url: tab.url?.absoluteString ?? ""), isNew: true)
@@ -239,6 +240,9 @@ struct Toolbar: View {
                     }
                     Button { tab.webView?.findInteraction?.presentFindNavigator(showingReplace: false) } label: {
                         Label(L("Найти на странице"), systemImage: "doc.text.magnifyingglass")
+                    }
+                    Button { sheet = .console } label: {
+                        Label(L("Консоль страницы"), systemImage: "terminal")
                     }
                     if let t = Translate.url(for: u) {
                         Button { tab.load(t) } label: { Label(L("Перевести страницу"), systemImage: "character.bubble") }

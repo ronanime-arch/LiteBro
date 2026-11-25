@@ -23,6 +23,7 @@ final class Browser: NSObject, ObservableObject {
         super.init()
         content.add(WeakHandler(self), name: "litebroMedia")
         content.add(WeakHandler(self), contentWorld: .defaultClient, name: "litebroVault")
+        content.add(WeakHandler(self), contentWorld: .page, name: PageConsole.handler)
         restoreSession()
         // The first page waits for the rules, so nothing leaks out in the localhost-only mode
         if Prefs.protect { DispatchQueue.global(qos: .utility).async { FilterLists.loadMalware() } }
@@ -176,6 +177,10 @@ final class Browser: NSObject, ObservableObject {
                                            forMainFrameOnly: false))
         content.addUserScript(WKUserScript(source: VaultScript.source, injectionTime: .atDocumentEnd,
                                            forMainFrameOnly: false, in: .defaultClient))
+        if Prefs.console {
+            content.addUserScript(WKUserScript(source: PageConsole.source, injectionTime: .atDocumentStart,
+                                               forMainFrameOnly: true))
+        }
         if Prefs.adBlock {
             content.addUserScript(WKUserScript(source: AdBlock.youTubeScript(except: Prefs.adBlockOff),
                                                injectionTime: .atDocumentEnd, forMainFrameOnly: false))
@@ -236,6 +241,13 @@ final class Browser: NSObject, ObservableObject {
         if on { refreshLists() }
     }
 
+    /// The page console from the start of every page, not only after it is opened
+    func setConsole(_ on: Bool) {
+        UserDefaults.standard.set(on, forKey: Prefs.consoleKey)
+        objectWillChange.send()
+        applyRules {}
+    }
+
     /// A malicious site the user chose to open anyway, until the app quits
     var trusted: Set<String> = []
 
@@ -267,6 +279,7 @@ final class Browser: NSObject, ObservableObject {
 extension Browser: WKScriptMessageHandler {
     func userContentController(_ c: WKUserContentController, didReceive message: WKScriptMessage) {
         if message.name == "litebroVault" { return vault(message) }
+        if message.name == PageConsole.handler { return consoleLines(message) }
         guard let w = message.webView, let tab = tabs.first(where: { $0.webView === w }),
               let body = message.body as? [String: Any], let s = body["url"] as? String, let u = URL(string: s) else { return }
         tab.addMedia(u, hls: body["hls"] as? Bool ?? false, title: body["title"] as? String,
@@ -297,6 +310,19 @@ extension Browser {
             tab.offer = .save(host: host, user: user, pass: pass)
         default: break
         }
+    }
+}
+
+extension Browser {
+    /// Lines from the console script of the main frame
+    fileprivate func consoleLines(_ message: WKScriptMessage) {
+        guard message.frameInfo.isMainFrame, let w = message.webView,
+              let tab = tabs.first(where: { $0.webView === w }),
+              let body = message.body as? [String: Any], let lines = body["lines"] as? [[String: Any]] else { return }
+        tab.log(lines.compactMap { l in
+            guard let t = l["t"] as? String else { return nil }
+            return ConsoleLine(kind: ConsoleLine.Kind(rawValue: l["k"] as? String ?? "") ?? .log, text: t)
+        })
     }
 }
 

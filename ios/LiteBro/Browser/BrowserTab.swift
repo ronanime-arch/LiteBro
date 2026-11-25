@@ -21,6 +21,8 @@ final class BrowserTab: NSObject, ObservableObject, Identifiable {
     @Published var danger: URL?
     /// What the bar above the toolbar offers: logins, saving a password, a card
     @Published var offer: Offer?
+    /// The page console (PageConsole), cleared with each new page
+    @Published var console: [ConsoleLine] = []
 
     enum Offer {
         case login(host: String, frame: WKFrameInfo)
@@ -236,6 +238,17 @@ final class BrowserTab: NSObject, ObservableObject, Identifiable {
     }
 
     /// Looks for video again (lazy players add it late)
+    func log(_ lines: [ConsoleLine]) {
+        guard !lines.isEmpty else { return }
+        console.append(contentsOf: lines)
+        if console.count > PageConsole.maxLines { console.removeFirst(console.count - PageConsole.maxLines) }
+    }
+
+    /// Starts the console on the open page when it was not there from the start
+    func startConsole() {
+        webView?.evaluateJavaScript(PageConsole.source, in: nil, in: .page) { _ in }
+    }
+
     func rescan() {
         webView?.evaluateJavaScript("window.__litebroMedia && window.__litebroMedia.scan()", completionHandler: nil)
     }
@@ -295,6 +308,7 @@ extension BrowserTab: WKNavigationDelegate {
         masters.removeAll()
         offer = nil
         mseDuration = nil
+        console.removeAll()
         browser?.saveSession()
     }
 

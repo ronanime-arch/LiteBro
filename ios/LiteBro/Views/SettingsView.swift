@@ -70,6 +70,14 @@ struct SettingsView: View {
                 }
 
                 Section {
+                    Toggle(L("Консоль с начала загрузки страницы"), isOn: Binding(get: { Prefs.console }, set: { browser.setConsole($0) }))
+                } header: {
+                    Text(L("Для разработчика"))
+                } footer: {
+                    Text(L("Консоль страницы — в меню «…». Без переключателя она собирает сообщения только после открытия и не тратит ресурсы на остальных страницах."))
+                }
+
+                Section {
                     Picker(L("Тема"), selection: $theme) {
                         Text(L("Тёмная")).tag("dark")
                         Text(L("Светлая")).tag("light")

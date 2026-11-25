@@ -21,7 +21,14 @@ enum ScreenShare {
         return t
     }
 
+    /// Taps from the computer too (Face ID in the app); goes with the secret
+    static var control: Bool {
+        get { token != nil && d?.bool(forKey: "screenControl") == true }
+        set { d?.set(newValue, forKey: "screenControl") }
+    }
+
     static func revoke() {
+        d?.removeObject(forKey: "screenControl")
         d?.removeObject(forKey: "screenToken")
         d?.removeObject(forKey: "screenUntil")
     }

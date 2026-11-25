@@ -8,6 +8,7 @@ struct PhoneAccessView: View {
     @ObservedObject private var files = FileShare.shared
     @AppStorage("filesMinutes") private var minutes = 30
     @AppStorage("filesReadOnly") private var readOnly = false
+    @AppStorage("screenControl") private var control = false
     @State private var screenURL: String?
     @State private var screenUntil: Date?
     @State private var screenError: String?
@@ -52,14 +53,16 @@ struct PhoneAccessView: View {
                             ScreenShare.revoke()
                             screenURL = nil
                         }
+                        if ScreenShare.control { Text(L("С управлением касаниями")).foregroundStyle(.secondary) }
                     } else {
+                        Toggle(L("Управление касаниями (экспериментально)"), isOn: $control)
                         Button { allowScreen() } label: { Label(L("Разрешить показ экрана"), systemImage: "faceid") }
                     }
                     if let e = screenError { Text(e).foregroundStyle(.red) }
                 } header: {
                     Text(L("Экран"))
                 } footer: {
-                    Text(L("Показ идёт через запись экрана iOS: нажмите кнопку выше или в Пункте управления удержите «Запись экрана» и выберите LiteBro. Пока идёт показ, вверху горит красная полоска; остановить — нажать на неё. Показ работает и в других приложениях, только смотреть, без управления."))
+                    Text(L("Показ идёт через запись экрана iOS: нажмите кнопку выше или в Пункте управления удержите «Запись экрана» и выберите LiteBro. Пока идёт показ, вверху горит красная полоска; остановить — нажать на неё. Показ работает и в других приложениях. Управление касаниями — через закрытые функции iOS: на странице показа мышь работает как палец, есть кнопки «Домой» и боковая; может не заработать."))
                 }
             }
             .navigationTitle(L("Доступ с ПК"))
@@ -95,6 +98,7 @@ struct PhoneAccessView: View {
                 guard ok else { return }
                 guard let ip = MiniHTTP.address() else { return screenError = L("Телефон не подключён к сети Wi-Fi.") }
                 let t = ScreenShare.allow(minutes: minutes == 0 ? 24 * 60 : minutes)
+                ScreenShare.control = control
                 screenURL = "http://\(ip):\(ScreenShare.port)/\(t)/"
                 screenUntil = ScreenShare.until
             }

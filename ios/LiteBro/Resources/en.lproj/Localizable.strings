@@ -195,7 +195,9 @@
 "Открыть файлы телефона для компьютера" = "Open the phone files to the computer";
 "Папка LiteBro в «Файлах»: TrollStore не дал доступа ко всей памяти." = "The LiteBro folder in Files: TrollStore did not give access to the whole storage.";
 "Пока не закрою" = "Until I close it";
-"Показ идёт через запись экрана iOS: нажмите кнопку выше или в Пункте управления удержите «Запись экрана» и выберите LiteBro. Пока идёт показ, вверху горит красная полоска; остановить — нажать на неё. Показ работает и в других приложениях, только смотреть, без управления." = "Sharing goes through iOS screen recording: tap the button above, or in Control Center long-press “Screen Recording” and choose LiteBro. While sharing, a red bar shows at the top; tap it to stop. It works in other apps too, view only, no control.";
+"Показ идёт через запись экрана iOS: нажмите кнопку выше или в Пункте управления удержите «Запись экрана» и выберите LiteBro. Пока идёт показ, вверху горит красная полоска; остановить — нажать на неё. Показ работает и в других приложениях. Управление касаниями — через закрытые функции iOS: на странице показа мышь работает как палец, есть кнопки «Домой» и боковая; может не заработать." = "Sharing goes through iOS screen recording: tap the button above, or in Control Center long-press “Screen Recording” and choose LiteBro. While sharing, a red bar shows at the top; tap it to stop. It works in other apps too. Touch control uses private iOS functions: on the sharing page the mouse acts as a finger, with Home and side buttons; it may not work.";
+"С управлением касаниями" = "With touch control";
+"Управление касаниями (экспериментально)" = "Touch control (experimental)";
 "Показать экран телефона компьютеру" = "Show the phone screen to the computer";
 "Разрешить показ экрана" = "Allow screen sharing";
 "Телефон" = "Phone";

@@ -48,6 +48,7 @@ final class SampleHandler: RPBroadcastSampleHandler {
         if let o = CMGetAttachment(sampleBuffer, key: RPVideoSampleOrientationKey as CFString, attachmentModeOut: nil) as? NSNumber,
            let orientation = CGImagePropertyOrientation(rawValue: o.uint32Value) {
             image = image.oriented(orientation)
+            frames.orientation = orientation
         }
         let longest = max(image.extent.width, image.extent.height)
         if longest > 1280 { image = image.transformed(by: CGAffineTransform(scaleX: 1280 / longest, y: 1280 / longest)) }
@@ -66,6 +67,8 @@ final class FrameStore {
     private var number = 0
     private var viewers = 0
     private var closed = false
+    /// How the last picture was turned from the upright screen: taps go back the other way
+    var orientation = CGImagePropertyOrientation.up
 
     var watched: Bool { lock.lock(); defer { lock.unlock() }; return viewers > 0 }
 
@@ -113,22 +116,79 @@ private final class ScreenHandler: ChannelInboundHandler {
         self.frames = frames
     }
 
+    private var head: HTTPRequestHead?
+    private var body = Data()
+
     func channelRead(context: ChannelHandlerContext, data: NIOAny) {
-        guard case .head(let h) = unwrapInboundIn(data) else { return }
+        switch unwrapInboundIn(data) {
+        case .head(let h):
+            head = h
+            body = Data()
+        case .body(let b):
+            if body.count < 4096 { body.append(contentsOf: b.readableBytesView) }
+        case .end:
+            if let h = head { handle(h, channel: context.channel) }
+            head = nil
+        }
+    }
+
+    private func handle(_ h: HTTPRequestHead, channel: Channel) {
         let path = String(h.uri.split(separator: "?").first ?? "")
-        let channel = context.channel
         if path == "/\(token)/" || path == "/\(token)" {
-            let page = """
-            <!doctype html><html><head><meta charset=utf-8><title>\(T("Экран телефона", "Phone screen"))</title>
-            <style>html,body{margin:0;height:100%;background:#111}img{display:block;margin:auto;max-width:100%;max-height:100vh;object-fit:contain}</style>
-            </head><body><img src="stream" alt=""></body></html>
-            """
-            channel.respond(.ok, headers: [("Content-Type", "text/html; charset=utf-8"), ("Cache-Control", "no-store")], body: Data(page.utf8))
+            channel.respond(.ok, headers: [("Content-Type", "text/html; charset=utf-8"), ("Cache-Control", "no-store")],
+                            body: Data(Self.page(control: ScreenShare.control && Touch.available).utf8))
         } else if path == "/\(token)/stream" {
             stream(channel)
+        } else if path == "/\(token)/touch", h.method == .POST {
+            // Only while the app allows it: the same secret, Face ID for control on top
+            guard ScreenShare.token == token, ScreenShare.control,
+                  let m = try? JSONSerialization.jsonObject(with: body) as? [String: Any] else { return channel.respond(.forbidden) }
+            if let b = m["button"] as? String {
+                Touch.button(b == "side" ? 0x30 : 0x40)
+            } else if let p = (m["t"] as? String).flatMap(Touch.Phase.init(rawValue:)),
+                      let x = m["x"] as? Double, let y = m["y"] as? Double {
+                let upright = Self.upright(x, y, frames.orientation)
+                Touch.finger(p, x: min(max(upright.0, 0), 1), y: min(max(upright.1, 0), 1))
+            }
+            channel.respond(.noContent)
         } else {
             channel.respond(.notFound)
         }
+    }
+
+    /// A point of the picture as shown back to the screen held upright
+    private static func upright(_ u: Double, _ v: Double, _ o: CGImagePropertyOrientation) -> (Double, Double) {
+        switch o {
+        case .right, .rightMirrored: return (v, 1 - u)
+        case .left, .leftMirrored: return (1 - v, u)
+        case .down, .downMirrored: return (1 - u, 1 - v)
+        default: return (u, v)
+        }
+    }
+
+    private static func page(control: Bool) -> String {
+        let script = !control ? "" : """
+        <div id=bar><button data-b=home>\(T("Домой", "Home"))</button><button data-b=side>\(T("Боковая кнопка", "Side button"))</button></div>
+        <script>
+        const img = document.querySelector("img");
+        let down = false, last = 0;
+        const send = (t, e) => {
+          const r = img.getBoundingClientRect();
+          fetch("touch", { method: "POST", body: JSON.stringify({ t, x: (e.clientX - r.left) / r.width, y: (e.clientY - r.top) / r.height }) });
+        };
+        img.addEventListener("pointerdown", e => { e.preventDefault(); img.setPointerCapture(e.pointerId); down = true; send("down", e); });
+        img.addEventListener("pointermove", e => { if (!down) return; const n = performance.now(); if (n - last < 30) return; last = n; send("move", e); });
+        img.addEventListener("pointerup", e => { if (!down) return; down = false; send("up", e); });
+        img.addEventListener("dragstart", e => e.preventDefault());
+        for (const b of document.querySelectorAll("[data-b]")) b.onclick = () => fetch("touch", { method: "POST", body: JSON.stringify({ button: b.dataset.b }) });
+        </script>
+        """
+        return """
+        <!doctype html><html><head><meta charset=utf-8><title>\(T("Экран телефона", "Phone screen"))</title>
+        <style>html,body{margin:0;height:100%;background:#111;color:#eee;font:14px system-ui}img{display:block;margin:auto;max-width:100%;max-height:calc(100vh - 44px);object-fit:contain;touch-action:none;user-select:none}
+        #bar{display:flex;gap:8px;justify-content:center;padding:6px}#bar button{font:inherit;padding:6px 14px;border-radius:8px;border:1px solid #555;background:#222;color:#eee;cursor:pointer}</style>
+        </head><body><img src="stream" alt="">\(script)</body></html>
+        """
     }
 
     private func stream(_ channel: Channel) {

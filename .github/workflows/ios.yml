@@ -47,6 +47,7 @@ jobs:
         run: |
           rm -rf Payload && mkdir Payload
           cp -R build/Build/Products/Release-iphoneos/LiteBro.app Payload/
+          ldid -SScreen.entitlements Payload/LiteBro.app/PlugIns/LiteBroScreen.appex/LiteBroScreen
           ldid -STrollStore.entitlements Payload/LiteBro.app/LiteBro
           zip -qry LiteBro.tipa Payload
           ls -l LiteBro.tipa

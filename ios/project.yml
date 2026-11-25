@@ -27,11 +27,15 @@ targets:
     platform: iOS
     sources:
       - path: LiteBro
+      - path: Shared
     dependencies:
+      - target: LiteBroScreen
       - package: SwiftNIO
         product: NIOCore
       - package: SwiftNIO
         product: NIOPosix
+      - package: SwiftNIO
+        product: NIOHTTP1
       - package: SwiftNIOSSH
         product: NIOSSH
       - package: SwiftTerm
@@ -74,3 +78,32 @@ targets:
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         GENERATE_INFOPLIST_FILE: NO
         CODE_SIGN_STYLE: Automatic
+  # The screen for the computer: the broadcast extension of the screen recording (ReplayKit)
+  LiteBroScreen:
+    type: app-extension
+    platform: iOS
+    sources:
+      - path: Screen
+      - path: Shared
+    dependencies:
+      - package: SwiftNIO
+        product: NIOCore
+      - package: SwiftNIO
+        product: NIOPosix
+      - package: SwiftNIO
+        product: NIOHTTP1
+    info:
+      path: Screen/Info.plist
+      properties:
+        CFBundleDisplayName: LiteBro
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.broadcast-services-upload
+          NSExtensionPrincipalClass: $(PRODUCT_MODULE_NAME).SampleHandler
+          RPBroadcastProcessMode: RPBroadcastProcessModeSampleBuffer
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: io.github.ronanime-arch.LiteBro.Screen
+        TARGETED_DEVICE_FAMILY: "1,2"
+        GENERATE_INFOPLIST_FILE: NO
+        CODE_SIGN_STYLE: Automatic
+        APPLICATION_EXTENSION_API_ONLY: YES

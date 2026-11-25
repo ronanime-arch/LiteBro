@@ -2,7 +2,7 @@ import SwiftUI
 import WebKit
 
 enum Sheet: String, Identifiable {
-    case tabs, media, downloads, settings, newTile, console
+    case tabs, media, downloads, settings, newTile, console, phone
     var id: String { rawValue }
 }
 
@@ -76,6 +76,7 @@ struct TabScreen: View {
             case .downloads: DownloadsView()
             case .settings: SettingsView()
             case .console: ConsoleSheet(tab: tab)
+            case .phone: PhoneAccessView()
             case .newTile:
                 TileEditor(tile: Tile(name: tab.title.isEmpty ? (tab.url?.host ?? "") : tab.title,
                                       url: tab.url?.absoluteString ?? ""), isNew: true)
@@ -234,6 +235,7 @@ struct Toolbar: View {
                 Button { browser.newTab() } label: { Label(L("Новая вкладка"), systemImage: "plus.square") }
                 Button { sheet = .downloads } label: { Label(L("Загрузки"), systemImage: "tray.and.arrow.down") }
                 Button { browser.openTerminal() } label: { Label(L("Терминал ПК"), systemImage: "terminal") }
+                Button { sheet = .phone } label: { Label(L("Доступ с ПК"), systemImage: "laptopcomputer.and.iphone") }
                 if !tab.showsHome, let u = tab.url {
                     Button { sheet = .newTile } label: {
                         Label(L("Сохранить плиткой"), systemImage: tiles.contains(u) ? "star.fill" : "star")

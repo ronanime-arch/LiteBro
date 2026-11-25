@@ -84,6 +84,8 @@ sealed class Settings
     public bool TabMute;
     /// <summary>Certificate errors of servers on this machine are let through; off by default.</summary>
     public bool TrustLocalCerts;
+    /// <summary>Claude (Claude Code, Claude Desktop) may see and use the tabs through MCP (Mcp.cs); off by default.</summary>
+    public bool Claude;
     /// <summary>Tabs in the background are paused after SuspendAfter minutes and closed after UnloadAfter (0 = never).</summary>
     public bool FreezeTabs = true;
     public int SuspendAfter = 1, UnloadAfter = 5;
@@ -95,7 +97,7 @@ sealed class Settings
 
     static readonly string[] Keys =
     {
-        "searchurl", "searchcountry", "theme", "language", "gpu", "extrabrowserargs", "localhosts", "otherbrowser", "externaltomain", "localonly", "netjournal", "allowhosts", "ignorecors", "clearonexit", "autoreload", "autofill", "stricttracking", "adblock", "tabmute", "trustlocalcerts", "freezetabs", "suspendafter", "unloadafter", "disabled", "defaults",
+        "searchurl", "searchcountry", "theme", "language", "gpu", "extrabrowserargs", "localhosts", "otherbrowser", "externaltomain", "localonly", "netjournal", "allowhosts", "ignorecors", "clearonexit", "autoreload", "autofill", "stricttracking", "adblock", "tabmute", "trustlocalcerts", "claude", "freezetabs", "suspendafter", "unloadafter", "disabled", "defaults",
     };
 
     public static Settings Load()
@@ -145,6 +147,7 @@ sealed class Settings
                 case "adblock": s.AdBlock = IsTrue(value); break;
                 case "tabmute": s.TabMute = IsTrue(value); break;
                 case "trustlocalcerts": s.TrustLocalCerts = IsTrue(value); break;
+                case "claude": s.Claude = IsTrue(value); break;
                 case "freezetabs": s.FreezeTabs = IsTrue(value); break;
                 case "suspendafter": s.SuspendAfter = Minutes(value, s.SuspendAfter, 1); break;
                 case "unloadafter": s.UnloadAfter = Minutes(value, s.UnloadAfter, 0); break;
@@ -320,6 +323,8 @@ sealed class Settings
         "AdBlock = " + Bool(AdBlock),
         L.T("# Доверять сертификатам серверов на этом компьютере (localhost, *.localhost, 127.x, ::1)"),
         "TrustLocalCerts = " + Bool(TrustLocalCerts),
+        L.T("# Доступ для Claude: Claude Code и Claude Desktop видят вкладки и действуют в них (LiteBro.exe mcp)"),
+        "Claude = " + Bool(Claude),
         "",
         L.T("# --- Вкладки ---"),
         L.T("# Клик по значку звука на вкладке выключает её звук"),

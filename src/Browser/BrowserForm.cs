@@ -13,7 +13,7 @@ using Microsoft.Web.WebView2.Core;
 namespace LiteBro;
 
 /// <summary>One browser window: a strip of tabs over a toolbar, each tab a WebView2 hosted directly through its controller.</summary>
-sealed class BrowserForm : Form
+sealed partial class BrowserForm : Form
 {
     public static readonly string IconFont =
         FontFamily.Families.Any(f => f.Name == "Segoe Fluent Icons") ? "Segoe Fluent Icons" : "Segoe MDL2 Assets";
@@ -2803,6 +2803,8 @@ sealed class BrowserForm : Form
                     ["adBlock"] = App.Current.S.AdBlock,
                     ["adBlockState"] = AdBlock.State,
                     ["trustLocalCerts"] = App.Current.S.TrustLocalCerts,
+                    ["claude"] = App.Current.S.Claude,
+                    ["exe"] = Application.ExecutablePath,
                     ["tabMute"] = App.Current.S.TabMute,
                     ["externalToMain"] = App.Current.S.ExternalToMain,
                     ["freezeTabs"] = App.Current.S.FreezeTabs,

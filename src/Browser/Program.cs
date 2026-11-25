@@ -20,6 +20,12 @@ static class Program
     [STAThread]
     static void Main(string[] args)
     {
+        // Started by Claude Code or Claude Desktop: MCP on stdio for the running browser, no window
+        if (Mcp.IsBridge(args))
+        {
+            Mcp.RunBridge();
+            return;
+        }
         Settings.MoveOldData();
         Settings settings;
         try { settings = Settings.Load(); }
@@ -111,6 +117,8 @@ sealed class App : ApplicationContext
         ui = SynchronizationContext.Current!; // installed by the first window
         // Raised on this thread: the windows follow Windows switching between light and dark
         SystemEvents.UserPreferenceChanged += OnUserPreferenceChanged;
+        // Claude's tool calls (Mcp.cs): refused inside while «Доступ для Claude» is off
+        Mcp.Listen(BrowserForm.RunClaudeToolAsync, action => ui.Post(_ => action(), null));
         SingleInstance.Listen(message =>
         {
             bool taken = false;
@@ -413,6 +421,9 @@ sealed class App : ApplicationContext
 
     public void NoteActive(BrowserForm form) => lastActive = form;
 
+    /// <summary>The window used last: where Claude opens its tabs.</summary>
+    public BrowserForm? LastActive => lastActive;
+
     /// <summary>A tab left the PowerShell console: once no tab shows it, its PowerShell goes, and its memory with it.</summary>
     public void ShellMaybeUnused() => ui.Post(_ =>
     {
@@ -563,6 +574,7 @@ sealed class App : ApplicationContext
                 AdBlock.Changed();
                 break;
             case "trustLocalCerts": S.Change(s => s.TrustLocalCerts = on); break;
+            case "claude": S.Change(s => s.Claude = on); break;
             case "tabMute": S.Change(s => s.TabMute = on); break;
             case "externalToMain": S.Change(s => s.ExternalToMain = on); break;
             case "freezeTabs": S.Change(s => s.FreezeTabs = on); break;

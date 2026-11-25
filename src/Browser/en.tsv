@@ -862,3 +862,13 @@ uBlock Origin Lite не трогает сайты проекта, как пун�
 Не удалось:	Failed:
 WebRTC заблокирован режимом «только localhost» проекта	WebRTC is blocked by the project localhost-only mode
 Продолжить	Continue
+Доступ для Claude	Claude access
+«Доступ для Claude»	“Claude access”
+«только localhost»	“localhost only”
+«Для разработчика»	“For developers”
+# Доступ для Claude: Claude Code и Claude Desktop видят вкладки и действуют в них (LiteBro.exe mcp)	# Claude access: Claude Code and Claude Desktop see the tabs and act in them (LiteBro.exe mcp)
+Claude Code: выполните в терминале команду (один раз, для всех папок):	Claude Code: run this command in a terminal (once, for all folders):
+Claude Desktop: Настройки → Разработчик → Изменить конфигурацию, в файл claude_desktop_config.json добавьте сервер (если файл пустой — вставьте целиком), сохраните и перезапустите Claude Desktop:	Claude Desktop: Settings → Developer → Edit Config, add the server to claude_desktop_config.json (if the file is empty, paste it whole), save and restart Claude Desktop:
+Потом попросите Claude, например: открой в LiteBro поиск и найди… Если LiteBro не запущен, Claude запустит его сам.	Then ask Claude, for example: open a search in LiteBro and find… If LiteBro is not running, Claude starts it.
+Claude Code и Claude Desktop видят открытые вкладки и действуют в них, как вы: открывают сайты, читают текст, делают снимки, нажимают и печатают. Это ваш профиль со входами на сайты, поэтому сайты видят обычного пользователя. Вкладка, в которой работает Claude, выходит вперёд, и вы видите, что он делает. Страницы самого браузера Claude может только читать. Пароли и оплату Claude не вводит.	Claude Code and Claude Desktop see the open tabs and act in them as you do: open sites, read text, take screenshots, click and type. It is your profile with your sign-ins, so sites see an ordinary user. The tab Claude works in comes to the front, and you see what it does. Pages of the browser itself Claude can only read. Claude does not enter passwords or payments.
+Включить доступ для Claude? Claude сможет открывать сайты, читать страницы и нажимать на них в вашем профиле, где вы вошли на сайты. Включайте, если доверяете тому, что запускаете в Claude.	Switch on Claude access? Claude will be able to open sites, read pages and click on them in your profile, where you are signed in to sites. Switch it on if you trust what you run in Claude.

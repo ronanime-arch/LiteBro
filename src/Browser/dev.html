@@ -46,6 +46,10 @@ input[type=number] { width: 70px; font: 13px var(--text); padding: 3px 6px; bord
 .icon.console { background: rgba(0, 0, 0, .55); color: #fff; border-radius: 13px; height: 24px; }
 .item.off .icon { opacity: .45; }
 #timing.off { opacity: .5; }
+#claudeHow p { margin-top: 10px; }
+#claudeHow .row { margin-top: 6px; flex-wrap: nowrap; }
+input.cmd { flex: 1; min-width: 0; font: 12.5px Consolas, monospace; padding: 5px 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--card); color: inherit; }
+#claudeHow.off { opacity: .5; }
 button:disabled { opacity: .45; cursor: default; background: transparent; }
 dialog { max-width: 460px; padding: 18px 20px 14px; border: 1px solid var(--line); border-radius: 8px; background: var(--card); color: var(--fg); }
 dialog::backdrop { background: rgba(0, 0, 0, .45); }
@@ -78,6 +82,15 @@ dialog div { display: flex; justify-content: flex-end; gap: 8px; }
   <div class="row">
     <button id="perms">Разрешения сайтов</button>
     <span class="muted">Камера, микрофон, местоположение, уведомления: что разрешено или запрещено сайтам, с отменой.</span>
+  </div>
+  <h2>Claude</h2>
+  <section id="claudeSection"></section>
+  <div id="claudeHow">
+    <p class="muted">Claude Code: выполните в терминале команду (один раз, для всех папок):</p>
+    <div class="row"><input id="claudeCode" class="cmd" readonly><button id="claudeCodeCopy">Копировать</button></div>
+    <p class="muted">Claude Desktop: Настройки → Разработчик → Изменить конфигурацию, в файл claude_desktop_config.json добавьте сервер (если файл пустой — вставьте целиком), сохраните и перезапустите Claude Desktop:</p>
+    <div class="row"><input id="claudeDesktop" class="cmd" readonly><button id="claudeDesktopCopy">Копировать</button></div>
+    <p class="muted">Потом попросите Claude, например: открой в LiteBro поиск и найди… Если LiteBro не запущен, Claude запустит его сам.</p>
   </div>
   <h2>Вкладки</h2>
   <section id="tabsSection"></section>
@@ -157,7 +170,7 @@ const ICONS = {
   reset: "\uE75C", country: "\uE774", emulation: "\uE90F", snapshot: "\uE722", storage: "\uEDA2", json: { text: "{ }" },
   mocks: "\uE8A5", split: "\uE89A", perms: "\uE8D7", unblock: "\uE733",
   shell: { svg: POWERSHELL, cls: "shell" }, localonly: { svg: SHIELD, cls: "net" }, netlog: "\uE8FD", console: { text: ">_", cls: "console" },
-  tabMute: "\uE767", adBlock: "\uE733", strictTracking: "\uEA18", trustLocalCerts: "\uE72E", externalToMain: "\uE8A7", freezeTabs: "\uE769", gpu: "\uE7F4",
+  claude: { text: "AI" }, tabMute: "\uE767", adBlock: "\uE733", strictTracking: "\uEA18", trustLocalCerts: "\uE72E", externalToMain: "\uE8A7", freezeTabs: "\uE769", gpu: "\uE7F4",
 };
 function icon(id) {
   const i = ICONS[id], span = document.createElement("span");
@@ -249,6 +262,7 @@ const SETTINGS = [
   ["protect", "adBlock", "Блокировка рекламы (uBlock Origin Lite)", "Блокировщик рекламы, трекеров и вредоносных сайтов. При первом включении скачивается с GitHub (около 12 МБ, один раз). Фильтры применяет сам движок, поэтому памяти и процессора он почти не тратит. Если сайт из-за него работает неправильно, добавьте сайт в исключения в настройках uBlock Origin Lite или выключите блокировку здесь."],
   ["protect", "strictTracking", "Строгая защита от трекеров", "Как «Строгая» в Edge: блокируется больше счётчиков, рекламы и сторонних cookies. Изредка ломается вход через другой сайт или встроенное видео; тогда выключите. Выключено — «Сбалансированная», как в Edge по умолчанию."],
   ["protect", "trustLocalCerts", "Доверять сертификатам localhost", "Локальный сервер на https со своим сертификатом (vite --https, dotnet dev-certs) открывается без предупреждения. Только localhost, *.localhost, 127.x и ::1. Выключение действует после перезапуска браузера для уже открытых адресов."],
+  ["claudeSection", "claude", "Доступ для Claude", "Claude Code и Claude Desktop видят открытые вкладки и действуют в них, как вы: открывают сайты, читают текст, делают снимки, нажимают и печатают. Это ваш профиль со входами на сайты, поэтому сайты видят обычного пользователя. Вкладка, в которой работает Claude, выходит вперёд, и вы видите, что он делает. Страницы самого браузера Claude может только читать. Пароли и оплату Claude не вводит."],
   ["tabsSection", "tabMute", "Выключение звука по значку на вкладке", "Клик по значку динамика выключает и включает звук вкладки, пункт есть и в меню вкладки. Выключено — значок только показывает, что вкладка играет."],
   ["tabsSection", "freezeTabs", "Заморозка фоновых вкладок", "Экономит память и процессор: вкладка в фоне приостанавливается, потом выгружается и загружается снова по клику. Не замораживаются вкладки со звуком, терминал и сайты работающих проектов."],
   ["links", "externalToMain", "Открывать внешние ссылки в основном браузере", "Ссылка на сайт в интернете из другой программы (почта, мессенджер, документ) открывается в вашем основном браузере, обычно Chrome, а локальные адреса — в LiteBro. Выключено — LiteBro открывает и их. Работает, если LiteBro выбран для HTTP и HTTPS в «Приложениях по умолчанию». В режиме «только localhost» такие ссылки всё равно уходят в основной браузер."],
@@ -269,7 +283,11 @@ for (const [where, key, name, what] of SETTINGS) {
   text.append(n, w);
   const box = document.createElement("input");
   box.type = "checkbox";
-  box.addEventListener("change", () => {
+  box.addEventListener("change", async () => {
+    if (key === "claude" && box.checked && !await ask("Включить доступ для Claude? Claude сможет открывать сайты, читать страницы и нажимать на них в вашем профиле, где вы вошли на сайты. Включайте, если доверяете тому, что запускаете в Claude.")) {
+      box.checked = false;
+      return;
+    }
     if (key === "gpu" && !confirm(box.checked
         ? "Включить видеокарту? Движок браузера перезапустится: вкладки перезагрузятся, открытые терминалы закроются."
         : "Выключить видеокарту? Браузер станет медленнее и сильнее нагрузит процессор; это нужно только при мерцании и ошибках рисования. Движок перезапустится: вкладки перезагрузятся, открытые терминалы закроются.")) {
@@ -292,6 +310,19 @@ for (const id of ["suspendAfter", "unloadAfter"])
     if (!(n >= min && n <= 1440)) return;
     post({ type: "setting", key: id, value: n });
   });
+// The commands that connect Claude, with this LiteBro.exe
+function copyField(id) {
+  const field = $(id);
+  field.select();
+  navigator.clipboard.writeText(field.value).catch(() => document.execCommand("copy"));
+}
+$("claudeCodeCopy").addEventListener("click", () => copyField("claudeCode"));
+$("claudeDesktopCopy").addEventListener("click", () => copyField("claudeDesktop"));
+function showClaude(exe) {
+  if (!exe) return;
+  $("claudeCode").value = "claude mcp add --scope user litebro \"" + exe + "\" mcp";
+  $("claudeDesktop").value = JSON.stringify({ mcpServers: { litebro: { command: exe, args: ["mcp"] } } });
+}
 $("theme").addEventListener("change", () => post({ type: "setting", key: "theme", value: $("theme").value }));
 $("perms").addEventListener("click", () => post({ type: "permsOpen" }));
 $("adBlockOpen").addEventListener("click", () => post({ type: "adBlockOpen" }));
@@ -311,6 +342,8 @@ window.chrome.webview.addEventListener("message", e => {
   for (const id of ["suspendAfter", "unloadAfter"])
     if (document.activeElement !== $(id) && set[id] !== undefined) $(id).value = set[id];
   $("timing").classList.toggle("off", !set.freezeTabs);
+  $("claudeHow").classList.toggle("off", !set.claude);
+  showClaude(set.exe);
   $("adBlockOpen").disabled = !set.adBlock;
   // Downloading, waiting for local-only mode to be off, a failure: said instead of the button's note
   const state = set.adBlock ? set.adBlockState || "" : "";

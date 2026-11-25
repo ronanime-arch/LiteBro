@@ -1,0 +1,74 @@
+# The iOS app (ios/): built on a Mac runner without signing, fake-signed with ldid and packed as
+# LiteBro.tipa for TrollStore. A pull request gets it as a download of the run;
+# every push to main replaces the file of the prerelease "ios" («LiteBro для iOS»).
+name: iOS
+
+on:
+  push:
+    branches: [main]
+    paths: ['ios/**', '.github/workflows/ios.yml']
+  pull_request:
+    paths: ['ios/**', '.github/workflows/ios.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: ios-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Tools
+        run: brew install xcodegen ldid
+
+      - name: Project
+        working-directory: ios
+        run: xcodegen generate
+
+      - name: Build
+        working-directory: ios
+        run: |
+          set -o pipefail
+          xcodebuild -project LiteBro.xcodeproj -scheme LiteBro -configuration Release \
+            -sdk iphoneos -destination 'generic/platform=iOS' -derivedDataPath build \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" \
+            -skipPackagePluginValidation -skipMacroValidation \
+            build | tee build.log | grep -E '(error|warning: unre|BUILD)' || true
+          test -d build/Build/Products/Release-iphoneos/LiteBro.app || { tail -100 build.log; exit 1; }
+
+      - name: Pack .tipa
+        working-directory: ios
+        run: |
+          rm -rf Payload && mkdir Payload
+          cp -R build/Build/Products/Release-iphoneos/LiteBro.app Payload/
+          ldid -SScreen.entitlements Payload/LiteBro.app/PlugIns/LiteBroScreen.appex/LiteBroScreen
+          ldid -STrollStore.entitlements Payload/LiteBro.app/LiteBro
+          zip -qry LiteBro.tipa Payload
+          ls -l LiteBro.tipa
+
+      - name: File of the run
+        uses: actions/upload-artifact@v4
+        with:
+          name: LiteBro-iOS
+          path: ios/LiteBro.tipa
+          retention-days: 14
+
+      - name: Prerelease
+        if: github.event_name != 'pull_request'
+        working-directory: ios
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh release view ios > /dev/null 2>&1; then
+            gh release upload ios LiteBro.tipa --clobber
+          else
+            gh release create ios LiteBro.tipa --target "$GITHUB_SHA" --prerelease \
+              --title "LiteBro для iOS (TrollStore)" \
+              --notes "Файл для TrollStore на iOS 16. Заменяется после каждого изменения папки ios/ в main."
+          fi

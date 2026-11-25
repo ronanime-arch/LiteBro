@@ -3358,6 +3358,9 @@ sealed class BrowserForm : Form
             var project = NetPage.ProjectOf(e.Request.Uri);
             e.Response = env.CreateWebResourceResponse(ProgramLog.Bytes(NetLog.Since(after, project)), 200, "OK", ProgramLog.JsonHeaders);
         }
+        else if (path == "/qrcode.js") // QR codes of the «С телефона» dialog (Nayuki's library, MIT)
+            e.Response = env.CreateWebResourceResponse(L.Stream("qrcode.js"), 200, "OK",
+                "Content-Type: text/javascript; charset=utf-8\r\n" + Home.Isolation);
         else if (TermPage.File(path, out var headers) is { } file)
             e.Response = env.CreateWebResourceResponse(file, 200, "OK", headers);
         else if (path.StartsWith("/icon/") && Icons.Read(Uri.UnescapeDataString(path.Substring(6))) is { } bytes)
@@ -3365,6 +3368,34 @@ sealed class BrowserForm : Form
                 "Content-Type: " + Icons.ContentType(path) + "\r\n" + Icons.Headers + "\r\n" + Home.Isolation);
         else
             e.Response = env.CreateWebResourceResponse(null, 404, "Not Found", "");
+    }
+
+    /// <summary>The «С телефона» dialog: this computer's addresses, the projects' sites there and the SSH terminal.</summary>
+    async void SendPhone(Tab tab)
+    {
+        var ips = Phone.Addresses();
+        var ip = ips.FirstOrDefault();
+        var sites = await Phone.Sites(ip);
+        if (tab.Core is { } core && Home.IsTiles(core.Source))
+            core.PostWebMessageAsJson(ProjectStore.Json.Serialize(new Dictionary<string, object?>
+            {
+                ["type"] = "phone", ["ip"] = ip, ["ips"] = ips, ["sites"] = sites, ["ssh"] = Phone.Ssh(ip),
+            }));
+    }
+
+    async void SetPhoneSsh(Tab tab, bool on)
+    {
+        var task = Phone.SetSsh(on);
+        SendPhone(tab); // "busy" while Windows asks and installs
+        bool ok = await task;
+        SendPhone(tab);
+        if (!ok && tab.Core is { } core && Home.IsTiles(core.Source))
+            core.PostWebMessageAsJson(ProjectStore.Json.Serialize(new Dictionary<string, object?>
+            {
+                ["type"] = "phoneError",
+                ["text"] = on ? L.T("Не удалось включить вход по SSH: Windows не дала прав администратора или не смогла установить OpenSSH Server.")
+                              : L.T("Не удалось выключить вход по SSH."),
+            }));
     }
 
     /// <summary>Which of the browser's own pages a start.litebro address is.</summary>
@@ -3385,6 +3416,7 @@ sealed class BrowserForm : Form
     {
         ["browse"] = new[] { "home" }, ["save"] = new[] { "home" }, ["delete"] = new[] { "home" }, ["order"] = new[] { "home" },
         ["open"] = new[] { "home" }, ["openAll"] = new[] { "home" }, ["log"] = new[] { "home" },
+        ["phone"] = new[] { "home" }, ["phoneSsh"] = new[] { "home" },
         ["stop"] = new[] { "home", "console" }, ["terminal"] = new[] { "home", "console" },
         ["command"] = new[] { "console" }, ["cd"] = new[] { "console" }, ["input"] = new[] { "console" }, ["stopCommand"] = new[] { "console" },
         ["net"] = new[] { "home", "net" }, ["netOpen"] = new[] { "home", "dev", "profile" }, ["devOpen"] = new[] { "home", "net" },
@@ -3566,6 +3598,12 @@ sealed class BrowserForm : Form
                 // The console of the project (its program's output), or PowerShell's: always a tab of its own
                 if (Flag("newTab") || ProgramLog.IsShell(console)) OpenNewTab(ProgramLog.Url(console), tab);
                 else tab.Core?.Navigate(ProgramLog.Url(console));
+                break;
+            case "phone":
+                SendPhone(tab);
+                break;
+            case "phoneSsh" when !Phone.Busy:
+                SetPhoneSsh(tab, Flag("on"));
                 break;
             case "terminal":
                 // PowerShell in a terminal: in the console's folder, or the user's from the start page;

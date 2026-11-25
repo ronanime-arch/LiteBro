@@ -20,6 +20,7 @@
     <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.4191.47" />
     <EmbeddedResource Include="app.ico" LogicalName="app.ico" />
     <EmbeddedResource Include="home.html" LogicalName="home.html" />
+    <EmbeddedResource Include="qrcode.js" LogicalName="qrcode.js" />
     <EmbeddedResource Include="net.html" LogicalName="net.html" />
     <EmbeddedResource Include="netpage.js" LogicalName="netpage.js" />
     <EmbeddedResource Include="storage.html" LogicalName="storage.html" />
@@ -39,6 +40,7 @@
     <EmbeddedResource Include="term\xterm.css" LogicalName="term/xterm.css" />
     <Reference Include="System.Web.Extensions" />
     <Reference Include="System.Net.Http" />
+    <Reference Include="System.ServiceProcess" />
     <Reference Include="System.IO.Compression" />
     <Reference Include="System.IO.Compression.FileSystem" />
   </ItemGroup>

@@ -145,6 +145,7 @@ const GROUPS = [
     ["shell", "Терминал (фиолетовая кнопка слева)", "Терминал в папке проекта открывается из консоли проекта."],
     ["localonly", "Переключатель «только localhost»", "Режим остаётся как был; переключается на странице журнала сети."],
     ["netlog", "Журнал сети", "Журнал открывается и кнопкой ниже."],
+    ["phone", "С телефона", "QR-коды сайтов проектов и терминала для LiteBro на iPhone. Вход по SSH, если он включён, продолжает работать."],
     ["console", "Консоль проекта (>_ на плитках)", "Консоль открывается и со страниц запуска и ошибки проекта."],
   ]],
 ];
@@ -156,7 +157,7 @@ const ICONS = {
   back: "\uE72B", forward: "\uE72A", reload: "\uE72C", home: "\uE80F", star: "\uE734", ram: { text: "МБ" },
   reset: "\uE75C", country: "\uE774", emulation: "\uE90F", snapshot: "\uE722", storage: "\uEDA2", json: { text: "{ }" },
   mocks: "\uE8A5", split: "\uE89A", perms: "\uE8D7", unblock: "\uE733",
-  shell: { svg: POWERSHELL, cls: "shell" }, localonly: { svg: SHIELD, cls: "net" }, netlog: "\uE8FD", console: { text: ">_", cls: "console" },
+  shell: { svg: POWERSHELL, cls: "shell" }, localonly: { svg: SHIELD, cls: "net" }, netlog: "\uE8FD", phone: "\uE8EA", console: { text: ">_", cls: "console" },
   tabMute: "\uE767", adBlock: "\uE733", strictTracking: "\uEA18", trustLocalCerts: "\uE72E", externalToMain: "\uE8A7", freezeTabs: "\uE769", gpu: "\uE7F4",
 };
 function icon(id) {

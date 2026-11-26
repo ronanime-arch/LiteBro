@@ -1,7 +1,5 @@
 import Foundation
 import LocalAuthentication
-import NIOCore
-import NIOHTTP1
 import UIKit
 import UniformTypeIdentifiers
 
@@ -63,7 +61,7 @@ final class FileShare: ObservableObject {
                 do {
                     bound = try s.start(port: p) { DAVHandler(root: root, token: token, readOnly: readOnly) }
                     break
-                } catch let e as IOError where e.errnoCode == EADDRINUSE {
+                } catch MiniHTTP.Failure.portInUse {
                     continue
                 }
             }
@@ -103,15 +101,11 @@ final class FileShare: ObservableObject {
 
 /// One connection: WebDAV for Explorer, plain GET with a page for browsers. The secret is the first
 /// part of every path; anything else is "not found".
-private final class DAVHandler: ChannelInboundHandler {
-    typealias InboundIn = HTTPServerRequestPart
-    typealias OutboundOut = HTTPServerResponsePart
-
+private final class DAVHandler: HTTPHandler {
     private let root: URL
     private let rootPath: String
     private let token: String
     private let readOnly: Bool
-    private var head: HTTPRequestHead?
     private var upload: (handle: FileHandle, temp: URL, target: URL)?
     private var body = Data()
     private static let work = DispatchQueue(label: "litebro.files", qos: .userInitiated, attributes: .concurrent)
@@ -148,59 +142,55 @@ private final class DAVHandler: ChannelInboundHandler {
 
     // MARK: Request
 
-    func channelRead(context: ChannelHandlerContext, data: NIOAny) {
-        switch unwrapInboundIn(data) {
-        case .head(let h):
-            head = h
-            body = Data()
-            upload = nil
-            if h.method == .PUT, !readOnly, let f = file(h.uri) {
-                let dir = f.url.deletingLastPathComponent()
-                let temp = dir.appendingPathComponent(".litebro-upload-" + UUID().uuidString)
-                if FileManager.default.createFile(atPath: temp.path, contents: nil),
-                   let handle = try? FileHandle(forWritingTo: temp) {
-                    upload = (handle, temp, f.url)
-                }
-            }
-        case .body(let buf):
-            if let u = upload {
-                buf.withUnsafeReadableBytes { u.handle.write(Data($0)) }
-            } else if body.count < 1 << 20 {
-                body.append(contentsOf: buf.readableBytesView)
-            }
-        case .end:
-            guard let h = head else { return }
-            head = nil
-            let up = upload
-            upload = nil
-            let channel = context.channel
-            let keepAlive = h.isKeepAlive
-            Self.work.async { [self] in
-                self.handle(h, upload: up, channel: channel, keepAlive: keepAlive)
+    func onHead(_ h: HTTPRequest, _ c: HTTPConnection) {
+        body = Data()
+        upload = nil
+        if h.method == "PUT", !readOnly, let f = file(h.uri) {
+            let dir = f.url.deletingLastPathComponent()
+            let temp = dir.appendingPathComponent(".litebro-upload-" + UUID().uuidString)
+            if FileManager.default.createFile(atPath: temp.path, contents: nil),
+               let handle = try? FileHandle(forWritingTo: temp) {
+                upload = (handle, temp, f.url)
             }
         }
     }
 
-    private func handle(_ h: HTTPRequestHead, upload: (handle: FileHandle, temp: URL, target: URL)?,
-                        channel: Channel, keepAlive: Bool) {
+    func onBody(_ d: Data, _ c: HTTPConnection) {
+        if let u = upload {
+            u.handle.write(d)
+        } else if body.count < 1 << 20 {
+            body.append(d)
+        }
+    }
+
+    func onEnd(_ h: HTTPRequest, _ c: HTTPConnection) {
+        let up = upload
+        upload = nil
+        Self.work.async { [self] in
+            self.handle(h, upload: up, channel: c, keepAlive: h.keepAlive)
+        }
+    }
+
+    private func handle(_ h: HTTPRequest, upload: (handle: FileHandle, temp: URL, target: URL)?,
+                        channel: HTTPConnection, keepAlive: Bool) {
         let fm = FileManager.default
         guard let f = file(h.uri) else {
             if let upload { try? upload.handle.close(); try? fm.removeItem(at: upload.temp) }
-            return channel.respond(.notFound, keepAlive: keepAlive)
+            return channel.respond(404, keepAlive: keepAlive)
         }
-        let writes: [HTTPMethod] = [.PUT, .DELETE, .MKCOL, .MOVE, .COPY, .PROPPATCH]
-        if readOnly && writes.contains(h.method) { return channel.respond(.forbidden, keepAlive: keepAlive) }
+        let writes = ["PUT", "DELETE", "MKCOL", "MOVE", "COPY", "PROPPATCH"]
+        if readOnly && writes.contains(h.method) { return channel.respond(403, keepAlive: keepAlive) }
         var isDir: ObjCBool = false
         let exists = fm.fileExists(atPath: f.url.path, isDirectory: &isDir)
 
         switch h.method {
-        case .OPTIONS:
-            channel.respond(.ok, headers: [("DAV", "1, 2"), ("MS-Author-Via", "DAV"),
+        case "OPTIONS":
+            channel.respond(200, headers: [("DAV", "1, 2"), ("MS-Author-Via", "DAV"),
                                            ("Allow", "OPTIONS, GET, HEAD, PUT, DELETE, MKCOL, MOVE, COPY, PROPFIND, PROPPATCH, LOCK, UNLOCK")],
                             keepAlive: keepAlive)
-        case .PROPFIND:
-            guard exists else { return channel.respond(.notFound, keepAlive: keepAlive) }
-            let depth = h.headers["Depth"].first ?? "1"
+        case "PROPFIND":
+            guard exists else { return channel.respond(404, keepAlive: keepAlive) }
+            let depth = h.header("Depth") ?? "1"
             var xml = "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n<D:multistatus xmlns:D=\"DAV:\">\n"
             xml += entry(f.url, rel: f.rel)
             if isDir.boolValue && depth != "0" {
@@ -210,73 +200,73 @@ private final class DAVHandler: ChannelInboundHandler {
                 }
             }
             xml += "</D:multistatus>\n"
-            channel.respond(HTTPResponseStatus(statusCode: 207), headers: [("Content-Type", "application/xml; charset=utf-8")],
+            channel.respond(207, headers: [("Content-Type", "application/xml; charset=utf-8")],
                             body: Data(xml.utf8), keepAlive: keepAlive)
-        case .PROPPATCH:
+        case "PROPPATCH":
             let xml = "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n<D:multistatus xmlns:D=\"DAV:\"><D:response><D:href>"
                 + Self.escape(href(f.rel, dir: isDir.boolValue)) + "</D:href><D:propstat><D:prop/><D:status>HTTP/1.1 200 OK</D:status></D:propstat></D:response></D:multistatus>"
-            channel.respond(HTTPResponseStatus(statusCode: 207), headers: [("Content-Type", "application/xml; charset=utf-8")],
+            channel.respond(207, headers: [("Content-Type", "application/xml; charset=utf-8")],
                             body: Data(xml.utf8), keepAlive: keepAlive)
-        case .GET, .HEAD:
-            guard exists else { return channel.respond(.notFound, keepAlive: keepAlive) }
+        case "GET", "HEAD":
+            guard exists else { return channel.respond(404, keepAlive: keepAlive) }
             if isDir.boolValue {
                 if !h.uri.split(separator: "?").first!.hasSuffix("/") {
-                    return channel.respond(.movedPermanently, headers: [("Location", href(f.rel, dir: true))], keepAlive: keepAlive)
+                    return channel.respond(301, headers: [("Location", href(f.rel, dir: true))], keepAlive: keepAlive)
                 }
                 let page = Data(listing(f.url, rel: f.rel).utf8)
-                channel.respond(.ok, headers: [("Content-Type", "text/html; charset=utf-8"), ("Cache-Control", "no-store"),
+                channel.respond(200, headers: [("Content-Type", "text/html; charset=utf-8"), ("Cache-Control", "no-store"),
                                                ("Content-Security-Policy", "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src 'self'; media-src 'self'; connect-src 'self'")],
-                                body: h.method == .HEAD ? nil : page, keepAlive: keepAlive)
+                                body: h.method == "HEAD" ? nil : page, keepAlive: keepAlive)
             } else {
                 send(f.url, head: h, channel: channel, keepAlive: keepAlive)
             }
-        case .PUT:
-            guard let upload else { return channel.respond(.conflict, keepAlive: keepAlive) }
+        case "PUT":
+            guard let upload else { return channel.respond(409, keepAlive: keepAlive) }
             try? upload.handle.close()
             do {
                 let had = fm.fileExists(atPath: upload.target.path)
                 if had { _ = try fm.replaceItemAt(upload.target, withItemAt: upload.temp) } else { try fm.moveItem(at: upload.temp, to: upload.target) }
-                channel.respond(had ? .noContent : .created, keepAlive: keepAlive)
+                channel.respond(had ? 204 : 201, keepAlive: keepAlive)
             } catch {
                 try? fm.removeItem(at: upload.temp)
-                channel.respond(.forbidden, keepAlive: keepAlive)
+                channel.respond(403, keepAlive: keepAlive)
             }
-        case .DELETE:
-            guard exists, !f.rel.isEmpty else { return channel.respond(exists ? .forbidden : .notFound, keepAlive: keepAlive) }
-            do { try fm.removeItem(at: f.url); channel.respond(.noContent, keepAlive: keepAlive) }
-            catch { channel.respond(.forbidden, keepAlive: keepAlive) }
-        case .MKCOL:
-            if exists { return channel.respond(.methodNotAllowed, keepAlive: keepAlive) }
-            do { try fm.createDirectory(at: f.url, withIntermediateDirectories: false); channel.respond(.created, keepAlive: keepAlive) }
-            catch { channel.respond(.conflict, keepAlive: keepAlive) }
-        case .MOVE, .COPY:
-            guard exists, !f.rel.isEmpty, let d = h.headers["Destination"].first,
+        case "DELETE":
+            guard exists, !f.rel.isEmpty else { return channel.respond(exists ? 403 : 404, keepAlive: keepAlive) }
+            do { try fm.removeItem(at: f.url); channel.respond(204, keepAlive: keepAlive) }
+            catch { channel.respond(403, keepAlive: keepAlive) }
+        case "MKCOL":
+            if exists { return channel.respond(405, keepAlive: keepAlive) }
+            do { try fm.createDirectory(at: f.url, withIntermediateDirectories: false); channel.respond(201, keepAlive: keepAlive) }
+            catch { channel.respond(409, keepAlive: keepAlive) }
+        case "MOVE", "COPY":
+            guard exists, !f.rel.isEmpty, let d = h.header("Destination"),
                   let path = URLComponents(string: d)?.percentEncodedPath ?? Optional(d), let to = file(path) else {
-                return channel.respond(.badRequest, keepAlive: keepAlive)
+                return channel.respond(400, keepAlive: keepAlive)
             }
-            let overwrite = h.headers["Overwrite"].first?.uppercased() != "F"
+            let overwrite = h.header("Overwrite")?.uppercased() != "F"
             let had = fm.fileExists(atPath: to.url.path)
-            if had && !overwrite { return channel.respond(.preconditionFailed, keepAlive: keepAlive) }
+            if had && !overwrite { return channel.respond(412, keepAlive: keepAlive) }
             do {
                 if had { try fm.removeItem(at: to.url) }
-                if h.method == .MOVE { try fm.moveItem(at: f.url, to: to.url) } else { try fm.copyItem(at: f.url, to: to.url) }
-                channel.respond(had ? .noContent : .created, keepAlive: keepAlive)
+                if h.method == "MOVE" { try fm.moveItem(at: f.url, to: to.url) } else { try fm.copyItem(at: f.url, to: to.url) }
+                channel.respond(had ? 204 : 201, keepAlive: keepAlive)
             } catch {
-                channel.respond(.conflict, keepAlive: keepAlive)
+                channel.respond(409, keepAlive: keepAlive)
             }
-        case .LOCK:
+        case "LOCK":
             // Explorer writes only with a lock; one person, one computer: every lock is granted
             let lock = "opaquelocktoken:" + UUID().uuidString
             let xml = "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n<D:prop xmlns:D=\"DAV:\"><D:lockdiscovery><D:activelock>"
                 + "<D:locktype><D:write/></D:locktype><D:lockscope><D:exclusive/></D:lockscope><D:depth>0</D:depth>"
                 + "<D:timeout>Second-3600</D:timeout><D:locktoken><D:href>\(lock)</D:href></D:locktoken>"
                 + "</D:activelock></D:lockdiscovery></D:prop>"
-            channel.respond(.ok, headers: [("Content-Type", "application/xml; charset=utf-8"), ("Lock-Token", "<\(lock)>")],
+            channel.respond(200, headers: [("Content-Type", "application/xml; charset=utf-8"), ("Lock-Token", "<\(lock)>")],
                             body: Data(xml.utf8), keepAlive: keepAlive)
-        case .UNLOCK:
-            channel.respond(.noContent, keepAlive: keepAlive)
+        case "UNLOCK":
+            channel.respond(204, keepAlive: keepAlive)
         default:
-            channel.respond(.methodNotAllowed, keepAlive: keepAlive)
+            channel.respond(405, keepAlive: keepAlive)
         }
     }
 
@@ -317,13 +307,13 @@ private final class DAVHandler: ChannelInboundHandler {
     }
 
     /// A file in pieces, with Range for video in the browser; the next piece waits for the network
-    private func send(_ url: URL, head h: HTTPRequestHead, channel: Channel, keepAlive: Bool) {
-        guard let handle = try? FileHandle(forReadingFrom: url) else { return channel.respond(.forbidden, keepAlive: keepAlive) }
+    private func send(_ url: URL, head h: HTTPRequest, channel: HTTPConnection, keepAlive: Bool) {
+        guard let handle = try? FileHandle(forReadingFrom: url) else { return channel.respond(403, keepAlive: keepAlive) }
         defer { try? handle.close() }
         let attrs = (try? FileManager.default.attributesOfItem(atPath: url.path)) ?? [:]
         let size = (attrs[.size] as? NSNumber)?.int64Value ?? 0
         var start: Int64 = 0, end = size - 1, partial = false
-        if let r = h.headers["Range"].first, r.hasPrefix("bytes="), !r.contains(",") {
+        if let r = h.header("Range"), r.hasPrefix("bytes="), !r.contains(",") {
             let p = r.dropFirst(6).split(separator: "-", omittingEmptySubsequences: false).map(String.init)
             if p.count == 2 {
                 if p[0].isEmpty, let n = Int64(p[1]) { start = max(0, size - n) }
@@ -332,28 +322,25 @@ private final class DAVHandler: ChannelInboundHandler {
             }
         }
         if size > 0 && (start > end || start >= size) {
-            return channel.respond(HTTPResponseStatus(statusCode: 416), headers: [("Content-Range", "bytes */\(size)")], keepAlive: keepAlive)
+            return channel.respond(416, headers: [("Content-Range", "bytes */\(size)")], keepAlive: keepAlive)
         }
         let length = size == 0 ? 0 : end - start + 1
-        var headers = HTTPHeaders([("Content-Type", Self.type(url)), ("Content-Length", String(length)), ("Accept-Ranges", "bytes"),
-                                   ("Last-Modified", Self.httpDate.string(from: attrs[.modificationDate] as? Date ?? Date()))])
-        if partial { headers.add(name: "Content-Range", value: "bytes \(start)-\(end)/\(size)") }
-        if !keepAlive { headers.add(name: "Connection", value: "close") }
-        channel.write(HTTPServerResponsePart.head(HTTPResponseHead(version: .http1_1, status: partial ? .partialContent : .ok, headers: headers)), promise: nil)
-        if h.method == .GET && length > 0 {
+        var headers = [("Content-Type", Self.type(url)), ("Content-Length", String(length)), ("Accept-Ranges", "bytes"),
+                       ("Last-Modified", Self.httpDate.string(from: attrs[.modificationDate] as? Date ?? Date()))]
+        if partial { headers.append(("Content-Range", "bytes \(start)-\(end)/\(size)")) }
+        if !keepAlive { headers.append(("Connection", "close")) }
+        channel.sendHead(partial ? 206 : 200, headers: headers)
+        if h.method == "GET" && length > 0 {
             try? handle.seek(toOffset: UInt64(start))
             var left = length
             while left > 0 && channel.isActive {
                 let piece = handle.readData(ofLength: Int(min(left, 256 * 1024)))
                 if piece.isEmpty { break }
                 left -= Int64(piece.count)
-                let sent = DispatchSemaphore(value: 0)
-                channel.writeAndFlush(HTTPServerResponsePart.body(.byteBuffer(ByteBuffer(bytes: piece)))).whenComplete { _ in sent.signal() }
-                sent.wait()
+                channel.sendAndWait(piece)
             }
         }
-        let done = channel.writeAndFlush(HTTPServerResponsePart.end(nil))
-        if !keepAlive { done.whenComplete { _ in channel.close(promise: nil) } }
+        channel.finish(keepAlive: keepAlive)
     }
 
     /// The page of a folder: files, upload, new folder and delete (unless read-only)

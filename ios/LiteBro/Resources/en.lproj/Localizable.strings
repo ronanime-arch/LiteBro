@@ -274,3 +274,4 @@
 "Расширение не смогло открыть порт 8081:" = "The extension could not open port 8081:";
 "Показ не идёт, поэтому на ПК «отказано в подключении». Нажмите «Начать показ» ниже, выберите LiteBro и «Начать вещание»." = "Not sharing, so the PC says connection refused. Tap Start sharing below, choose LiteBro and Start Broadcast.";
 "Начать показ" = "Start sharing";
+"Порты 8080–8089 заняты. Скорее всего, доступ с ПК уже включён в другой сборке LiteBro (например, Debug): выключите его там или закройте её." = "Ports 8080–8089 are taken. PC access is most likely already on in another LiteBro build (such as Debug): turn it off there or close it.";

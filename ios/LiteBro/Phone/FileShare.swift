@@ -11,6 +11,8 @@ import UniformTypeIdentifiers
 final class FileShare: ObservableObject {
     static let shared = FileShare()
     static let port = 8080
+    /// Tried in turn when 8080 is taken (another LiteBro build sharing too); 8081 is the screen's
+    static let ports = [8080] + Array(8082...8089)
 
     @Published private(set) var running = false
     @Published private(set) var url: String?
@@ -56,7 +58,20 @@ final class FileShare: ObservableObject {
         let s = MiniHTTP()
         let root = self.root
         do {
-            let port = try s.start(port: Self.port) { DAVHandler(root: root, token: token, readOnly: readOnly) }
+            var bound: Int?
+            for p in Self.ports {
+                do {
+                    bound = try s.start(port: p) { DAVHandler(root: root, token: token, readOnly: readOnly) }
+                    break
+                } catch let e as IOError where e.errnoCode == EADDRINUSE {
+                    continue
+                }
+            }
+            guard let port = bound else {
+                // Every port is held, most likely by another LiteBro build (Debug) sharing its files
+                error = L("Порты 8080–8089 заняты. Скорее всего, доступ с ПК уже включён в другой сборке LiteBro (например, Debug): выключите его там или закройте её.")
+                return
+            }
             server = s
             url = "http://\(ip):\(port)/\(token)/"
             running = true
@@ -70,7 +85,7 @@ final class FileShare: ObservableObject {
                 until = nil
             }
         } catch {
-            self.error = L("Не удалось открыть порт") + " \(Self.port): \(error)"
+            self.error = L("Не удалось открыть порт") + ": \(error)"
         }
     }
 

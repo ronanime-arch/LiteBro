@@ -142,6 +142,9 @@ static class Program
         RemoveOldPerUserInstall();
 
         Directory.CreateDirectory(InstallDir);
+        // A read-only file (Uninstall.exe copied from a read-only installer) would stop this half way,
+        // with the browser already deleted
+        ClearReadOnly(InstallDir);
         foreach (var old in Directory.EnumerateFileSystemEntries(InstallDir))
         {
             if (Directory.Exists(old)) Directory.Delete(old, true);
@@ -163,6 +166,7 @@ static class Program
         }
         var uninstaller = Path.Combine(InstallDir, UninstallerName);
         File.Copy(Assembly.GetExecutingAssembly().Location, uninstaller, true);
+        File.SetAttributes(uninstaller, FileAttributes.Normal); // the copy keeps the installer's read-only flag
         bytes += new FileInfo(uninstaller).Length;
 
         var exe = Path.Combine(InstallDir, ExeName);
@@ -258,10 +262,25 @@ static class Program
         }
         for (int i = 0; i < 10 && Directory.Exists(LiteBrowserDir); i++)
         {
-            try { Directory.Delete(LiteBrowserDir, true); }
+            try { ClearReadOnly(LiteBrowserDir); Directory.Delete(LiteBrowserDir, true); }
             catch (Exception e) when (e is IOException || e is UnauthorizedAccessException) { Thread.Sleep(500); }
         }
         SHChangeNotify(AssocChanged, 0, IntPtr.Zero, IntPtr.Zero);
+    }
+
+    /// <summary>Takes the read-only flag off every file in a folder, which File.Delete and Directory.Delete refuse.</summary>
+    static void ClearReadOnly(string dir)
+    {
+        if (!Directory.Exists(dir)) return;
+        foreach (var file in Directory.EnumerateFiles(dir, "*", SearchOption.AllDirectories))
+        {
+            try
+            {
+                var attributes = File.GetAttributes(file);
+                if ((attributes & FileAttributes.ReadOnly) != 0) File.SetAttributes(file, attributes & ~FileAttributes.ReadOnly);
+            }
+            catch (Exception e) when (e is IOException || e is UnauthorizedAccessException) { }
+        }
     }
 
     static void TryDelete(string file)
@@ -497,7 +516,7 @@ static class Program
         // Retry while the Uninstall.exe that started this copy is still exiting
         for (int i = 0; i < 20 && Directory.Exists(InstallDir); i++)
         {
-            try { Directory.Delete(InstallDir, true); }
+            try { ClearReadOnly(InstallDir); Directory.Delete(InstallDir, true); }
             catch (Exception e) when (e is IOException || e is UnauthorizedAccessException) { Thread.Sleep(500); }
         }
         Registry.LocalMachine.DeleteSubKeyTree(UninstallKey, false);

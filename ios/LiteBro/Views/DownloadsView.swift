@@ -41,7 +41,7 @@ struct DownloadsView: View {
             if item.isPlayable {
                 Button { playing = Playing(url: f) } label: { Label(L("Смотреть"), systemImage: "play") }
             }
-            ShareLink(item: f) { Label(L("Поделиться"), systemImage: "square.and.arrow.up") }
+            ShareButton(item: f)
             if item.isVideo && f.pathExtension != "movpkg" {
                 Button { downloads.saveToPhotos(item) } label: { Label(L("Сохранить в Фото"), systemImage: "photo") }
             }

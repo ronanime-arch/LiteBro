@@ -321,7 +321,7 @@ struct MainMenu: View, Equatable {
                 Button { Thumbs.shared.capture(tab.webView, as: u.absoluteString); sheet = .newTile } label: {
                     Label(L("Сохранить плиткой"), systemImage: tiles.contains(u) ? "star.fill" : "star")
                 }
-                ShareLink(item: u) { Label(L("Поделиться"), systemImage: "square.and.arrow.up") }
+                ShareButton(item: u)
                 Button { UIPasteboard.general.string = u.absoluteString } label: {
                     Label(L("Копировать ссылку"), systemImage: "link")
                 }

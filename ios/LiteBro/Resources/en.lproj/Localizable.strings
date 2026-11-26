@@ -258,3 +258,13 @@
 "Безопасный режим при следующем запуске" = "Safe mode at the next launch";
 "Отладка" = "Debugging";
 "Журнал запуска и падений лежит в «Файлы» › «На iPhone» › LiteBro › Debug, его можно открыть, даже если LiteBro не запускается. После запуска, который не дошёл до конца, LiteBro открывается в безопасном режиме: без сохранённых вкладок, списков фильтров и правил блокировки." = "The launch and crash log is in Files › On My iPhone › LiteBro › Debug, it opens even when LiteBro does not start. After a launch that did not finish, LiteBro opens in safe mode: without the saved tabs, filter lists and blocking rules.";
+"Компьютер с LiteBro в той же Wi-Fi появляется выше сам: «Подключить» и «Да» на компьютере. Иначе — QR-код: на компьютере в LiteBro стартовая страница → «С телефона» → «Терминал»." = "A computer with LiteBro on the same Wi-Fi shows up above by itself: Connect, then Yes on the computer. Otherwise the QR code: on the computer in LiteBro, start page → From the phone → Terminal.";
+"Нажмите «Да» на компьютере. Код там:" = "Press Yes on the computer. The code there:";
+"Подключить" = "Connect";
+"Ищу компьютеры с LiteBro…" = "Looking for computers with LiteBro…";
+"В этой сети компьютеров с LiteBro не видно." = "No computers with LiteBro on this network.";
+"В этой сети" = "On this network";
+"Компьютер не ответил. Он включён, LiteBro на нём запущен и в той же сети Wi-Fi?" = "The computer did not answer. Is it on, with LiteBro running, on the same Wi-Fi?";
+"На компьютере отказали." = "The computer said no.";
+"Компьютер уже спрашивает про другой телефон. Попробуйте через минуту." = "The computer is asking about another phone. Try again in a minute.";
+"Компьютер не смог добавить ключ: Windows не дала прав администратора или не смогла включить вход по SSH." = "The computer could not add the key: Windows gave no administrator rights or could not switch the SSH sign-in on.";

@@ -289,6 +289,7 @@ body.nolog .log { display: none; }
       <button type="button" data-tab="sites" class="on">Сайты проектов</button>
       <button type="button" data-tab="ssh">Терминал</button>
     </div>
+    <p class="warn" id="phonePublic" hidden></p>
     <div id="phoneSites">
       <select id="phoneSite" aria-label="Проект"></select>
       <div class="qrbox">
@@ -936,6 +937,12 @@ function showPhone(m) {
   }));
   if (m.sites.some(x => x.id === was)) select.value = was;
   select.hidden = !m.sites.length;
+  // The phone's firewall rules are for private networks: on a public one it finds nothing
+  $("#phonePublic").hidden = !m.publicNet;
+  $("#phonePublic").textContent = m.publicNet
+    ? "Windows считает сеть «" + m.publicNet + "» общедоступной, и брандмауэр не пускает телефон: он не найдёт компьютер и не войдёт по SSH. "
+      + "Если это ваша домашняя сеть, сделайте её частной: Параметры → Сеть и Интернет → Wi-Fi (или Ethernet) → «" + m.publicNet + "» → Тип сетевого профиля → Частная сеть."
+    : "";
   showSite();
   showSsh();
 }

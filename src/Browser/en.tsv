@@ -938,3 +938,7 @@ LiteBro и программы проектов закроются	LiteBro and th
 Телефон просит вход в терминал этого компьютера:	A phone asks to sign in to the terminal of this computer:
 Код на телефоне:	Code on the phone:
 Разрешить? Телефон сможет входить по своему ключу без пароля Windows. Если вход по SSH выключен, Windows попросит права администратора.	Allow? The phone will sign in with its key, without the Windows password. If the SSH sign-in is off, Windows asks for the administrator.
+Windows считает сеть «	Windows treats the network “
+» общедоступной, и брандмауэр не пускает телефон: он не найдёт компьютер и не войдёт по SSH.	” as public, so the firewall keeps the phone out: it will not find this computer or sign in over SSH.
+Если это ваша домашняя сеть, сделайте её частной: Параметры → Сеть и Интернет → Wi-Fi (или Ethernet) → «	If this is your home network, make it private: Settings → Network & internet → Wi-Fi (or Ethernet) → “
+» → Тип сетевого профиля → Частная сеть.	” → Network profile type → Private network.

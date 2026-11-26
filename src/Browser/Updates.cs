@@ -166,8 +166,8 @@ static class Updates
         }
         try
         {
-            // The installer is for the whole computer: Windows asks the user for administrator rights
-            Process.Start(new ProcessStartInfo(setup, "/update") { UseShellExecute = true, Verb = "runas" });
+            // Opened as Explorer would: the installer's own manifest asks Windows for administrator rights
+            Process.Start(new ProcessStartInfo(setup, "/update") { UseShellExecute = true });
             Set(L.T("Устанавливается LiteBro ") + release.Version + "…");
             return true;
         }

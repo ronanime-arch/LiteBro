@@ -5,6 +5,7 @@ struct SettingsView: View {
     @Environment(\.dismiss) private var dismiss
     @AppStorage(Prefs.themeKey) private var theme = "dark"
     @AppStorage(Prefs.searchKey) private var search = "google"
+    @AppStorage(SearchCountry.key) private var country = ""
     @AppStorage(Prefs.unloadKey) private var unloadAfter = 5
     @AppStorage(Prefs.allowHostsKey) private var allowHosts = ""
     @State private var cleared = false
@@ -31,7 +32,7 @@ struct SettingsView: View {
                         Label(L("Сделать браузером по умолчанию"), systemImage: "safari")
                     }
                 } footer: {
-                    Text(L("Откроются настройки LiteBro: «Приложение браузера по умолчанию» → LiteBro. Тогда ссылки из других приложений открываются здесь."))
+                    Text(L("Откроются настройки LiteBro: «Приложение браузера по умолчанию» → LiteBro. Если LiteBro нет в списке приложений в «Настройках», TrollStore поставил его как системное: в TrollStore нажмите на LiteBro → «Switch to User» (тип регистрации «User»), затем снова эта кнопка."))
                 }
 
                 Section {
@@ -87,8 +88,14 @@ struct SettingsView: View {
                         Text(verbatim: "Google").tag("google")
                         Text(verbatim: "DuckDuckGo").tag("duckduckgo")
                     }
+                    Picker(L("Страна поиска"), selection: $country) {
+                        Text(L("Как обычно")).tag("")
+                        ForEach(SearchCountry.all) { c in Text(verbatim: c.name).tag(c.code) }
+                    }
                 } header: {
                     Text(L("Оформление"))
+                } footer: {
+                    Text(L("Страна поиска — результаты Google как из этой страны (параметры gl и hl, без прокси и VPN). На странице результатов она же — в меню «…»."))
                 }
 
                 Section {

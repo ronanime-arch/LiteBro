@@ -13,6 +13,7 @@ enum Prefs {
     static let adBlockOffKey = "adBlockOff"  // sites without blocking, one per line
     static let protectKey = "protect"        // malicious and phishing sites, on by default
     static let consoleKey = "console"        // page console from the start of every page, off by default
+    static let photosKey = "videoToPhotos"   // downloaded videos also go to Photos, on by default
 
     private static var d: UserDefaults { .standard }
 
@@ -21,6 +22,7 @@ enum Prefs {
     static var adBlock: Bool { d.object(forKey: adBlockKey) as? Bool ?? true }
     static var protect: Bool { d.object(forKey: protectKey) as? Bool ?? true }
     static var console: Bool { d.bool(forKey: consoleKey) }
+    static var videoToPhotos: Bool { d.object(forKey: photosKey) as? Bool ?? true }
 
     /// Sites where LiteBro never offers to save a password
     static var vaultNever: [String] {
@@ -45,7 +47,8 @@ enum Prefs {
         var c = URLComponents(string: d.string(forKey: searchKey) == "duckduckgo"
                               ? "https://duckduckgo.com/" : "https://www.google.com/search")!
         c.queryItems = [URLQueryItem(name: "q", value: q)]
-        return c.url
+        guard let u = c.url else { return nil }
+        return SearchCountry.isSearch(u) ? SearchCountry.apply(SearchCountry.current, to: u) : u
     }
 
     /// What the address bar typed means: an address (local ones over http) or a search

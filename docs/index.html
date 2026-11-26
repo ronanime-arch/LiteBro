@@ -135,7 +135,7 @@
         <span class="en">Tiles for your projects, a console and a terminal, a network log and a localhost-only mode. Built on the Edge engine Windows already has, and lighter on memory than Chrome, so your own programs keep the resources.</span>
       </p>
       <div class="actions">
-        <a class="btn primary" href="https://github.com/ronanime-arch/LiteBro/releases/latest/download/LiteBro-Setup.exe">
+        <a class="btn primary" href="https://github.com/ronanime-arch/LiteBro/releases/latest/download/LiteBro-Setup.zip">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12M7 10l5 5 5-5M5 21h14"/></svg>
           <span class="ru">Скачать для Windows</span><span class="en">Download for Windows</span>
         </a>
@@ -205,7 +205,7 @@
       <p class="sub"><span class="ru">Три шага, около минуты.</span><span class="en">Three steps, about a minute.</span></p>
       <ol class="steps">
         <li><h3><span class="ru">Скачайте и запустите</span><span class="en">Download and run</span></h3>
-          <p><span class="ru"><a href="https://github.com/ronanime-arch/LiteBro/releases/latest/download/LiteBro-Setup.exe">LiteBro-Setup.exe</a> ставит браузер в Program Files, нужны права администратора.</span><span class="en"><a href="https://github.com/ronanime-arch/LiteBro/releases/latest/download/LiteBro-Setup.exe">LiteBro-Setup.exe</a> installs the browser into Program Files and needs administrator rights.</span></p></li>
+          <p><span class="ru"><a href="https://github.com/ronanime-arch/LiteBro/releases/latest/download/LiteBro-Setup.zip">LiteBro-Setup.zip</a>: распакуйте и запустите LiteBro-Setup.exe, он ставит браузер в Program Files, нужны права администратора.</span><span class="en"><a href="https://github.com/ronanime-arch/LiteBro/releases/latest/download/LiteBro-Setup.zip">LiteBro-Setup.zip</a>: unpack it and run LiteBro-Setup.exe, which installs the browser into Program Files and needs administrator rights.</span></p></li>
         <li><h3><span class="ru">Выберите для ссылок</span><span class="en">Pick it for links</span></h3>
           <p><span class="ru">На шаге «Приложения по умолчанию» выберите LiteBro для HTTP и HTTPS. Внешние ссылки всё равно откроются в вашем основном браузере.</span><span class="en">At the Default apps step pick LiteBro for HTTP and HTTPS. Outside links still open in your main browser.</span></p></li>
         <li><h3><span class="ru">Добавьте проект</span><span class="en">Add a project</span></h3>
@@ -248,7 +248,7 @@
     fetch("https://api.github.com/repos/ronanime-arch/LiteBro/releases/latest")
       .then(r => r.ok ? r.json() : null)
       .then(r => {
-        const asset = r && (r.assets || []).find(a => a.name === "LiteBro-Setup.exe");
+        const asset = r && (r.assets || []).find(a => a.name === "LiteBro-Setup.zip");
         if (!asset) return;
         const version = r.tag_name.replace(/^v/, ""), mb = (asset.size / 1048576).toFixed(1);
         document.getElementById("ver-ru").textContent = "версия " + version + " · " + mb.replace(".", ",") + " МБ";

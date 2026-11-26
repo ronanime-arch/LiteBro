@@ -26,6 +26,8 @@ struct TileLink: Identifiable, Codable, Equatable {
 }
 
 final class TileStore: ObservableObject {
+    static let shared = TileStore()
+
     @Published var tiles: [Tile] = [] { didSet { save() } }
 
     private let file: URL = {
@@ -72,6 +74,18 @@ final class TileStore: ObservableObject {
         guard tiles.indices.contains(j) else { return }
         tiles.swapAt(i, j)
     }
+
+    /// Adds the page to the folder of a tile, or takes it out when it is there already
+    func toggle(_ url: String, name: String, in id: UUID) {
+        guard let i = tiles.firstIndex(where: { $0.id == id }) else { return }
+        if tiles[i].links.contains(where: { $0.url == url }) {
+            tiles[i].links.removeAll { $0.url == url }
+        } else if tiles[i].url != url, tiles[i].links.count < Tile.maxLinks {
+            tiles[i].links.append(TileLink(name: name, url: url))
+        }
+    }
+
+    func has(_ url: String, in t: Tile) -> Bool { t.url == url || t.links.contains { $0.url == url } }
 
     /// Is the address already saved (the star turns gold)
     func contains(_ url: URL?) -> Bool {

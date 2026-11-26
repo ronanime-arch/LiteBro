@@ -1,4 +1,5 @@
 import AVFoundation
+import Photos
 import UIKit
 import WebKit
 
@@ -13,6 +14,8 @@ struct DownloadItem: Identifiable {
     var progress: Double = 0
     var file: URL?
     var date = Date()
+    /// A copy went to Photos (nil: not tried, false: Photos refused it)
+    var inPhotos: Bool?
 
     var isVideo: Bool { ["mp4", "m4v", "mov", "movpkg", "webm", "mkv"].contains(ext) }
     var isAudio: Bool { ["m4a", "mp3", "aac", "wav", "ogg", "opus", "flac"].contains(ext) }
@@ -27,6 +30,8 @@ final class DownloadManager: NSObject, ObservableObject {
     static let shared = DownloadManager()
 
     @Published private(set) var items: [DownloadItem] = []
+    /// Finished since the downloads list was last opened: the badge on the menu
+    @Published private(set) var unseen = 0
     let folder: URL
 
     private var owner: [ObjectIdentifier: UUID] = [:]      // task or WKDownload → item
@@ -121,6 +126,17 @@ final class DownloadManager: NSObject, ObservableObject {
         cancels[id] = nil
         watches[id] = nil
         update(id) { $0.state = .done; $0.progress = 1; $0.file = file; $0.name = file.lastPathComponent }
+        unseen += 1
+        if Prefs.videoToPhotos, let item = items.first(where: { $0.id == id }), item.isVideo { saveToPhotos(item) }
+    }
+
+    func markSeen() { unseen = 0 }
+
+    /// Running or finished and not looked at yet, for the menu
+    var summary: String {
+        let running = items.filter { $0.state == .running || $0.state == .exporting }.count
+        if running > 0 { return L("идёт:") + " \(running)" }
+        return unseen > 0 ? L("готово:") + " \(unseen)" : ""
     }
 
     private func fail(_ id: UUID, _ error: Error?) {
@@ -141,9 +157,25 @@ final class DownloadManager: NSObject, ObservableObject {
         items.removeAll { $0.id == id }
     }
 
+    /// A copy into Photos (Recents); the file stays in Files › On My iPhone › LiteBro › Downloads
     func saveToPhotos(_ item: DownloadItem) {
-        guard let f = item.file, UIVideoAtPathIsCompatibleWithSavedPhotosAlbum(f.path) else { return }
-        UISaveVideoAtPathToSavedPhotosAlbum(f.path, nil, nil, nil)
+        let id = item.id
+        guard let f = item.file, UIVideoAtPathIsCompatibleWithSavedPhotosAlbum(f.path) else {
+            update(id) { $0.inPhotos = false }
+            return
+        }
+        PHPhotoLibrary.requestAuthorization(for: .addOnly) { status in
+            guard status == .authorized || status == .limited else {
+                DispatchQueue.main.async { self.update(id) { $0.inPhotos = false } }
+                return
+            }
+            PHPhotoLibrary.shared().performChanges({
+                PHAssetChangeRequest.creationRequestForAssetFromVideo(atFileURL: f)
+            }) { ok, error in
+                if let error { NSLog("LiteBro: Photos: \(error)") }
+                DispatchQueue.main.async { self.update(id) { $0.inPhotos = ok } }
+            }
+        }
     }
 
     private func place(_ name: String) -> URL {

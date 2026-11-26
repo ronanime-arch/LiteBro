@@ -15,6 +15,7 @@ struct HomeView: View {
     @ObservedObject var tab: BrowserTab
     @Binding var sheet: Sheet?
     @State private var editing: Tile?
+    @State private var folder: Tile?
 
     private let columns = [GridItem(.adaptive(minimum: 96, maximum: 140), spacing: 16)]
 
@@ -25,7 +26,8 @@ struct HomeView: View {
                 LazyVGrid(columns: columns, spacing: 18) {
                     ForEach(tiles.tiles) { t in
                         TileView(tile: t)
-                            .onTapGesture { open(t.url, in: tab) }
+                            // A tile with links is a folder: its pages with their pictures
+                            .onTapGesture { if t.links.isEmpty { open(t.url, in: tab) } else { folder = t } }
                             .contextMenu { menu(t) }
                     }
                     Button { editing = Tile(name: "", url: "http://localhost:3000") } label: {
@@ -46,6 +48,20 @@ struct HomeView: View {
                         .font(.footnote).foregroundStyle(.secondary).multilineTextAlignment(.center).padding(.horizontal, 30)
                 }
 
+                HStack(spacing: 12) {
+                    Button { browser.openTerminal() } label: {
+                        Label(L("Терминал ПК"), systemImage: "terminal")
+                            .padding(.horizontal, 16).padding(.vertical, 10)
+                            .background(Capsule().fill(Color(hex: "#6a43ed").opacity(0.25)))
+                    }
+                    Button { sheet = .phone } label: {
+                        Label(L("Доступ с ПК"), systemImage: "laptopcomputer.and.iphone")
+                            .padding(.horizontal, 16).padding(.vertical, 10)
+                            .background(Capsule().fill(Color(.secondarySystemBackground)))
+                    }
+                }
+                .buttonStyle(.plain)
+
                 Button { browser.setLocalOnly(!browser.localOnly) } label: {
                     Label(browser.localOnly ? L("Только localhost: включено") : L("Только localhost: выключено"),
                           systemImage: browser.localOnly ? "lock.shield.fill" : "lock.shield")
@@ -59,6 +75,9 @@ struct HomeView: View {
         }
         .background(Color(.systemBackground))
         .sheet(item: $editing) { t in TileEditor(tile: t, isNew: !tiles.tiles.contains { $0.id == t.id }) }
+        .sheet(item: $folder) { t in
+            FolderView(tileID: t.id) { s in open(s, in: tab) } openAll: { openAll($0) }
+        }
     }
 
     @ViewBuilder private func menu(_ t: Tile) -> some View {
@@ -180,5 +199,72 @@ struct TileEditor: View {
                 }
             }
         }
+    }
+}
+
+/// The pages of a tile, each with its picture as it was when the tab was left
+struct FolderView: View {
+    @EnvironmentObject var tiles: TileStore
+    @ObservedObject private var thumbs = Thumbs.shared
+    @Environment(\.dismiss) private var dismiss
+    let tileID: UUID
+    let open: (String) -> Void
+    let openAll: (Tile) -> Void
+
+    private let columns = [GridItem(.adaptive(minimum: 150), spacing: 14)]
+
+    var body: some View {
+        NavigationStack {
+            Group {
+                if let t = tiles.tiles.first(where: { $0.id == tileID }) {
+                    ScrollView {
+                        LazyVGrid(columns: columns, spacing: 16) {
+                            card(t.name.isEmpty ? t.url : t.name, t.url, color: t.color)
+                            ForEach(t.links) { l in
+                                card(l.name.isEmpty ? (URL(string: l.url)?.host ?? l.url) : l.name, l.url, color: t.color)
+                                    .contextMenu {
+                                        Button(role: .destructive) { tiles.toggle(l.url, name: l.name, in: t.id) } label: {
+                                            Label(L("Убрать из папки"), systemImage: "trash")
+                                        }
+                                    }
+                            }
+                        }
+                        .padding()
+                    }
+                    .navigationTitle(t.name)
+                    .toolbar {
+                        ToolbarItem(placement: .cancellationAction) { Button(L("Готово")) { dismiss() } }
+                        ToolbarItem(placement: .primaryAction) {
+                            Button { dismiss(); openAll(t) } label: { Label(L("Открыть всё"), systemImage: "square.stack.3d.up") }
+                        }
+                    }
+                }
+            }
+            .navigationBarTitleDisplayMode(.inline)
+        }
+    }
+
+    private func card(_ name: String, _ url: String, color: Int) -> some View {
+        Button { dismiss(); open(url) } label: {
+            VStack(alignment: .leading, spacing: 6) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 12).fill(Color(hex: Tile.palette[color % Tile.palette.count]).opacity(0.25))
+                    if let img = thumbs.image(url) {
+                        Image(uiImage: img).resizable().scaledToFill()
+                            .frame(minWidth: 0, maxWidth: .infinity, minHeight: 0, maxHeight: .infinity, alignment: .top)
+                    } else {
+                        Image(systemName: "globe").font(.largeTitle).foregroundStyle(.secondary)
+                    }
+                }
+                .frame(height: 190)
+                .frame(maxWidth: .infinity)
+                .clipShape(RoundedRectangle(cornerRadius: 12))
+                .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color(.separator), lineWidth: 0.5))
+                .id(thumbs.version)
+                Text(verbatim: name).font(.footnote.weight(.medium)).lineLimit(1)
+                Text(verbatim: URL(string: url)?.host ?? url).font(.caption2).foregroundStyle(.secondary).lineLimit(1)
+            }
+        }
+        .buttonStyle(.plain)
     }
 }

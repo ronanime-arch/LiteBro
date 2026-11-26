@@ -274,6 +274,13 @@ extension BrowserTab: WKNavigationDelegate {
             if action.targetFrame?.isMainFrame ?? true { danger = u }
             return decisionHandler(.cancel)
         }
+        // A new search from the Google page goes again with the picked country (back and forward stay as they are)
+        if action.targetFrame?.isMainFrame == true, action.navigationType != .backForward,
+           action.request.httpMethod?.uppercased() ?? "GET" == "GET", let fixed = SearchCountry.fix(u) {
+            decisionHandler(.cancel)
+            DispatchQueue.main.async { webView.load(URLRequest(url: fixed)) }
+            return
+        }
         decisionHandler(.allow)
     }
 

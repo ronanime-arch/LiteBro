@@ -302,7 +302,11 @@ sealed partial class BrowserForm : Form
     /// <summary>The green button of a new version (Updates.cs): seen once a check found one.</summary>
     public void ShowUpdate()
     {
-        update.ForeColor = UpdateGreen;
+        // Filled green with a white arrow: a green glyph alone was hard to see on the dark toolbar
+        update.BackColor = UpdateGreen;
+        update.ForeColor = Color.White;
+        update.FlatAppearance.MouseOverBackColor = Theme.Mix(UpdateGreen, Color.White, .15f);
+        update.FlatAppearance.MouseDownBackColor = Theme.Mix(UpdateGreen, Color.Black, .15f);
         update.Visible = Updates.Available != null;
         update.Enabled = !Updates.Busy;
         if (Updates.Available is { } r)

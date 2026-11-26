@@ -86,7 +86,7 @@ enum AdBlock {
             if let full = FilterLists.built() {
                 let stamp = FilterLists.updated.map { String(Int($0.timeIntervalSince1970)) } ?? "0"
                 for (i, part) in full.parts.enumerated() {
-                    lists.append((RuleStore.id("ads-\(i)", stamp + "\(full.count)" + sites),
+                    lists.append((RuleStore.id("ads-\(i)", stamp + "\(full.count)-\(FilterLists.converter)" + sites),
                                   { "[" + join(part, full.exceptions, sites) + "]" }))
                 }
             }

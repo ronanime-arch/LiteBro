@@ -177,6 +177,18 @@ private final class DAVHandler: HTTPHandler {
         // Taps from the computer, sent by the app itself: the broadcast extension's sandbox keeps it from the
         // HID event system, the app (no sandbox, TrollStore) reaches it. Only with «Управление касаниями» on.
         let path = String(h.uri.split(separator: "?").first ?? "")
+        // An update from the computer: TrollStore installs the build at the given address (its own URL command),
+        // then LiteBro restarts. Only with «Управление касаниями» on, as for taps.
+        if path == "/\(token)/_install", h.method == "POST" {
+            guard ScreenShare.control,
+                  let m = (try? JSONSerialization.jsonObject(with: body)) as? [String: Any],
+                  let from = m["url"] as? String, let src = URL(string: from), ["http", "https"].contains(src.scheme ?? ""),
+                  let enc = from.addingPercentEncoding(withAllowedCharacters: .alphanumerics),
+                  let command = URL(string: "apple-magnifier://install?url=" + enc)
+            else { return channel.respond(403, keepAlive: keepAlive) }
+            DispatchQueue.main.async { UIApplication.shared.open(command) }
+            return channel.respond(202, keepAlive: keepAlive)
+        }
         if path == "/\(token)/_touch" {
             guard ScreenShare.control else { return channel.respond(403, keepAlive: keepAlive) }
             if h.method == "POST", let m = (try? JSONSerialization.jsonObject(with: body)) as? [String: Any] {

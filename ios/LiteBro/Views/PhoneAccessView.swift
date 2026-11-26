@@ -85,7 +85,7 @@ struct PhoneAccessView: View {
                 Button { UIPasteboard.general.string = u } label: { Label(L("Копировать"), systemImage: "doc.on.doc") }
                     .buttonStyle(.bordered)
                 if let url = URL(string: u) {
-                    ShareLink(item: url) { Label(L("Поделиться"), systemImage: "square.and.arrow.up") }
+                    ShareButton(item: url)
                         .buttonStyle(.bordered)
                 }
             }

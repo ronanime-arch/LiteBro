@@ -19,7 +19,7 @@ struct DebugLogView: View {
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItemGroup(placement: .bottomBar) {
-                ShareLink(item: Debug.logFile) { Label(L("Отправить"), systemImage: "square.and.arrow.up") }
+                ShareButton(item: Debug.logFile, title: L("Отправить"))
                 Spacer()
                 Button { UIPasteboard.general.string = text; copied = true } label: {
                     Label(copied ? L("Скопировано") : L("Копировать"), systemImage: "doc.on.doc")

@@ -245,4 +245,6 @@
 "есть в «Фото»" = "in Photos";
 "идёт:" = "running:";
 "готово:" = "done:";
-"Откроются настройки LiteBro: «Приложение браузера по умолчанию» → LiteBro. Если LiteBro нет в списке приложений в «Настройках», TrollStore поставил его как системное: в TrollStore нажмите на LiteBro → «Switch to User» (тип регистрации «User»), затем снова эта кнопка." = "The LiteBro settings open: Default Browser App → LiteBro. If LiteBro is not in the app list of Settings, TrollStore registered it as a system app: in TrollStore tap LiteBro → Switch to User (registration type User), then this button again.";
+"Папка LiteBro в «Файлах»: загрузки и файлы приложения." = "The LiteBro folder in Files: downloads and the app's files.";
+"Эта сборка (LiteBro.tipa) даёт ПК доступ ко всему телефону, поэтому TrollStore ставит её как системную, и браузером по умолчанию её не выбрать. Нужен браузер по умолчанию — поставьте поверх LiteBro-Browser.tipa из того же архива; вернуть доступ ко всему телефону — снова LiteBro.tipa." = "This build (LiteBro.tipa) gives the PC the whole phone, so TrollStore installs it as a system app and it cannot be the default browser. For the default browser install LiteBro-Browser.tipa from the same archive over it; for the whole phone again, LiteBro.tipa.";
+"В этой сборке (LiteBro-Browser.tipa) ПК видит только папку LiteBro. Доступ ко всему телефону — LiteBro.tipa из того же архива, поверх." = "In this build (LiteBro-Browser.tipa) the PC sees only the LiteBro folder. For the whole phone install LiteBro.tipa from the same archive over it.";

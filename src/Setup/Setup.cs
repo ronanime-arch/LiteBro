@@ -542,15 +542,10 @@ static class Program
         if (update)
         {
             // The browser closes its windows itself after starting this (cookies may be cleared first, up to 8 s);
-            // what is left, as the MCP bridge of Claude, is closed, then ended
+            // a window still open is asked to close. Nothing is killed: what stays (Claude's MCP bridge) is left to the user.
             if (running.All(p => p.WaitForExit(30000))) return Released();
             foreach (var p in running.Where(p => !p.HasExited)) p.CloseMainWindow();
-            foreach (var p in running.Where(p => !p.WaitForExit(5000)))
-            {
-                try { p.Kill(); p.WaitForExit(5000); }
-                catch (Exception) { }
-            }
-            if (running.Any(p => !p.HasExited))
+            if (running.Any(p => !p.WaitForExit(15000)))
             {
                 Report(name + L.T(" не закрылся. Закройте его вручную и повторите."), MessageBoxIcon.Warning);
                 return false;

@@ -23,6 +23,8 @@ enum FilterLists {
     /// WebKit takes up to 50 000 rules in a list on older iOS: the rules go out in parts
     static let partSize = 45_000
     static let maxAge: TimeInterval = 4 * 24 * 3600
+    /// Raised when the converter changes: rules built by an older one are made again from the lists
+    static let converter = 2
 
     static let folder: URL = {
         let dir = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
@@ -67,7 +69,8 @@ enum FilterLists {
     static func built() -> Built? {
         guard let meta = try? Data(contentsOf: file("ads-meta.json")),
               let m = try? JSONSerialization.jsonObject(with: meta) as? [String: Any],
-              let n = m["parts"] as? Int, let count = m["count"] as? Int else { return nil }
+              let n = m["parts"] as? Int, let count = m["count"] as? Int,
+              m["converter"] as? Int == converter else { return nil }
         var parts: [String] = []
         for i in 0..<n {
             guard let s = try? String(contentsOf: file("ads-\(i).json")) else { return nil }
@@ -100,7 +103,7 @@ enum FilterLists {
         }
         for (n, p) in parts.enumerated() { try? p.write(to: file("ads-\(n).json"), atomically: true, encoding: .utf8) }
         try? json(c.exceptions).write(to: file("ads-exceptions.json"), atomically: true, encoding: .utf8)
-        let meta: [String: Any] = ["parts": parts.count, "count": rules.count + c.exceptions.count]
+        let meta: [String: Any] = ["parts": parts.count, "count": rules.count + c.exceptions.count, "converter": converter]
         try? JSONSerialization.data(withJSONObject: meta).write(to: file("ads-meta.json"))
         return true
     }
@@ -159,13 +162,19 @@ enum FilterLists {
 }
 
 /// Adblock Plus syntax → WebKit content rules. Only what WebKit can do exactly: address rules with
-/// types, third-party and domains; `@@` exceptions; element hiding with plain CSS selectors.
+/// types, third-party and domains; `@@` exceptions; element hiding with plain CSS selectors and its
+/// exceptions (`$generichide`, `#@#`): without them generic hiding broke chatgpt.com, claude.ai,
+/// Google sign-in and the Cloudflare check, which the lists exempt exactly this way.
 /// Anything else (scriptlets, :has-text, redirects, regular expressions) is skipped.
 private final class Converter {
     var blocks: [[String: Any]] = []
     var cosmetic: [[String: Any]] = []
     var exceptions: [[String: Any]] = []
     private var generic: [String] = []
+    /// Sites where generic hiding is off (`@@||site^$generichide`)
+    private var noGeneric = Set<String>()
+    /// A selector with the sites where it must not hide (`site#@#selector`)
+    private var unhide: [String: [String]] = [:]
     private var specific: [String: [String]] = [:]
 
     private static let types: [String: String] = [
@@ -179,7 +188,14 @@ private final class Converter {
     func add(_ raw: Substring) {
         let l = raw.trimmingCharacters(in: .whitespaces)
         guard let first = l.first, first != "!", first != "[" else { return }
-        for bad in ["#@#", "#?#", "#$#", "#%#", "$$"] where l.contains(bad) { return }
+        for bad in ["#?#", "#$#", "#%#", "$$"] where l.contains(bad) { return }
+        if let r = l.range(of: "#@#") {
+            let s = String(l[r.upperBound...])
+            let ds = l[..<r.lowerBound].split(separator: ",").map(String.init)
+                .filter { d in !d.hasSuffix(".") && d.allSatisfy { Self.domainChars.contains($0) } }
+            if !s.isEmpty && !ds.isEmpty { unhide[s, default: []].append(contentsOf: ds) }
+            return
+        }
         if let r = l.range(of: "##") {
             hide(domains: String(l[..<r.lowerBound]), selector: String(l[r.upperBound...]))
             return
@@ -190,7 +206,7 @@ private final class Converter {
     private func hide(domains: String, selector s: String) {
         guard !s.isEmpty, !s.hasPrefix("+js"), !s.hasPrefix("^"), !s.contains(":"),
               s.allSatisfy({ Self.selectorChars.contains($0) }) else { return }
-        if domains.isEmpty { generic.append(s); finishGeneric(force: false); return }
+        if domains.isEmpty { generic.append(s); return }
         let ds = domains.split(separator: ",").map(String.init)
         if ds.contains(where: { $0.hasPrefix("~") }) { return }
         let ok = ds.filter { d in !d.hasSuffix(".") && d.allSatisfy { Self.domainChars.contains($0) } }.sorted()
@@ -198,16 +214,32 @@ private final class Converter {
         specific[ok.joined(separator: ","), default: []].append(s)
     }
 
-    private func finishGeneric(force: Bool) {
-        guard generic.count >= 500 || (force && !generic.isEmpty) else { return }
-        cosmetic.append(["trigger": ["url-filter": ".*"],
-                         "action": ["type": "css-display-none", "selector": generic.joined(separator: ", ")]])
+    /// Generic hiding in groups of 500, except on the exempt sites; a selector with its own
+    /// exceptions goes alone. Exceptions come anywhere in the lists, so this waits for the last line.
+    private func finishGeneric() {
+        let off = noGeneric.sorted().map { "*" + $0 }
+        func rule(_ selectors: [String], unless: [String]) {
+            var t: [String: Any] = ["url-filter": ".*"]
+            if !unless.isEmpty { t["unless-domain"] = unless }
+            cosmetic.append(["trigger": t, "action": ["type": "css-display-none", "selector": selectors.joined(separator: ", ")]])
+        }
+        var group: [String] = []
+        var seen = Set<String>()
+        for s in generic where seen.insert(s).inserted {
+            if let ds = unhide[s] {
+                rule([s], unless: Array(Set(off + ds.map { "*" + $0 })).sorted())
+                continue
+            }
+            group.append(s)
+            if group.count == 500 { rule(group, unless: off); group.removeAll() }
+        }
+        if !group.isEmpty { rule(group, unless: off) }
         generic.removeAll()
     }
 
     /// After the last line: the cosmetic rules collected by domain
     func finish() {
-        finishGeneric(force: true)
+        finishGeneric()
         for (ds, ss) in specific {
             cosmetic.append(["trigger": ["url-filter": ".*", "if-domain": ds.split(separator: ",").map { "*" + $0 }],
                              "action": ["type": "css-display-none", "selector": ss.joined(separator: ", ")]])
@@ -238,6 +270,14 @@ private final class Converter {
                         exceptions.append(["trigger": ["url-filter": ".*", "if-domain": ["*" + host]],
                                            "action": ["type": "ignore-previous-rules"]])
                     }
+                }
+                return
+            case "generichide", "ghide", "elemhide", "ehide":
+                // The site without generic hiding (its own rules stay)
+                if exception, l.hasPrefix("||") {
+                    var host = String(l.dropFirst(2))
+                    if host.hasSuffix("^") { host.removeLast() }
+                    if !host.isEmpty, host.allSatisfy({ Self.domainChars.contains($0) }) { noGeneric.insert(host) }
                 }
                 return
             case "third-party", "3p": trigger["load-type"] = ["third-party"]

@@ -84,6 +84,13 @@ sealed class Settings
     public bool TabMute;
     /// <summary>Certificate errors of servers on this machine are let through; off by default.</summary>
     public bool TrustLocalCerts;
+    /// <summary>Claude (Claude Code, Claude Desktop) may see and use the tabs through MCP (Mcp.cs); off by default.</summary>
+    public bool Claude;
+    /// <summary>The user's scripts from the scripts folder run on the sites they match (UserScripts.cs); off by default.</summary>
+    public bool UserScripts;
+    /// <summary>The engine opens the DevTools protocol on 127.0.0.1:DebugPort (Playwright connectOverCDP); off by default.</summary>
+    public bool Cdp;
+    public int DebugPort = 9222;
     /// <summary>Tabs in the background are paused after SuspendAfter minutes and closed after UnloadAfter (0 = never).</summary>
     public bool FreezeTabs = true;
     public int SuspendAfter = 1, UnloadAfter = 5;
@@ -95,7 +102,7 @@ sealed class Settings
 
     static readonly string[] Keys =
     {
-        "searchurl", "searchcountry", "theme", "language", "gpu", "extrabrowserargs", "localhosts", "otherbrowser", "externaltomain", "localonly", "netjournal", "allowhosts", "ignorecors", "clearonexit", "autoreload", "autofill", "stricttracking", "adblock", "tabmute", "trustlocalcerts", "freezetabs", "suspendafter", "unloadafter", "disabled", "defaults",
+        "searchurl", "searchcountry", "theme", "language", "gpu", "extrabrowserargs", "localhosts", "otherbrowser", "externaltomain", "localonly", "netjournal", "allowhosts", "ignorecors", "clearonexit", "autoreload", "autofill", "stricttracking", "adblock", "tabmute", "trustlocalcerts", "claude", "userscripts", "cdp", "debugport", "freezetabs", "suspendafter", "unloadafter", "disabled", "defaults",
     };
 
     public static Settings Load()
@@ -145,6 +152,10 @@ sealed class Settings
                 case "adblock": s.AdBlock = IsTrue(value); break;
                 case "tabmute": s.TabMute = IsTrue(value); break;
                 case "trustlocalcerts": s.TrustLocalCerts = IsTrue(value); break;
+                case "claude": s.Claude = IsTrue(value); break;
+                case "userscripts": s.UserScripts = IsTrue(value); break;
+                case "cdp": s.Cdp = IsTrue(value); break;
+                case "debugport": s.DebugPort = Port(value, s.DebugPort); break;
                 case "freezetabs": s.FreezeTabs = IsTrue(value); break;
                 case "suspendafter": s.SuspendAfter = Minutes(value, s.SuspendAfter, 1); break;
                 case "unloadafter": s.UnloadAfter = Minutes(value, s.UnloadAfter, 0); break;
@@ -248,6 +259,10 @@ sealed class Settings
 
     public const int MaxMinutes = 1440;
 
+    /// <summary>A TCP port above the system ones; the old value for anything else.</summary>
+    public static int Port(string v, int old) =>
+        int.TryParse(v, NumberStyles.Integer, CultureInfo.InvariantCulture, out var n) && n >= 1024 && n <= 65535 ? n : old;
+
     /// <summary>A number of minutes from min up to a day; the old value for anything else.</summary>
     public static int Minutes(string v, int old, int min) =>
         int.TryParse(v, NumberStyles.Integer, CultureInfo.InvariantCulture, out var n) && n >= min && n <= MaxMinutes ? n : old;
@@ -320,6 +335,13 @@ sealed class Settings
         "AdBlock = " + Bool(AdBlock),
         L.T("# Доверять сертификатам серверов на этом компьютере (localhost, *.localhost, 127.x, ::1)"),
         "TrustLocalCerts = " + Bool(TrustLocalCerts),
+        L.T("# Доступ для Claude: Claude Code и Claude Desktop видят вкладки и действуют в них (LiteBro.exe mcp)"),
+        "Claude = " + Bool(Claude),
+        L.T("# Свои скрипты: файлы .js из папки scripts рядом с этим файлом выполняются на сайтах из их строк // @match"),
+        "UserScripts = " + Bool(UserScripts),
+        L.T("# Порт отладки CDP на 127.0.0.1 (Playwright, Puppeteer): полный доступ к браузеру для программ этого компьютера"),
+        "Cdp = " + Bool(Cdp),
+        "DebugPort = " + DebugPort.ToString(CultureInfo.InvariantCulture),
         "",
         L.T("# --- Вкладки ---"),
         L.T("# Клик по значку звука на вкладке выключает её звук"),

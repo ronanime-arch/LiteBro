@@ -10,6 +10,13 @@ namespace LiteBro;
 /// <summary>A page in a window's tab strip, with a WebView2 controller of its own in the shared environment.</summary>
 sealed class Tab
 {
+    static int lastId;
+    /// <summary>The tab's number for Claude's tools (Mcp.cs), unique in this session.</summary>
+    public readonly int Id = ++lastId;
+    /// <summary>CSS pixels of the page per pixel of the latest screenshot Claude took of it.</summary>
+    public double ShotScale = 1;
+    /// <summary>The id of the user scripts' loader on the current WebView (UserScripts.ApplyAsync).</summary>
+    public string? UserScriptId;
     /// <summary>null while the tab is unloaded: closed after a long time in the background, loaded again when picked.</summary>
     public CoreWebView2Controller? Ctl;
     public CoreWebView2? Core => Ctl?.CoreWebView2;

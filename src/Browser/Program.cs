@@ -20,6 +20,18 @@ static class Program
     [STAThread]
     static void Main(string[] args)
     {
+        // Started by Claude Code or Claude Desktop: MCP on stdio for the running browser, no window
+        if (Mcp.IsBridge(args))
+        {
+            Mcp.RunBridge();
+            return;
+        }
+        // The same tools from a shell: LiteBro.exe cli <tool> ...
+        if (Mcp.IsCli(args))
+        {
+            Environment.ExitCode = Mcp.RunCli(args);
+            return;
+        }
         Settings.MoveOldData();
         Settings settings;
         try { settings = Settings.Load(); }
@@ -111,6 +123,10 @@ sealed class App : ApplicationContext
         ui = SynchronizationContext.Current!; // installed by the first window
         // Raised on this thread: the windows follow Windows switching between light and dark
         SystemEvents.UserPreferenceChanged += OnUserPreferenceChanged;
+        // Claude's tool calls (Mcp.cs): refused inside while «Доступ для Claude» is off
+        Mcp.Listen(BrowserForm.RunClaudeToolAsync, action => ui.Post(_ => action(), null));
+        // A script saved or deleted: every WebView gets the new loader for its next page
+        UserScripts.Changed += () => ui.Post(_ => { foreach (var form in forms.ToList()) form.ApplyUserScripts(); }, null);
         SingleInstance.Listen(message =>
         {
             bool taken = false;
@@ -148,6 +164,8 @@ sealed class App : ApplicationContext
         var args = MemoryArgs + QuietArgs;
         if (!S.Gpu) args += " --disable-gpu";
         if (S.ExtraBrowserArgs.Length > 0) args += " " + S.ExtraBrowserArgs;
+        // The DevTools protocol for Playwright and Puppeteer: Chromium binds it to 127.0.0.1 only
+        if (S.Cdp) args += " --remote-debugging-port=" + S.DebugPort.ToString(System.Globalization.CultureInfo.InvariantCulture);
         engineKey = EngineKey();
         if (NetGuard.CorsOff) args += " --disable-web-security";
         // «Только localhost»: all but local traffic through the gateway, which refuses what the rules forbid
@@ -413,6 +431,9 @@ sealed class App : ApplicationContext
 
     public void NoteActive(BrowserForm form) => lastActive = form;
 
+    /// <summary>The window used last: where Claude opens its tabs.</summary>
+    public BrowserForm? LastActive => lastActive;
+
     /// <summary>A tab left the PowerShell console: once no tab shows it, its PowerShell goes, and its memory with it.</summary>
     public void ShellMaybeUnused() => ui.Post(_ =>
     {
@@ -563,6 +584,19 @@ sealed class App : ApplicationContext
                 AdBlock.Changed();
                 break;
             case "trustLocalCerts": S.Change(s => s.TrustLocalCerts = on); break;
+            case "claude": S.Change(s => s.Claude = on); break;
+            case "userScripts":
+                S.Change(s => s.UserScripts = on);
+                UserScripts.Invalidate();
+                break;
+            case "cdp":
+                S.Change(s => s.Cdp = on);
+                if (Env != null && EngineKey() != engineKey) restart ??= RestartEngineAsync();
+                break;
+            case "debugPort" when minutes >= 1024 && minutes <= 65535:
+                S.Change(s => s.DebugPort = minutes);
+                if (Env != null && EngineKey() != engineKey) restart ??= RestartEngineAsync();
+                break;
             case "tabMute": S.Change(s => s.TabMute = on); break;
             case "externalToMain": S.Change(s => s.ExternalToMain = on); break;
             case "freezeTabs": S.Change(s => s.FreezeTabs = on); break;
@@ -592,7 +626,8 @@ sealed class App : ApplicationContext
     string engineKey = "";
 
     /// <summary>The engine flags that can change while it runs: the language, the gateway (local mode), CORS, and GPU and extra flags on a reset.</summary>
-    static string EngineKey() => L.EngineLanguage + "|" + NetGuard.LocalOnly + "|" + NetGuard.CorsOff + "|" + Current.S.Gpu + "|" + Current.S.ExtraBrowserArgs;
+    static string EngineKey() => L.EngineLanguage + "|" + NetGuard.LocalOnly + "|" + NetGuard.CorsOff + "|" + Current.S.Gpu + "|" + Current.S.ExtraBrowserArgs +
+        "|" + (Current.S.Cdp ? Current.S.DebugPort : 0);
 
     /// <summary>
     /// Flags of the engine apply to its whole browser process: every tab is closed (keeping its address), the process

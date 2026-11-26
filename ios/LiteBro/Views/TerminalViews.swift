@@ -8,10 +8,12 @@ struct TerminalHome: View {
     @ObservedObject private var store = SSHStore.shared
     @State var path: [UUID]
     @State private var editing: SSHHost?
+    @StateObject private var finder = PCFinder()
 
     var body: some View {
         NavigationStack(path: $path) {
             List {
+                nearby
                 Section {
                     ForEach(store.hosts) { h in
                         NavigationLink(value: h.id) {
@@ -30,9 +32,11 @@ struct TerminalHome: View {
                         Label(L("Добавить компьютер"), systemImage: "plus")
                     }
                 } footer: {
-                    Text(L("На компьютере в LiteBro: стартовая страница → кнопка «С телефона» справа → «Терминал» → «Включить вход по SSH». Потом отсканируйте QR-код камерой iPhone. Телефон и компьютер должны быть в одной сети Wi-Fi."))
+                    Text(L("Компьютер с LiteBro в той же Wi-Fi появляется выше сам: «Подключить» и «Да» на компьютере. Иначе — QR-код: на компьютере в LiteBro стартовая страница → «С телефона» → «Терминал»."))
                 }
             }
+            .onAppear { finder.search() }
+            .refreshable { finder.search() }
             .navigationTitle(L("Терминал ПК"))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .confirmationAction) { Button(L("Готово")) { dismiss() } } }
@@ -40,6 +44,52 @@ struct TerminalHome: View {
                 if let h = store.hosts.first(where: { $0.id == id }) { TerminalScreen(host: h) }
             }
             .sheet(item: $editing) { h in HostEditor(host: h) }
+        }
+    }
+}
+
+extension TerminalHome {
+    /// LiteBro on the computers of this Wi-Fi, not added yet (or added again with this iPhone's key)
+    @ViewBuilder private var nearby: some View {
+        let added = Set(store.hosts.filter(\.useKey).map { $0.host + "|" + $0.user })
+        let list = finder.found.filter { !added.contains($0.id) || finder.pairing[$0.id] != nil }
+        Section {
+            ForEach(list) { f in
+                HStack {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(verbatim: f.name)
+                        Text(verbatim: f.user + "@" + f.ip).font(.footnote).foregroundStyle(.secondary)
+                        switch finder.pairing[f.id] {
+                        case .asking(let code):
+                            Text(L("Нажмите «Да» на компьютере. Код там:") + " " + code)
+                                .font(.footnote).foregroundStyle(.orange)
+                        case .failed(let why):
+                            Text(verbatim: why).font(.footnote).foregroundStyle(.red)
+                        default:
+                            EmptyView()
+                        }
+                    }
+                    Spacer()
+                    switch finder.pairing[f.id] {
+                    case .asking:
+                        ProgressView()
+                    case .done(let h):
+                        Button(L("Открыть")) { finder.pairing[f.id] = nil; path = [h.id] }.buttonStyle(.borderedProminent)
+                    default:
+                        Button(L("Подключить")) { finder.pair(f) }.buttonStyle(.borderedProminent)
+                    }
+                }
+            }
+            if list.isEmpty {
+                HStack {
+                    Text(finder.searching ? L("Ищу компьютеры с LiteBro…") : L("В этой сети компьютеров с LiteBro не видно."))
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                    if finder.searching { ProgressView() } else { Button(L("Искать снова")) { finder.search() } }
+                }
+            }
+        } header: {
+            Text(L("В этой сети"))
         }
     }
 }

@@ -191,6 +191,7 @@ static class Program
         Associations.RememberDefault();
         RemoveLiteBrowser(exe);
         RegisterBrowser(exe); // lets Windows offer it for links
+        PhoneFirewall(exe); // LiteBro on iPhone finds this computer on the home network
         // Earlier versions reached other programs' links in other ways
         RemoveChromeSwitch();
         RemoveBrowserVariable();
@@ -421,6 +422,32 @@ static class Program
         if (Shortcut.Target(link) is { } target && IsInside(target, dir)) File.Delete(link);
     }
 
+    const string FirewallRule = "LiteBro (iPhone)";
+
+    /// <summary>
+    /// The UDP port where LiteBro on iPhone finds this computer (PhoneFind.Port), private networks only;
+    /// null removes the rule. Without it Windows would ask at the first start, in the middle of the work.
+    /// </summary>
+    static void PhoneFirewall(string? exe)
+    {
+        void Netsh(string args)
+        {
+            try
+            {
+                using var p = Process.Start(new ProcessStartInfo("netsh.exe", args)
+                {
+                    UseShellExecute = false, CreateNoWindow = true, RedirectStandardOutput = true,
+                });
+                p?.StandardOutput.ReadToEnd();
+                p?.WaitForExit(15000);
+            }
+            catch (Exception) { }
+        }
+        Netsh($"advfirewall firewall delete rule name=\"{FirewallRule}\"");
+        if (exe != null)
+            Netsh($"advfirewall firewall add rule name=\"{FirewallRule}\" dir=in action=allow protocol=UDP localport=47321 profile=private program=\"{exe}\"");
+    }
+
     static int Uninstall(string[] args)
     {
         // A running exe cannot delete itself: hand the work to a copy in %TEMP% (it inherits the elevation)
@@ -461,6 +488,7 @@ static class Program
             hadLinks = Associations.Handles("http") || Associations.Handles("https");
         }
         Associations.Forget();
+        PhoneFirewall(null);
         RemoveChromeSwitch();
         RemoveHttpPolicy();
         RemoveBrowserVariable();

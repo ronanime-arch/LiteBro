@@ -125,6 +125,8 @@ sealed class App : ApplicationContext
         SystemEvents.UserPreferenceChanged += OnUserPreferenceChanged;
         // Claude's tool calls (Mcp.cs): refused inside while «Доступ для Claude» is off
         Mcp.Listen(BrowserForm.RunClaudeToolAsync, action => ui.Post(_ => action(), null));
+        // LiteBro on iPhone finds this computer and asks to sign in (Phone.cs): the person here answers
+        PhoneFind.Start(AskPhone, action => ui.Post(_ => action(), null));
         // A new version, a download, a failure: the toolbars and the developer pages follow
         Updates.Changed += () => { foreach (var form in forms.ToList()) form.UpdateChanged(); };
         Updates.Start();
@@ -423,6 +425,20 @@ sealed class App : ApplicationContext
         }
         Show(window);
         return true;
+    }
+
+    /// <summary>A phone asks for the terminal of this computer: yes adds its key for SSH</summary>
+    Task<bool> AskPhone(string phone, string code)
+    {
+        var owner = lastActive is { ShuttingDown: false } ? lastActive : forms.FirstOrDefault(f => !f.ShuttingDown);
+        Show(owner);
+        var text = L.T("Телефон просит вход в терминал этого компьютера:") + "\n" + phone + "\n\n"
+            + L.T("Код на телефоне:") + " " + code + "\n\n"
+            + L.T("Разрешить? Телефон сможет входить по своему ключу без пароля Windows. Если вход по SSH выключен, Windows попросит права администратора.");
+        var answer = owner != null
+            ? MessageBox.Show(owner, text, "LiteBro", MessageBoxButtons.YesNo, MessageBoxIcon.Question, MessageBoxDefaultButton.Button2)
+            : MessageBox.Show(text, "LiteBro", MessageBoxButtons.YesNo, MessageBoxIcon.Question, MessageBoxDefaultButton.Button2);
+        return Task.FromResult(answer == DialogResult.Yes);
     }
 
     static void Show(BrowserForm? form)

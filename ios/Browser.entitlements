@@ -16,5 +16,7 @@
 	<array>
 		<string>group.io.github.ronanime-arch.LiteBro</string>
 	</array>
+	<key>com.apple.developer.networking.multicast</key>
+	<true/>
 </dict>
 </plist>

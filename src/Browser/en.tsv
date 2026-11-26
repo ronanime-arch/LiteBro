@@ -935,3 +935,6 @@ Windows спросит разрешение на установку. Потом 
 в архиве другой файл	the archive holds a different file
 Доступна новая версия	New version available:
 LiteBro и программы проектов закроются	LiteBro and the project programs will close
+Телефон просит вход в терминал этого компьютера:	A phone asks to sign in to the terminal of this computer:
+Код на телефоне:	Code on the phone:
+Разрешить? Телефон сможет входить по своему ключу без пароля Windows. Если вход по SSH выключен, Windows попросит права администратора.	Allow? The phone will sign in with its key, without the Windows password. If the SSH sign-in is off, Windows asks for the administrator.

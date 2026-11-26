@@ -6,9 +6,12 @@ using System.Linq;
 using System.Net;
 using System.Net.NetworkInformation;
 using System.Net.Sockets;
+using System.Runtime.InteropServices;
 using System.Security.Cryptography;
+using System.Security.Principal;
 using System.ServiceProcess;
 using System.Text;
+using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 
 namespace LiteBro;
@@ -108,7 +111,7 @@ static class Phone
     }
 
     /// <summary>The host key's fingerprint as ssh prints it (SHA256:…): the phone checks it, so nobody can pose as this computer.</summary>
-    static string? Fingerprint()
+    public static string? Fingerprint()
     {
         var dir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData), "ssh");
         foreach (var name in new[] { "ssh_host_ed25519_key.pub", "ssh_host_ecdsa_key.pub" })
@@ -126,6 +129,12 @@ static class Phone
     }
 
     public static bool Busy;
+
+    public static bool Running()
+    {
+        using var s = Sshd();
+        try { return s?.Status == ServiceControllerStatus.Running; } catch (Exception) { return false; }
+    }
 
     /// <summary>The terminal's state for the dialog, with the link of the QR code when the server runs.</summary>
     public static Dictionary<string, object?> Ssh(string? ip)
@@ -151,23 +160,28 @@ static class Phone
     /// Installs and starts OpenSSH Server (PowerShell for the phone's terminal, the port for private networks only),
     /// or stops it and keeps it from starting with Windows. Asks for the administrator: false when refused or failed.
     /// </summary>
-    public static async Task<bool> SetSsh(bool on)
+    public static Task<bool> SetSsh(bool on) => RunElevated(on ? EnableScript : DisableScript);
+
+    /// <summary>Installs OpenSSH Server if missing, PowerShell as its shell, starts with Windows, the port for private networks.</summary>
+    public const string EnableScript =
+        "$ErrorActionPreference = 'Stop'\n" +
+        "if (-not (Get-Service sshd -ErrorAction SilentlyContinue)) { Add-WindowsCapability -Online -Name OpenSSH.Server~~~~0.0.1.0 | Out-Null }\n" +
+        "New-Item -Path 'HKLM:\\SOFTWARE\\OpenSSH' -Force | Out-Null\n" +
+        "New-ItemProperty -Path 'HKLM:\\SOFTWARE\\OpenSSH' -Name DefaultShell -Value \"$env:WINDIR\\System32\\WindowsPowerShell\\v1.0\\powershell.exe\" -PropertyType String -Force | Out-Null\n" +
+        "Set-Service sshd -StartupType Automatic\n" +
+        "Start-Service sshd\n" +
+        "$rule = Get-NetFirewallRule -Name 'OpenSSH-Server-In-TCP' -ErrorAction SilentlyContinue\n" +
+        "if ($rule) { $rule | Set-NetFirewallRule -Profile Private -Enabled True }\n" +
+        "else { New-NetFirewallRule -Name 'OpenSSH-Server-In-TCP' -DisplayName 'OpenSSH Server (sshd)' -Enabled True -Direction Inbound -Protocol TCP -Action Allow -LocalPort 22 -Profile Private | Out-Null }\n";
+
+    const string DisableScript =
+        "Stop-Service sshd -ErrorAction SilentlyContinue\n" +
+        "Set-Service sshd -StartupType Disabled -ErrorAction SilentlyContinue\n" +
+        "Get-NetFirewallRule -Name 'OpenSSH-Server-In-TCP' -ErrorAction SilentlyContinue | Set-NetFirewallRule -Enabled False\n";
+
+    /// <summary>A PowerShell script with the administrator's prompt: false when refused or failed.</summary>
+    public static async Task<bool> RunElevated(string script)
     {
-        const string enable =
-            "$ErrorActionPreference = 'Stop'\n" +
-            "if (-not (Get-Service sshd -ErrorAction SilentlyContinue)) { Add-WindowsCapability -Online -Name OpenSSH.Server~~~~0.0.1.0 | Out-Null }\n" +
-            "New-Item -Path 'HKLM:\\SOFTWARE\\OpenSSH' -Force | Out-Null\n" +
-            "New-ItemProperty -Path 'HKLM:\\SOFTWARE\\OpenSSH' -Name DefaultShell -Value \"$env:WINDIR\\System32\\WindowsPowerShell\\v1.0\\powershell.exe\" -PropertyType String -Force | Out-Null\n" +
-            "Set-Service sshd -StartupType Automatic\n" +
-            "Start-Service sshd\n" +
-            "$rule = Get-NetFirewallRule -Name 'OpenSSH-Server-In-TCP' -ErrorAction SilentlyContinue\n" +
-            "if ($rule) { $rule | Set-NetFirewallRule -Profile Private -Enabled True }\n" +
-            "else { New-NetFirewallRule -Name 'OpenSSH-Server-In-TCP' -DisplayName 'OpenSSH Server (sshd)' -Enabled True -Direction Inbound -Protocol TCP -Action Allow -LocalPort 22 -Profile Private | Out-Null }\n";
-        const string disable =
-            "Stop-Service sshd -ErrorAction SilentlyContinue\n" +
-            "Set-Service sshd -StartupType Disabled -ErrorAction SilentlyContinue\n" +
-            "Get-NetFirewallRule -Name 'OpenSSH-Server-In-TCP' -ErrorAction SilentlyContinue | Set-NetFirewallRule -Enabled False\n";
-        var script = on ? enable : disable;
         var info = new ProcessStartInfo("powershell.exe",
             "-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -EncodedCommand " + Convert.ToBase64String(Encoding.Unicode.GetBytes(script)))
         {
@@ -191,5 +205,173 @@ static class Phone
             });
         }
         finally { Busy = false; }
+    }
+
+    // ---- The key of a phone
+
+    [DllImport("advapi32.dll", SetLastError = true)]
+    static extern bool GetTokenInformation(IntPtr token, int infoClass, out int info, int length, out int returned);
+
+    /// <summary>
+    /// Whether the user is an administrator, also behind UAC (a limited token): OpenSSH then reads
+    /// ProgramData\ssh\administrators_authorized_keys instead of the user's own file.
+    /// </summary>
+    static bool IsAdmin()
+    {
+        using var id = WindowsIdentity.GetCurrent();
+        if (new WindowsPrincipal(id).IsInRole(WindowsBuiltInRole.Administrator)) return true;
+        // TokenElevationType (18): 3 is the limited half of an administrator's split token
+        return GetTokenInformation(id.Token, 18, out int type, sizeof(int), out _) && type == 3;
+    }
+
+    /// <summary>
+    /// Lets the phone in with its key: switches the SSH sign-in on when it is off and adds the key where OpenSSH
+    /// reads it. One administrator's prompt when needed (an administrator's keys, or the server off); false when refused.
+    /// </summary>
+    public static async Task<bool> AddPhoneKey(string key)
+    {
+        bool admin = IsAdmin(), running = Running();
+        if (!admin)
+        {
+            // The user's own file: no prompt. The server, when off, needs one (it may be another account's)
+            try
+            {
+                var dir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".ssh");
+                Directory.CreateDirectory(dir);
+                var file = Path.Combine(dir, "authorized_keys");
+                if (!File.Exists(file) || !File.ReadAllText(file).Contains(key)) File.AppendAllText(file, key + "\n", Encoding.ASCII);
+            }
+            catch (Exception) { return false; }
+            return running || await RunElevated(EnableScript);
+        }
+        var add =
+            "$k = '" + key + "'\n" +
+            "$f = Join-Path $env:ProgramData 'ssh\\administrators_authorized_keys'\n" +
+            "if (-not (Test-Path $f) -or -not (Select-String -Path $f -SimpleMatch $k -Quiet)) { Add-Content -Path $f -Value $k -Encoding ascii }\n" +
+            "icacls $f /inheritance:r /grant '*S-1-5-32-544:F' /grant '*S-1-5-18:F' | Out-Null\n";
+        return await RunElevated((running ? "$ErrorActionPreference = 'Stop'\n" : EnableScript) + add);
+    }
+}
+
+/// <summary>
+/// LiteBro on iPhone finds this computer by itself (UDP broadcast on <see cref="Port"/>, the home network) and asks
+/// to sign in: the person here answers, and the phone's key is added for SSH, so no QR code and no Windows password.
+/// The installer opens the port for private networks only. Off with the «С телефона» button on /dev.
+/// </summary>
+static class PhoneFind
+{
+    public const int Port = 47321;
+    static UdpClient? udp;
+    static Func<string, string, Task<bool>> ask = null!;
+    static Action<Action> onUi = null!;
+
+    /// <summary>A sign-in asked by a phone: its id, what was answered (null while the person decides)</summary>
+    sealed class Request { public string Id = ""; public Dictionary<string, object?>? Reply; public DateTime At = DateTime.UtcNow; }
+    static Request? pending;
+    static readonly List<Request> done = new();
+    static readonly List<DateTime> refusals = new();
+
+    /// <param name="ask">Asks the person (phone's name, code shown on the phone) on the UI thread</param>
+    public static void Start(Func<string, string, Task<bool>> ask, Action<Action> ui)
+    {
+        PhoneFind.ask = ask;
+        onUi = ui;
+        try
+        {
+            udp = new UdpClient(new IPEndPoint(IPAddress.Any, Port));
+            udp.Client.SetSocketOption(SocketOptionLevel.Socket, SocketOptionName.ReuseAddress, false);
+        }
+        catch (SocketException) { return; } // another LiteBro of another user has the port
+        _ = Task.Run(Loop);
+    }
+
+    static async Task Loop()
+    {
+        while (udp != null)
+        {
+            UdpReceiveResult r;
+            try { r = await udp.ReceiveAsync(); }
+            catch (ObjectDisposedException) { return; }
+            catch (SocketException) { continue; } // ICMP unreachable of an earlier reply
+            try
+            {
+                if (r.Buffer.Length > 2048 || !NetGuard.IsLocalIp(r.RemoteEndPoint.Address) || !Dev.On("phone")) continue;
+                var m = ProjectStore.Json.Deserialize<Dictionary<string, object>>(Encoding.UTF8.GetString(r.Buffer));
+                if (m == null || !(m.TryGetValue("litebro", out var v) && v is int n && n == 1)) continue;
+                var reply = Handle(m);
+                if (reply == null) continue;
+                reply["litebro"] = 1;
+                var bytes = Encoding.UTF8.GetBytes(ProjectStore.Json.Serialize(reply));
+                await udp.SendAsync(bytes, bytes.Length, r.RemoteEndPoint);
+            }
+            catch (Exception) { } // a stray packet
+        }
+    }
+
+    static string? Str(Dictionary<string, object> m, string k) => m.TryGetValue(k, out var v) ? v as string : null;
+
+    static Dictionary<string, object?>? Handle(Dictionary<string, object> m)
+    {
+        switch (Str(m, "type"))
+        {
+            case "find":
+                return new() { ["type"] = "here", ["name"] = Environment.MachineName, ["user"] = Environment.UserName };
+            case "pair":
+                var id = Str(m, "id") ?? "";
+                var key = Str(m, "key") ?? "";
+                var phone = Str(m, "phone") ?? "iPhone";
+                if (id.Length is < 8 or > 64) return null;
+                if (!Regex.IsMatch(key, "^ssh-ed25519 [A-Za-z0-9+/]{68}={0,2}( [A-Za-z0-9._-]{1,40})?$")) return Answer(id, "failed");
+                if (phone.Length > 40) phone = phone.Substring(0, 40);
+                phone = Regex.Replace(phone, @"[\p{C}]", "");
+                lock (done)
+                {
+                    if (done.FirstOrDefault(d => d.Id == id) is { } old) return old.Reply;
+                    if (pending != null && pending.Id == id) return Answer(id, "pending");
+                    // One question at a time; a few refusals in a row close the door for ten minutes
+                    if (pending != null && DateTime.UtcNow - pending.At < TimeSpan.FromMinutes(3)) return Answer(id, "busy");
+                    refusals.RemoveAll(t => DateTime.UtcNow - t > TimeSpan.FromMinutes(10));
+                    if (refusals.Count >= 3) return Answer(id, "denied");
+                    pending = new Request { Id = id };
+                }
+                var request = pending;
+                onUi(async () =>
+                {
+                    Dictionary<string, object?> reply;
+                    if (!await ask(phone, Code(key)))
+                    {
+                        lock (done) refusals.Add(DateTime.UtcNow);
+                        reply = Answer(id, "denied");
+                    }
+                    else if (!await Phone.AddPhoneKey(key)) reply = Answer(id, "failed");
+                    else
+                    {
+                        reply = Answer(id, "ok");
+                        reply["port"] = 22;
+                        reply["user"] = Environment.UserName;
+                        reply["name"] = Environment.MachineName;
+                        reply["fp"] = Phone.Fingerprint();
+                    }
+                    lock (done)
+                    {
+                        request.Reply = reply;
+                        done.Add(request);
+                        if (done.Count > 20) done.RemoveAt(0);
+                        if (pending == request) pending = null;
+                    }
+                });
+                return Answer(id, "pending");
+        }
+        return null;
+    }
+
+    static Dictionary<string, object?> Answer(string id, string state) => new() { ["type"] = "pair", ["id"] = id, ["state"] = state };
+
+    /// <summary>Four digits from the key, shown on both sides: the person sees it is their phone asking</summary>
+    public static string Code(string key)
+    {
+        using var sha = SHA256.Create();
+        var h = sha.ComputeHash(Encoding.UTF8.GetBytes(key));
+        return ((((uint)h[0] << 24) | ((uint)h[1] << 16) | ((uint)h[2] << 8) | h[3]) % 10000).ToString("D4");
     }
 }

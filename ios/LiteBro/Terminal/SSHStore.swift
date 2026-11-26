@@ -104,8 +104,23 @@ final class SSHStore: ObservableObject {
     func makeKey() -> Curve25519.Signing.PrivateKey {
         let k = Curve25519.Signing.PrivateKey()
         Vault.shared.setSecret(k.rawRepresentation, service: Self.keyService, account: Self.keyAccount)
+        UserDefaults.standard.set(Self.publicLine(k), forKey: Self.publicKey)
         objectWillChange.send()
         return k
+    }
+
+    private static let publicKey = "sshPublicKey"
+
+    /// This iPhone's key line for authorized_keys, on the main thread: made when there is none; an older key
+    /// is read once behind Face ID. nil when cancelled.
+    func publicKeyLine(done: @escaping (String?) -> Void) {
+        if hasKey, let line = UserDefaults.standard.string(forKey: Self.publicKey) { return done(line) }
+        guard hasKey else { return done(Self.publicLine(makeKey())) }
+        key { k in
+            let line = k.map { Self.publicLine($0) }
+            if let line { UserDefaults.standard.set(line, forKey: Self.publicKey) }
+            DispatchQueue.main.async { done(line) }
+        }
     }
 
     /// As in authorized_keys: "ssh-ed25519 AAAA… litebro-iphone"

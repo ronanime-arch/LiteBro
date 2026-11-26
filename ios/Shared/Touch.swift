@@ -84,6 +84,9 @@ enum Touch {
         var index: UInt32 = 1, identity: UInt32 = 2
         var builtIn = true
         var pressure = 1.0
+        /// Into this app only, as Apple's UI tests do (UIApplication's own HID queue): no rights needed,
+        /// and it works where system-wide taps do not; x, y become points of the window
+        var inApp = false
 
         init() {}
         init(_ m: [String: Any]) {
@@ -96,11 +99,17 @@ enum Touch {
             if let v = m["identity"] as? Int { identity = UInt32(v) }
             if let v = m["builtIn"] as? Bool { builtIn = v }
             if let v = m["pressure"] as? Double { pressure = v }
+            if let v = m["inApp"] as? Bool { inApp = v; if v && m["points"] == nil { points = true } }
         }
     }
 
     /// A finger at (x, y) of the screen as the phone holds it upright, 0…1 each
     static func finger(_ phase: Phase, x: Double, y: Double, _ o: Options = Options()) {
+        if o.inApp {
+            // On the main thread: the event is made, given the key window's context and queued in UIKit
+            DispatchQueue.main.async { fingerInApp(phase, x: x, y: y, o) }
+            return
+        }
         guard let client = client(o.client), let digitizer, let fingerEvent, let append, let dispatch else { return }
         var px = x, py = y
         if o.points {
@@ -122,6 +131,49 @@ enum Touch {
         dispatch(client, hand)
         Unmanaged<AnyObject>.fromOpaque(one).release()
         Unmanaged<AnyObject>.fromOpaque(hand).release()
+    }
+
+    /// The key window of this app, looked up by name: the broadcast extension has no UIApplication.shared
+    private static func keyWindow() -> (NSObject, UIWindow?)? {
+        guard let appClass = NSClassFromString("UIApplication") as? NSObject.Type,
+              let app = appClass.value(forKey: "sharedApplication") as? NSObject else { return nil }
+        let scenes = app.value(forKey: "connectedScenes") as? Set<UIScene> ?? []
+        let window = scenes.compactMap { $0 as? UIWindowScene }.flatMap { $0.windows }.first { $0.isKeyWindow }
+        return (app, window)
+    }
+
+    /// The in-app way (WebKit's HIDEventGenerator does the same): UIApplication._enqueueHIDEvent:, with the
+    /// digitizer info carrying the key window's context id
+    private static func fingerInApp(_ phase: Phase, x: Double, y: Double, _ o: Options) {
+        guard let digitizer, let fingerEvent, let append, let kw = keyWindow() else { return }
+        let app = kw.0, window = kw.1
+        let size = window?.bounds.size ?? UIScreen.main.bounds.size
+        let px = o.points ? x * Double(size.width) : x, py = o.points ? y * Double(size.height) : y
+        let down = phase != .up
+        let mask: UInt32 = phase == .move ? positionBit : (rangeBit | touchBit | (phase == .down ? positionBit : 0))
+        let now = mach_absolute_time()
+        guard let hand = digitizer(kCFAllocatorDefault, now, handType, 0, 0, mask, 0, 0, 0, 0, 0, 0,
+                                   DarwinBoolean(down), DarwinBoolean(down), 0),
+              let one = fingerEvent(kCFAllocatorDefault, now, o.index, o.identity, mask, px, py, 0, down ? o.pressure : 0, 0,
+                                    DarwinBoolean(down), DarwinBoolean(down), 0) else { return }
+        setInteger?(hand, fieldDisplayIntegrated, 1)
+        append(hand, one, 0)
+        let context = (window?.value(forKey: "_contextId") as? NSNumber)?.uint32Value ?? 0
+        digitizerInfo?(hand, context, 0, 0, nil, 0, 0)
+        let event = Unmanaged<AnyObject>.fromOpaque(hand).takeUnretainedValue()
+        let enqueue = NSSelectorFromString("_enqueueHIDEvent:")
+        if app.responds(to: enqueue) { _ = app.perform(enqueue, with: event) }
+        Unmanaged<AnyObject>.fromOpaque(one).release()
+        Unmanaged<AnyObject>.fromOpaque(hand).release()
+    }
+
+    /// Text into whatever has the focus in this app (a field of LiteBro or of a page); "\b" deletes one character
+    static func type(_ text: String) {
+        DispatchQueue.main.async {
+            guard let kw = keyWindow(),
+                  let responder = kw.1?.value(forKey: "firstResponder") as? UIKeyInput else { return }
+            if text == "\u{8}" { responder.deleteBackward() } else { responder.insertText(text) }
+        }
     }
 
     /// A button: Home (consumer page 0x0C, menu 0x40) or the side button (power 0x30)

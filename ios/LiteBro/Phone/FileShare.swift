@@ -194,6 +194,8 @@ private final class DAVHandler: HTTPHandler {
             if h.method == "POST", let m = (try? JSONSerialization.jsonObject(with: body)) as? [String: Any] {
                 if let b = m["button"] as? String {
                     Touch.button(b == "side" ? 0x30 : 0x40)
+                } else if let text = m["type"] as? String {
+                    Touch.type(text)
                 } else if let p = (m["t"] as? String).flatMap(Touch.Phase.init(rawValue:)),
                           let x = m["x"] as? Double, let y = m["y"] as? Double {
                     Touch.finger(p, x: min(max(x, 0), 1), y: min(max(y, 0), 1), Touch.Options(m))

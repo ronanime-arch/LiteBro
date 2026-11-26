@@ -50,6 +50,8 @@ input[type=number] { width: 70px; font: 13px var(--text); padding: 3px 6px; bord
 #claudeHow .row { margin-top: 6px; flex-wrap: nowrap; }
 input.cmd { flex: 1; min-width: 0; font: 12.5px Consolas, monospace; padding: 5px 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--card); color: inherit; }
 #claudeHow.off { opacity: .5; }
+#cdpRow.off { opacity: .5; }
+#claudeMore { margin-top: 14px; }
 button:disabled { opacity: .45; cursor: default; background: transparent; }
 dialog { max-width: 460px; padding: 18px 20px 14px; border: 1px solid var(--line); border-radius: 8px; background: var(--card); color: var(--fg); }
 dialog::backdrop { background: rgba(0, 0, 0, .45); }
@@ -91,6 +93,16 @@ dialog div { display: flex; justify-content: flex-end; gap: 8px; }
     <p class="muted">Claude Desktop: Настройки → Разработчик → Изменить конфигурацию, в файл claude_desktop_config.json добавьте сервер (если файл пустой — вставьте целиком), сохраните и перезапустите Claude Desktop:</p>
     <div class="row"><input id="claudeDesktop" class="cmd" readonly><button id="claudeDesktopCopy">Копировать</button></div>
     <p class="muted">Потом попросите Claude, например: открой в LiteBro поиск и найди… Если LiteBro не запущен, Claude запустит его сам.</p>
+    <p class="muted">Те же инструменты из командной строки: LiteBro.exe cli help. Claude сам выбирает способ: текст страницы дешевле снимка, командная строка — для скриптов и циклов, порт отладки — для длинных сценариев Playwright, свои скрипты — для постоянных изменений сайта.</p>
+  </div>
+  <section id="claudeMore"></section>
+  <div class="row">
+    <button id="scriptsOpen">Открыть папку скриптов</button>
+    <span class="muted" id="scriptsDir"></span>
+  </div>
+  <div class="row" id="cdpRow">
+    <label class="muted">Порт отладки <input type="number" id="debugPort" min="1024" max="65535"></label>
+    <span class="muted" id="cdpUrl"></span>
   </div>
   <h2>Вкладки</h2>
   <section id="tabsSection"></section>
@@ -172,7 +184,7 @@ const ICONS = {
   mocks: "\uE8A5", split: "\uE89A", perms: "\uE8D7", unblock: "\uE733",
 <<<<<<< HEAD
   shell: { svg: POWERSHELL, cls: "shell" }, localonly: { svg: SHIELD, cls: "net" }, netlog: "\uE8FD", console: { text: ">_", cls: "console" },
-  claude: { text: "AI" }, tabMute: "\uE767", adBlock: "\uE733", strictTracking: "\uEA18", trustLocalCerts: "\uE72E", externalToMain: "\uE8A7", freezeTabs: "\uE769", gpu: "\uE7F4",
+  claude: { text: "AI" }, userScripts: { text: "JS" }, cdp: "\uE943", tabMute: "\uE767", adBlock: "\uE733", strictTracking: "\uEA18", trustLocalCerts: "\uE72E", externalToMain: "\uE8A7", freezeTabs: "\uE769", gpu: "\uE7F4",
 =======
   shell: { svg: POWERSHELL, cls: "shell" }, localonly: { svg: SHIELD, cls: "net" }, netlog: "\uE8FD", phone: "\uE8EA", console: { text: ">_", cls: "console" },
   tabMute: "\uE767", adBlock: "\uE733", strictTracking: "\uEA18", trustLocalCerts: "\uE72E", externalToMain: "\uE8A7", freezeTabs: "\uE769", gpu: "\uE7F4",
@@ -269,6 +281,8 @@ const SETTINGS = [
   ["protect", "strictTracking", "Строгая защита от трекеров", "Как «Строгая» в Edge: блокируется больше счётчиков, рекламы и сторонних cookies. Изредка ломается вход через другой сайт или встроенное видео; тогда выключите. Выключено — «Сбалансированная», как в Edge по умолчанию."],
   ["protect", "trustLocalCerts", "Доверять сертификатам localhost", "Локальный сервер на https со своим сертификатом (vite --https, dotnet dev-certs) открывается без предупреждения. Только localhost, *.localhost, 127.x и ::1. Выключение действует после перезапуска браузера для уже открытых адресов."],
   ["claudeSection", "claude", "Доступ для Claude", "Claude Code и Claude Desktop видят открытые вкладки и действуют в них, как вы: открывают сайты, читают текст, делают снимки, нажимают и печатают. Это ваш профиль со входами на сайты, поэтому сайты видят обычного пользователя. Вкладка, в которой работает Claude, выходит вперёд, и вы видите, что он делает. Страницы самого браузера Claude может только читать. Пароли и оплату Claude не вводит."],
+  ["claudeMore", "userScripts", "Свои скрипты", "Файлы .js из папки скриптов выполняются на сайтах при каждой загрузке, как в Tampermonkey. В начале файла строки // @match https://example.com/* (без них — на всех сайтах) и при желании // @run-at document-start. Claude может сам сохранять сюда скрипты. Новый скрипт действует со следующей загрузки страницы."],
+  ["claudeMore", "cdp", "Порт отладки (CDP)", "Движок открывает протокол DevTools на 127.0.0.1: Playwright или Puppeteer подключаются к открытому браузеру со всеми входами (connectOverCDP). Это полный доступ к браузеру для любой программы этого компьютера, в том числе к страницам самого браузера. Включайте только на время работы. Движок перезапустится."],
   ["tabsSection", "tabMute", "Выключение звука по значку на вкладке", "Клик по значку динамика выключает и включает звук вкладки, пункт есть и в меню вкладки. Выключено — значок только показывает, что вкладка играет."],
   ["tabsSection", "freezeTabs", "Заморозка фоновых вкладок", "Экономит память и процессор: вкладка в фоне приостанавливается, потом выгружается и загружается снова по клику. Не замораживаются вкладки со звуком, терминал и сайты работающих проектов."],
   ["links", "externalToMain", "Открывать внешние ссылки в основном браузере", "Ссылка на сайт в интернете из другой программы (почта, мессенджер, документ) открывается в вашем основном браузере, обычно Chrome, а локальные адреса — в LiteBro. Выключено — LiteBro открывает и их. Работает, если LiteBro выбран для HTTP и HTTPS в «Приложениях по умолчанию». В режиме «только localhost» такие ссылки всё равно уходят в основной браузер."],
@@ -292,6 +306,12 @@ for (const [where, key, name, what] of SETTINGS) {
   box.addEventListener("change", async () => {
     if (key === "claude" && box.checked && !await ask("Включить доступ для Claude? Claude сможет открывать сайты, читать страницы и нажимать на них в вашем профиле, где вы вошли на сайты. Включайте, если доверяете тому, что запускаете в Claude.")) {
       box.checked = false;
+      return;
+    }
+    if (key === "cdp" && !await ask(box.checked
+        ? "Открыть порт отладки? Любая программа этого компьютера сможет управлять браузером и читать сайты, где вы вошли. Движок браузера перезапустится: вкладки перезагрузятся, открытые терминалы закроются."
+        : "Закрыть порт отладки? Движок браузера перезапустится: вкладки перезагрузятся, открытые терминалы закроются.")) {
+      box.checked = !box.checked;
       return;
     }
     if (key === "gpu" && !confirm(box.checked
@@ -322,6 +342,13 @@ function copyField(id) {
   field.select();
   navigator.clipboard.writeText(field.value).catch(() => document.execCommand("copy"));
 }
+$("scriptsOpen").addEventListener("click", () => post({ type: "scriptsOpen" }));
+$("debugPort").addEventListener("change", async () => {
+  const n = Math.round(Number($("debugPort").value));
+  if (!(n >= 1024 && n <= 65535)) return;
+  if (settingBoxes.cdp.checked && !await ask("Сменить порт отладки? Движок браузера перезапустится: вкладки перезагрузятся, открытые терминалы закроются.")) return;
+  post({ type: "setting", key: "debugPort", value: n });
+});
 $("claudeCodeCopy").addEventListener("click", () => copyField("claudeCode"));
 $("claudeDesktopCopy").addEventListener("click", () => copyField("claudeDesktop"));
 function showClaude(exe) {
@@ -350,6 +377,11 @@ window.chrome.webview.addEventListener("message", e => {
   $("timing").classList.toggle("off", !set.freezeTabs);
   $("claudeHow").classList.toggle("off", !set.claude);
   showClaude(set.exe);
+  if (set.scriptsDir) $("scriptsDir").textContent = set.scriptsDir;
+  $("scriptsOpen").disabled = !set.userScripts;
+  if (document.activeElement !== $("debugPort") && set.debugPort) $("debugPort").value = set.debugPort;
+  $("cdpUrl").textContent = set.cdp ? "http://127.0.0.1:" + set.debugPort : "";
+  $("cdpRow").classList.toggle("off", !set.cdp);
   $("adBlockOpen").disabled = !set.adBlock;
   // Downloading, waiting for local-only mode to be off, a failure: said instead of the button's note
   const state = set.adBlock ? set.adBlockState || "" : "";

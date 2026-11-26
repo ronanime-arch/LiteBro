@@ -433,6 +433,8 @@ sealed partial class BrowserForm : Form
         tab.NetScript = null;
         tab.NetResponse = null;
         ApplyNet(tab);
+        tab.UserScriptId = null;
+        ApplyUserScripts(tab);
         // A new WebView (another profile, loaded again) keeps the tab's emulation; the project's settings follow (ApplySite)
         tab.NoCache = tab.ZoomBySite = false;
         tab.SiteId = "";
@@ -2804,6 +2806,10 @@ sealed partial class BrowserForm : Form
                     ["adBlockState"] = AdBlock.State,
                     ["trustLocalCerts"] = App.Current.S.TrustLocalCerts,
                     ["claude"] = App.Current.S.Claude,
+                    ["userScripts"] = App.Current.S.UserScripts,
+                    ["cdp"] = App.Current.S.Cdp,
+                    ["debugPort"] = App.Current.S.DebugPort,
+                    ["scriptsDir"] = UserScripts.Dir,
                     ["exe"] = Application.ExecutablePath,
                     ["tabMute"] = App.Current.S.TabMute,
                     ["externalToMain"] = App.Current.S.ExternalToMain,
@@ -3425,7 +3431,7 @@ sealed partial class BrowserForm : Form
         ["netClear"] = new[] { "net" }, ["netExport"] = new[] { "net" }, ["mockFrom"] = new[] { "net" }, ["mockOpen"] = new[] { "net" },
         ["mockSave"] = new[] { "net" }, ["mockOn"] = new[] { "net" }, ["mockDelete"] = new[] { "net" },
         ["dev"] = new[] { "dev" }, ["lang"] = new[] { "dev" }, ["devReset"] = new[] { "dev" }, ["settingsReset"] = new[] { "dev" },
-        ["storage"] = new[] { "storage" }, ["permsOpen"] = new[] { "dev" }, ["setting"] = new[] { "dev" }, ["adBlockOpen"] = new[] { "dev" },
+        ["storage"] = new[] { "storage" }, ["permsOpen"] = new[] { "dev" }, ["setting"] = new[] { "dev" }, ["adBlockOpen"] = new[] { "dev" }, ["scriptsOpen"] = new[] { "dev" },
         ["termStart"] = new[] { "term" }, ["termIn"] = new[] { "term" }, ["termSize"] = new[] { "term" },
         ["openLink"] = new[] { "term", "console" },
         ["profileOpen"] = new[] { "console" }, ["site"] = new[] { "profile" }, ["siteClear"] = new[] { "profile" },
@@ -3562,6 +3568,14 @@ sealed partial class BrowserForm : Form
                 break;
             case "adBlockOpen" when Dev.Is(e.Source):
                 OpenAdBlockSettings(tab);
+                break;
+            case "scriptsOpen" when Dev.Is(e.Source):
+                try
+                {
+                    Directory.CreateDirectory(UserScripts.Dir);
+                    System.Diagnostics.Process.Start("explorer.exe", "\"" + UserScripts.Dir + "\"");
+                }
+                catch (Exception) { }
                 break;
             case "permsOpen":
                 // Every site, in the window under the toolbar's right end

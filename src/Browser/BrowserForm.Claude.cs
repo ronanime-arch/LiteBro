@@ -19,6 +19,19 @@ namespace LiteBro;
 /// </summary>
 sealed partial class BrowserForm
 {
+    /// <summary>Every tab gets the user scripts' current loader for its next page.</summary>
+    public void ApplyUserScripts()
+    {
+        foreach (var tab in tabs) ApplyUserScripts(tab);
+    }
+
+    static async void ApplyUserScripts(Tab tab)
+    {
+        if (tab.Core is not { } core) return;
+        var id = await UserScripts.ApplyAsync(core, tab.UserScriptId);
+        if (tab.Core == core) tab.UserScriptId = id;
+    }
+
     /// <summary>Runs a tool call on the UI thread, in whichever window holds the tab.</summary>
     public static async Task<Dictionary<string, object>> RunClaudeToolAsync(string name, Dictionary<string, object> args)
     {
@@ -27,6 +40,11 @@ sealed partial class BrowserForm
                 " on the LiteBro page " + L.T("«Для разработчика»") + " (its button is at the right edge of the start page).", true);
         var forms = App.Current.Forms.Where(f => !f.ShuttingDown && !f.IsDisposed).ToList();
         if (name == "tabs") return Mcp.Text(ListTabs(forms));
+        if (name == "user_scripts")
+        {
+            try { return UserScripts.Tool(args); }
+            catch (Exception e) { return Mcp.Text(e.Message, true); }
+        }
         if (name == "open")
         {
             var window = App.Current.LastActive is { ShuttingDown: false } last ? last : forms.LastOrDefault();

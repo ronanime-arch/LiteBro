@@ -15,6 +15,8 @@ sealed class Tab
     public readonly int Id = ++lastId;
     /// <summary>CSS pixels of the page per pixel of the latest screenshot Claude took of it.</summary>
     public double ShotScale = 1;
+    /// <summary>The id of the user scripts' loader on the current WebView (UserScripts.ApplyAsync).</summary>
+    public string? UserScriptId;
     /// <summary>null while the tab is unloaded: closed after a long time in the background, loaded again when picked.</summary>
     public CoreWebView2Controller? Ctl;
     public CoreWebView2? Core => Ctl?.CoreWebView2;

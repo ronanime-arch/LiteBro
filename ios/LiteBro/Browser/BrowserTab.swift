@@ -57,6 +57,7 @@ final class BrowserTab: NSObject, ObservableObject, Identifiable {
     func ensureWebView(load: Bool = true, adopting given: WKWebView? = nil) -> WKWebView {
         if let w = webView { return w }
         guard let browser else { fatalError("tab without browser") }
+        Debug.step("web view for \(url?.host ?? "home")")
         let w = given ?? browser.makeWebView()
         w.navigationDelegate = self
         w.uiDelegate = self
@@ -339,6 +340,7 @@ extension BrowserTab: WKNavigationDelegate {
 
     func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
         // iOS killed the page for memory: load it again
+        Debug.write("page process ended: \(webView.url?.host ?? "?"), \(Debug.memoryMB()) MB")
         webView.reload()
     }
 }

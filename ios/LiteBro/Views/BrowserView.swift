@@ -2,7 +2,7 @@ import SwiftUI
 import WebKit
 
 enum Sheet: String, Identifiable {
-    case tabs, media, downloads, settings, newTile, console, phone
+    case tabs, media, downloads, settings, newTile, console, phone, debug
     var id: String { rawValue }
 }
 
@@ -77,6 +77,7 @@ struct TabScreen: View {
             case .settings: SettingsView()
             case .console: ConsoleSheet(tab: tab)
             case .phone: PhoneAccessView()
+            case .debug: NavigationStack { DebugLogView() }
             case .newTile:
                 TileEditor(tile: Tile(name: tab.title.isEmpty ? (tab.url?.host ?? "") : tab.title,
                                       url: tab.url?.absoluteString ?? ""), isNew: true)

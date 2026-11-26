@@ -9,6 +9,9 @@ struct LiteBroApp: App {
     @AppStorage(Prefs.themeKey) private var theme = "dark"
 
     init() {
+        // Before anything else: the launch log, crash traces and the safe mode
+        Debug.begin()
+        Debug.step("app init")
         // Video keeps playing with the screen locked, like in Safari
         try? AVAudioSession.sharedInstance().setCategory(.playback, mode: .moviePlayback)
     }
@@ -16,6 +19,7 @@ struct LiteBroApp: App {
     var body: some Scene {
         WindowGroup {
             BrowserView()
+                .onAppear { Debug.step("first screen"); Debug.launched() }
                 .environmentObject(browser)
                 .environmentObject(tiles)
                 .environmentObject(downloads)

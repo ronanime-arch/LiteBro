@@ -9,6 +9,7 @@ struct SettingsView: View {
     @AppStorage(Prefs.unloadKey) private var unloadAfter = 5
     @AppStorage(Prefs.allowHostsKey) private var allowHosts = ""
     @State private var cleared = false
+    @State private var safeAsked = false
 
     var body: some View {
         NavigationStack {
@@ -122,7 +123,23 @@ struct SettingsView: View {
                 }
 
                 Section {
-                    Text(verbatim: "LiteBro " + (Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? ""))
+                    NavigationLink { DebugLogView() } label: { Label(L("Журнал отладки"), systemImage: "stethoscope") }
+                    Button {
+                        Debug.safeNextLaunch()
+                        safeAsked = true
+                    } label: {
+                        Text(safeAsked ? L("Следующий запуск — в безопасном режиме") : L("Безопасный режим при следующем запуске"))
+                    }
+                    .disabled(safeAsked)
+                } header: {
+                    Text(L("Отладка"))
+                } footer: {
+                    Text(L("Журнал запуска и падений лежит в «Файлы» › «На iPhone» › LiteBro › Debug, его можно открыть, даже если LiteBro не запускается. После запуска, который не дошёл до конца, LiteBro открывается в безопасном режиме: без сохранённых вкладок, списков фильтров и правил блокировки."))
+                }
+
+                Section {
+                    Text(verbatim: "LiteBro " + (Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "")
+                         + " (" + Debug.build + ")")
                         .foregroundStyle(.secondary)
                 }
             }

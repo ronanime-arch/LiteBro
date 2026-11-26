@@ -184,11 +184,11 @@ private final class DAVHandler: HTTPHandler {
                     Touch.button(b == "side" ? 0x30 : 0x40)
                 } else if let p = (m["t"] as? String).flatMap(Touch.Phase.init(rawValue:)),
                           let x = m["x"] as? Double, let y = m["y"] as? Double {
-                    Touch.finger(p, x: min(max(x, 0), 1), y: min(max(y, 0), 1))
+                    Touch.finger(p, x: min(max(x, 0), 1), y: min(max(y, 0), 1), Touch.Options(m))
                 }
                 return channel.respond(204, keepAlive: keepAlive)
             }
-            let info = "{\"available\":\(Touch.available),\"client\":\"\(Touch.kind)\"}"
+            let info = Touch.report
             return channel.respond(200, headers: [("Content-Type", "application/json")], body: Data(info.utf8), keepAlive: keepAlive)
         }
         guard let f = file(h.uri) else {

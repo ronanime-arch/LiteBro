@@ -942,3 +942,12 @@ Windows считает сеть «	Windows treats the network “
 » общедоступной, и брандмауэр не пускает телефон: он не найдёт компьютер и не войдёт по SSH.	” as public, so the firewall keeps the phone out: it will not find this computer or sign in over SSH.
 Если это ваша домашняя сеть, сделайте её частной: Параметры → Сеть и Интернет → Wi-Fi (или Ethernet) → «	If this is your home network, make it private: Settings → Network & internet → Wi-Fi (or Ethernet) → “
 » → Тип сетевого профиля → Частная сеть.	” → Network profile type → Private network.
+Подключить к Claude Desktop и Claude Code	Connect to Claude Desktop and Claude Code
+Или вручную.	Or by hand.
+Подключаю…	Connecting…
+Claude Desktop: не удалось изменить файл	Claude Desktop: could not change the file
+Claude Desktop: подключено. Закройте Claude Desktop полностью (значок в трее, Выход) и откройте снова.	Claude Desktop: connected. Quit Claude Desktop completely (tray icon, Quit) and open it again.
+Claude Desktop не найден.	Claude Desktop was not found.
+Claude Code: подключено для всех папок. Начните новую сессию.	Claude Code: connected for every folder. Start a new session.
+Claude Code: команда не сработала, выполните её вручную из поля ниже.	Claude Code: the command did not work, run it by hand from the field below.
+Claude Code не найден.	Claude Code was not found.

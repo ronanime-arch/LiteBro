@@ -2851,6 +2851,8 @@ sealed partial class BrowserForm : Form
                     ["updateVersion"] = Updates.Available?.Version.ToString() ?? "",
                     ["updateState"] = Updates.State,
                     ["updateBusy"] = Updates.Busy,
+                    ["claudeState"] = ClaudeConnect.State,
+                    ["claudeBusy"] = ClaudeConnect.Busy,
                 },
             }));
     }
@@ -3466,7 +3468,7 @@ sealed partial class BrowserForm : Form
         ["mockSave"] = new[] { "net" }, ["mockOn"] = new[] { "net" }, ["mockDelete"] = new[] { "net" },
         ["dev"] = new[] { "dev" }, ["lang"] = new[] { "dev" }, ["devReset"] = new[] { "dev" }, ["settingsReset"] = new[] { "dev" },
         ["storage"] = new[] { "storage" }, ["permsOpen"] = new[] { "dev" }, ["setting"] = new[] { "dev" }, ["adBlockOpen"] = new[] { "dev" }, ["scriptsOpen"] = new[] { "dev" },
-        ["updateCheck"] = new[] { "dev" }, ["updateInstall"] = new[] { "dev" },
+        ["updateCheck"] = new[] { "dev" }, ["updateInstall"] = new[] { "dev" }, ["claudeConnect"] = new[] { "dev" },
         ["termStart"] = new[] { "term" }, ["termIn"] = new[] { "term" }, ["termSize"] = new[] { "term" },
         ["openLink"] = new[] { "term", "console" },
         ["profileOpen"] = new[] { "console" }, ["site"] = new[] { "profile" }, ["siteClear"] = new[] { "profile" },
@@ -3600,6 +3602,9 @@ sealed partial class BrowserForm : Form
                 break;
             case "devOpen":
                 OpenHereOrNew(tab, Dev.Url, Flag("newTab"));
+                break;
+            case "claudeConnect" when Dev.Is(e.Source):
+                _ = ClaudeConnect.ConnectAsync(() => BeginInvoke(new Action(() => { foreach (var t in tabs) SendNet(t); })));
                 break;
             case "updateCheck" when Dev.Is(e.Source):
                 _ = Updates.CheckAsync(manual: true);

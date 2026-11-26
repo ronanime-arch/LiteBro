@@ -33,8 +33,8 @@ label.item:hover { background: rgba(127, 127, 127, .06); }
 .item input:checked + .track::after { left: 19px; }
 .item input:focus-visible + .track { outline: 2px solid var(--accent); outline-offset: 2px; }
 button { font: 13px var(--text); padding: 4px 12px; border: 1px solid var(--line); border-radius: 6px; background: transparent; color: inherit; cursor: pointer; }
-#updateInstall { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; padding: 6px 16px; }
-#updateInstall:hover:not(:disabled) { filter: brightness(1.12); }
+#updateInstall, #claudeConnect { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; padding: 6px 16px; }
+#updateInstall:hover:not(:disabled), #claudeConnect:hover:not(:disabled) { filter: brightness(1.12); }
 button:hover { background: rgba(127, 127, 127, .15); }
 select { font: 13px var(--text); padding: 4px 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--card); color: inherit; }
 input[type=number] { width: 70px; font: 13px var(--text); padding: 3px 6px; border: 1px solid var(--line); border-radius: 6px; background: var(--card); color: inherit; margin: 0 4px; }
@@ -90,6 +90,9 @@ dialog div { display: flex; justify-content: flex-end; gap: 8px; }
   <h2>Claude</h2>
   <section id="claudeSection"></section>
   <div id="claudeHow">
+    <div class="row"><button id="claudeConnect">Подключить к Claude Desktop и Claude Code</button></div>
+    <p class="muted" id="claudeState"></p>
+    <p class="muted">Или вручную.</p>
     <p class="muted">Claude Code: выполните в терминале команду (один раз, для всех папок):</p>
     <div class="row"><input id="claudeCode" class="cmd" readonly><button id="claudeCodeCopy">Копировать</button></div>
     <p class="muted">Claude Desktop: Настройки → Разработчик → Изменить конфигурацию, в файл claude_desktop_config.json добавьте сервер (если файл пустой — вставьте целиком), сохраните и перезапустите Claude Desktop:</p>
@@ -365,6 +368,7 @@ function showClaude(exe) {
 $("theme").addEventListener("change", () => post({ type: "setting", key: "theme", value: $("theme").value }));
 $("perms").addEventListener("click", () => post({ type: "permsOpen" }));
 $("adBlockOpen").addEventListener("click", () => post({ type: "adBlockOpen" }));
+$("claudeConnect").addEventListener("click", () => post({ type: "claudeConnect" }));
 $("updateCheck").addEventListener("click", () => post({ type: "updateCheck" }));
 $("updateInstall").addEventListener("click", () => post({ type: "updateInstall" }));
 $("allOn").addEventListener("click", () => post({ type: "devReset" }));
@@ -396,6 +400,9 @@ window.chrome.webview.addEventListener("message", e => {
   $("adBlockState").textContent = state;
   $("adBlockNote").hidden = !!state;
   if (set.theme) $("theme").value = set.theme;
+  $("claudeConnect").disabled = !!set.claudeBusy;
+  $("claudeState").textContent = set.claudeState || "";
+  $("claudeState").style.whiteSpace = "pre-line";
   $("updateCheck").disabled = $("updateInstall").disabled = !!set.updateBusy;
   $("updateInstall").hidden = !set.updateVersion;
   if (set.updateVersion) $("updateInstall").textContent = "Установить " + set.updateVersion;

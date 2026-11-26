@@ -142,7 +142,7 @@ private final class ScreenHandler: HTTPHandler {
             } else if let p = (m["t"] as? String).flatMap(Touch.Phase.init(rawValue:)),
                       let x = m["x"] as? Double, let y = m["y"] as? Double {
                 let upright = Self.upright(x, y, frames.orientation)
-                Touch.finger(p, x: min(max(upright.0, 0), 1), y: min(max(upright.1, 0), 1))
+                Touch.finger(p, x: min(max(upright.0, 0), 1), y: min(max(upright.1, 0), 1), Touch.Options(m))
             }
             channel.respond(204)
         } else {

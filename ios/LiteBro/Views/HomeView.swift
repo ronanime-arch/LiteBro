@@ -23,6 +23,7 @@ struct HomeView: View {
         ScrollView {
             VStack(spacing: 22) {
                 Text(verbatim: "LiteBro").font(.largeTitle.bold()).padding(.top, 28)
+                SafeModeNotice(sheet: $sheet)
                 LazyVGrid(columns: columns, spacing: 18) {
                     ForEach(tiles.tiles) { t in
                         TileView(tile: t)

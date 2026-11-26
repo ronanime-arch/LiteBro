@@ -248,3 +248,13 @@
 "Папка LiteBro в «Файлах»: загрузки и файлы приложения." = "The LiteBro folder in Files: downloads and the app's files.";
 "Эта сборка (LiteBro.tipa) даёт ПК доступ ко всему телефону, поэтому TrollStore ставит её как системную, и браузером по умолчанию её не выбрать. Нужен браузер по умолчанию — поставьте поверх LiteBro-Browser.tipa из того же архива; вернуть доступ ко всему телефону — снова LiteBro.tipa." = "This build (LiteBro.tipa) gives the PC the whole phone, so TrollStore installs it as a system app and it cannot be the default browser. For the default browser install LiteBro-Browser.tipa from the same archive over it; for the whole phone again, LiteBro.tipa.";
 "В этой сборке (LiteBro-Browser.tipa) ПК видит только папку LiteBro. Доступ ко всему телефону — LiteBro.tipa из того же архива, поверх." = "In this build (LiteBro-Browser.tipa) the PC sees only the LiteBro folder. For the whole phone install LiteBro.tipa from the same archive over it.";
+"Журнал отладки" = "Debug log";
+"Отправить" = "Send";
+"Скопировано" = "Copied";
+"Безопасный режим" = "Safe mode";
+"Прошлый запуск не дошёл до конца, поэтому сейчас LiteBro открылся без сохранённых вкладок, списков фильтров и правил блокировки. Следующий запуск — обычный." = "The last launch did not finish, so LiteBro opened now without the saved tabs, filter lists and blocking rules. The next launch is a normal one.";
+"Последний шаг:" = "Last step:";
+"Следующий запуск — в безопасном режиме" = "The next launch is in safe mode";
+"Безопасный режим при следующем запуске" = "Safe mode at the next launch";
+"Отладка" = "Debugging";
+"Журнал запуска и падений лежит в «Файлы» › «На iPhone» › LiteBro › Debug, его можно открыть, даже если LiteBro не запускается. После запуска, который не дошёл до конца, LiteBro открывается в безопасном режиме: без сохранённых вкладок, списков фильтров и правил блокировки." = "The launch and crash log is in Files › On My iPhone › LiteBro › Debug, it opens even when LiteBro does not start. After a launch that did not finish, LiteBro opens in safe mode: without the saved tabs, filter lists and blocking rules.";

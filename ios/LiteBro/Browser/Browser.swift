@@ -27,12 +27,21 @@ final class Browser: NSObject, ObservableObject {
         content.add(WeakHandler(self), name: "litebroMedia")
         content.add(WeakHandler(self), contentWorld: .defaultClient, name: "litebroVault")
         content.add(WeakHandler(self), contentWorld: .page, name: PageConsole.handler)
-        restoreSession()
+        Debug.step("browser init")
+        if Debug.safeMode {
+            tabs = [BrowserTab(url: nil, browser: self)]
+            currentID = tabs[0].id
+        } else {
+            restoreSession()
+        }
+        Debug.step("tabs: \(tabs.count)")
         // The first page waits for the rules, so nothing leaks out in the localhost-only mode
-        if Prefs.protect { DispatchQueue.global(qos: .utility).async { FilterLists.loadMalware() } }
+        if Prefs.protect, Debug.allowed("malware-lists") {
+            DispatchQueue.global(qos: .utility).async { Debug.guarded("malware-lists") { FilterLists.loadMalware() } }
+        }
         applyRules { [weak self] in
             if let self, let tab = self.current { self.show(tab) }
-            self?.refreshLists()
+            if Debug.allowed("build-lists") { self?.refreshLists() }
         }
 
         timer = Timer.scheduledTimer(withTimeInterval: 30, repeats: true) { [weak self] _ in self?.unloadIdle() }
@@ -206,11 +215,16 @@ final class Browser: NSObject, ObservableObject {
             group.enter()
             LocalNet.compile { l in if let l { lists.append(l) }; group.leave() }
         }
-        if Prefs.adBlock {
+        // The ad rules can take seconds and memory: a launch that died there skips them (debug module)
+        let ads = Prefs.adBlock && Debug.allowed("rules")
+        if ads {
+            Debug.mark("rules")
             group.enter()
             AdBlock.compile { ls in lists.append(contentsOf: ls); group.leave() }
         }
         group.notify(queue: .main) { [weak self] in
+            if ads { Debug.unmark("rules") }
+            Debug.step("rule lists: \(lists.count)")
             guard let self else { return }
             self.content.removeAllContentRuleLists()
             lists.forEach { self.content.add($0) }
@@ -221,6 +235,8 @@ final class Browser: NSObject, ObservableObject {
     /// Downloads the full lists when they are missing or old, then applies them
     func refreshLists(force: Bool = false) {
         guard !listsBusy else { return }
+        // By hand from the settings: the work skipped after a failed launch is tried again
+        if force { ["build-lists", "malware-lists", "rules"].forEach(Debug.forget) }
         let ads = Prefs.adBlock, protect = Prefs.protect
         guard ads || protect else { return }
         listsBusy = true
@@ -228,14 +244,14 @@ final class Browser: NSObject, ObservableObject {
         Task.detached(priority: .utility) { [weak self] in
             if protect {
                 _ = await FilterLists.refresh(FilterLists.malware, force: force)
-                FilterLists.loadMalware()
+                Debug.guarded("malware-lists") { FilterLists.loadMalware() }
             }
             var rebuilt = false
             if ads {
                 let fresh = await FilterLists.refresh(FilterLists.ads, force: force)
                 if fresh || FilterLists.built() == nil {
                     await MainActor.run { self?.listsState = L("Готовлю правила…") }
-                    rebuilt = FilterLists.build()
+                    rebuilt = Debug.guarded("build-lists") { FilterLists.build() }
                 }
             }
             let didRebuild = rebuilt
@@ -273,6 +289,8 @@ final class Browser: NSObject, ObservableObject {
     // MARK: Session
 
     func saveSession() {
+        // The safe mode starts with one tab: the saved ones wait for the next normal launch
+        guard !Debug.safeMode else { return }
         let list = tabs.map { $0.url?.absoluteString ?? "" }
         UserDefaults.standard.set(list, forKey: "tabs")
         UserDefaults.standard.set(tabs.firstIndex { $0.id == currentID } ?? 0, forKey: "currentTab")

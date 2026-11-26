@@ -45,11 +45,13 @@ final class DownloadManager: NSObject, ObservableObject {
         assetDownloadDelegate: self, delegateQueue: .main)
 
     override init() {
+        Debug.step("downloads")
         let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
         folder = docs.appendingPathComponent("Downloads", isDirectory: true)
         try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         super.init()
         loadFinished()
+        Debug.step("downloads: \(items.count) files")
         // HLS tasks left from the last run have nobody to finish them
         streams.getAllTasks { tasks in tasks.forEach { $0.cancel() } }
     }

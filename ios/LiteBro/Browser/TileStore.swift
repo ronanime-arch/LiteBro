@@ -37,6 +37,7 @@ final class TileStore: ObservableObject {
     }()
 
     init() {
+        Debug.step("tiles")
         if let data = try? Data(contentsOf: file), let list = try? JSONDecoder().decode([Tile].self, from: data) {
             tiles = list
         }

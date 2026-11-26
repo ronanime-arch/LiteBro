@@ -32,7 +32,7 @@ struct SettingsView: View {
                         Label(L("Сделать браузером по умолчанию"), systemImage: "safari")
                     }
                 } footer: {
-                    Text(L("Откроются настройки LiteBro: «Приложение браузера по умолчанию» → LiteBro. Если LiteBro нет в списке приложений в «Настройках», TrollStore поставил его как системное: в TrollStore нажмите на LiteBro → «Switch to User» (тип регистрации «User»), затем снова эта кнопка."))
+                    Text(L("Откроются настройки LiteBro: «Приложение браузера по умолчанию» → LiteBro. Тогда ссылки из других приложений открываются здесь."))
                 }
 
                 Section {

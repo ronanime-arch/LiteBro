@@ -245,4 +245,4 @@
 "есть в «Фото»" = "in Photos";
 "идёт:" = "running:";
 "готово:" = "done:";
-"Откроются настройки LiteBro: «Приложение браузера по умолчанию» → LiteBro. Если LiteBro нет в списке приложений в «Настройках», TrollStore поставил его как системное: в TrollStore нажмите на LiteBro → «Switch to User» (тип регистрации «User»), затем снова эта кнопка." = "The LiteBro settings open: Default Browser App → LiteBro. If LiteBro is not in the app list of Settings, TrollStore registered it as a system app: in TrollStore tap LiteBro → Switch to User (registration type User), then this button again.";
+"Папка LiteBro в «Файлах»: загрузки и файлы приложения." = "The LiteBro folder in Files: downloads and the app's files.";

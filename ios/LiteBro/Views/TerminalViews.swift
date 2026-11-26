@@ -194,7 +194,10 @@ final class TerminalSession: NSObject, ObservableObject, TerminalViewDelegate {
         state = .connecting
         let c = SSHConnection()
         connection = c
-        c.onData = { [weak self] bytes in self?.view.feed(byteArray: bytes) }
+        // Bytes come on the NIO thread; SwiftTerm touches UIKit, so it is fed on the main thread (in order)
+        c.onData = { [weak self] bytes in
+            DispatchQueue.main.async { self?.view.feed(byteArray: bytes) }
+        }
         c.onOpen = { [weak self] in
             DispatchQueue.main.async {
                 self?.state = .open

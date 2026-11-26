@@ -3421,6 +3421,7 @@ sealed partial class BrowserForm : Form
             core.PostWebMessageAsJson(ProjectStore.Json.Serialize(new Dictionary<string, object?>
             {
                 ["type"] = "phone", ["ip"] = ip, ["ips"] = ips, ["sites"] = sites, ["ssh"] = Phone.Ssh(ip),
+                ["publicNet"] = NetworkCategory.PublicNetworkOf(ip),
             }));
     }
 

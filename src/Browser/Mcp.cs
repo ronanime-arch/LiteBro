@@ -52,6 +52,17 @@ static class Mcp
     /// <summary>MCP over stdio (JSON-RPC, one message per line) until Claude closes stdin.</summary>
     public static void RunBridge()
     {
+        // The installer replaces this exe: it asks bridges to go instead of the user finding one in the way
+        new Thread(() =>
+        {
+            try
+            {
+                using var quit = new EventWaitHandle(false, EventResetMode.ManualReset, Associations.QuitEvent);
+                quit.WaitOne();
+                Environment.Exit(0);
+            }
+            catch (Exception) { }
+        }) { IsBackground = true }.Start();
         var utf8 = new UTF8Encoding(false);
         var input = new StreamReader(Console.OpenStandardInput(), utf8);
         var output = new StreamWriter(Console.OpenStandardOutput(), utf8) { AutoFlush = true, NewLine = "\n" };

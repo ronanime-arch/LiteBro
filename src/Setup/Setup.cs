@@ -138,7 +138,13 @@ static class Program
             links = linksBox.Checked && !hasLinks;
             launch = launchBox.Checked;
         }
-        if (!CloseRunning()) return 2;
+        if (!CloseRunning())
+        {
+            // From the browser's update the browser is gone already: never leave the user without it
+            if (update) StartAsUser(Path.Combine(InstallDir, ExeName));
+            return 2;
+        }
+        Log("closed");
         RemoveOldPerUserInstall();
 
         Directory.CreateDirectory(InstallDir);
@@ -208,6 +214,8 @@ static class Program
             step.ShowDialog();
         }
         hasLinks = HandlesLinks();
+        if (update) WaitForEngine();
+        Log("installed " + Version);
         if (launch) StartAsUser(exe);
         if (!launch || silent || (links && !hasLinks))
         {
@@ -432,8 +440,13 @@ static class Program
     /// <summary>The installer runs as administrator; the browser must not. Explorer starts it as the user.</summary>
     static void StartAsUser(string exe)
     {
-        try { Process.Start(new ProcessStartInfo("explorer.exe", $"\"{exe}\"") { UseShellExecute = false }); }
-        catch (Exception) { }
+        // Through Explorer, so LiteBro runs as the user, not as administrator
+        try
+        {
+            Process.Start(new ProcessStartInfo("explorer.exe", $"\"{exe}\"") { UseShellExecute = false });
+            Log("started " + exe);
+        }
+        catch (Exception e) { Log("could not start: " + e.Message); }
     }
 
     static void DeleteLinkInto(string link, string dir)
@@ -547,6 +560,7 @@ static class Program
     /// </summary>
     static bool CloseRunning()
     {
+        QuitBridges();
         var running = Process.GetProcessesByName(AppName).Concat(Process.GetProcessesByName(OldName)).Where(p =>
         {
             try
@@ -619,6 +633,54 @@ static class Program
 
     /// <summary>In Program Files\LiteBro, or in the LiteBrowser folder of the versions up to 1.9.6.</summary>
     static bool InOurFolders(string path) => IsInside(path, InstallDir) || IsInside(path, LiteBrowserDir);
+
+    /// <summary>Claude's MCP bridges have no window to close: they listen for this event and exit.</summary>
+    static void QuitBridges()
+    {
+        try
+        {
+            if (!EventWaitHandle.TryOpenExisting(Associations.QuitEvent, out var quit)) return;
+            using (quit)
+            {
+                quit.Set();
+                Thread.Sleep(1500);
+                quit.Reset(); // bridges started later stay
+            }
+            Log("bridges asked to quit");
+        }
+        catch (Exception) { }
+    }
+
+    /// <summary>
+    /// The old browser's engine processes can outlive it by a few seconds while they hold its profile; LiteBro started
+    /// meanwhile would meet the old engine. Chromium keeps a lockfile in the profile while it runs.
+    /// </summary>
+    static void WaitForEngine()
+    {
+        var root = Path.Combine(DataDir, "WebView2");
+        var locks = new[] { Path.Combine(root, "EBWebView", "lockfile"), Path.Combine(root, "lockfile") };
+        for (int i = 0; i < 40; i++)
+        {
+            bool held = false;
+            foreach (var file in locks.Where(File.Exists))
+            {
+                try { using (File.Open(file, FileMode.Open, FileAccess.ReadWrite, FileShare.None)) { } }
+                catch (IOException) { held = true; }
+                catch (UnauthorizedAccessException) { }
+            }
+            if (!held) return;
+            Thread.Sleep(500);
+        }
+        Log("engine still running after 20 s");
+    }
+
+    /// <summary>The update runs with no window of its own: what it did goes to the setup log.</summary>
+    static void Log(string message)
+    {
+        if (!update) return;
+        try { File.AppendAllText(LogPath, $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] update: {message}{Environment.NewLine}"); }
+        catch (Exception) { }
+    }
 
     static void Report(string message, MessageBoxIcon icon)
     {

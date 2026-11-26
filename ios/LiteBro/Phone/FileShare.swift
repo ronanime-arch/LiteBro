@@ -174,6 +174,23 @@ private final class DAVHandler: HTTPHandler {
     private func handle(_ h: HTTPRequest, upload: (handle: FileHandle, temp: URL, target: URL)?,
                         channel: HTTPConnection, keepAlive: Bool) {
         let fm = FileManager.default
+        // Taps from the computer, sent by the app itself: the broadcast extension's sandbox keeps it from the
+        // HID event system, the app (no sandbox, TrollStore) reaches it. Only with «Управление касаниями» on.
+        let path = String(h.uri.split(separator: "?").first ?? "")
+        if path == "/\(token)/_touch" {
+            guard ScreenShare.control else { return channel.respond(403, keepAlive: keepAlive) }
+            if h.method == "POST", let m = (try? JSONSerialization.jsonObject(with: body)) as? [String: Any] {
+                if let b = m["button"] as? String {
+                    Touch.button(b == "side" ? 0x30 : 0x40)
+                } else if let p = (m["t"] as? String).flatMap(Touch.Phase.init(rawValue:)),
+                          let x = m["x"] as? Double, let y = m["y"] as? Double {
+                    Touch.finger(p, x: min(max(x, 0), 1), y: min(max(y, 0), 1))
+                }
+                return channel.respond(204, keepAlive: keepAlive)
+            }
+            let info = "{\"available\":\(Touch.available)}"
+            return channel.respond(200, headers: [("Content-Type", "application/json")], body: Data(info.utf8), keepAlive: keepAlive)
+        }
         guard let f = file(h.uri) else {
             if let upload { try? upload.handle.close(); try? fm.removeItem(at: upload.temp) }
             return channel.respond(404, keepAlive: keepAlive)

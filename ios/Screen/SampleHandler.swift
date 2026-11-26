@@ -1,7 +1,5 @@
 import CoreImage
 import ImageIO
-import NIOCore
-import NIOHTTP1
 import ReplayKit
 import UIKit
 
@@ -109,10 +107,7 @@ final class FrameStore {
 }
 
 /// The page with the picture and the stream of pictures (multipart/x-mixed-replace, as webcams send)
-private final class ScreenHandler: ChannelInboundHandler {
-    typealias InboundIn = HTTPServerRequestPart
-    typealias OutboundOut = HTTPServerResponsePart
-
+private final class ScreenHandler: HTTPHandler {
     private let token: String
     private let frames: FrameStore
 
@@ -121,33 +116,27 @@ private final class ScreenHandler: ChannelInboundHandler {
         self.frames = frames
     }
 
-    private var head: HTTPRequestHead?
     private var body = Data()
 
-    func channelRead(context: ChannelHandlerContext, data: NIOAny) {
-        switch unwrapInboundIn(data) {
-        case .head(let h):
-            head = h
-            body = Data()
-        case .body(let b):
-            if body.count < 4096 { body.append(contentsOf: b.readableBytesView) }
-        case .end:
-            if let h = head { handle(h, channel: context.channel) }
-            head = nil
-        }
+    func onHead(_ r: HTTPRequest, _ c: HTTPConnection) { body = Data() }
+
+    func onBody(_ d: Data, _ c: HTTPConnection) {
+        if body.count < 4096 { body.append(d) }
     }
 
-    private func handle(_ h: HTTPRequestHead, channel: Channel) {
+    func onEnd(_ r: HTTPRequest, _ c: HTTPConnection) { handle(r, channel: c) }
+
+    private func handle(_ h: HTTPRequest, channel: HTTPConnection) {
         let path = String(h.uri.split(separator: "?").first ?? "")
         if path == "/\(token)/" || path == "/\(token)" {
-            channel.respond(.ok, headers: [("Content-Type", "text/html; charset=utf-8"), ("Cache-Control", "no-store")],
+            channel.respond(200, headers: [("Content-Type", "text/html; charset=utf-8"), ("Cache-Control", "no-store")],
                             body: Data(Self.page(control: ScreenShare.control && Touch.available).utf8))
         } else if path == "/\(token)/stream" {
             stream(channel)
-        } else if path == "/\(token)/touch", h.method == .POST {
+        } else if path == "/\(token)/touch", h.method == "POST" {
             // Only while the app allows it: the same secret, Face ID for control on top
             guard ScreenShare.token == token, ScreenShare.control,
-                  let m = try? JSONSerialization.jsonObject(with: body) as? [String: Any] else { return channel.respond(.forbidden) }
+                  let m = try? JSONSerialization.jsonObject(with: body) as? [String: Any] else { return channel.respond(403) }
             if let b = m["button"] as? String {
                 Touch.button(b == "side" ? 0x30 : 0x40)
             } else if let p = (m["t"] as? String).flatMap(Touch.Phase.init(rawValue:)),
@@ -155,9 +144,9 @@ private final class ScreenHandler: ChannelInboundHandler {
                 let upright = Self.upright(x, y, frames.orientation)
                 Touch.finger(p, x: min(max(upright.0, 0), 1), y: min(max(upright.1, 0), 1))
             }
-            channel.respond(.noContent)
+            channel.respond(204)
         } else {
-            channel.respond(.notFound)
+            channel.respond(404)
         }
     }
 
@@ -196,12 +185,10 @@ private final class ScreenHandler: ChannelInboundHandler {
         """
     }
 
-    private func stream(_ channel: Channel) {
+    private func stream(_ channel: HTTPConnection) {
         let boundary = "litebroframe"
-        var headers = HTTPHeaders([("Content-Type", "multipart/x-mixed-replace; boundary=\(boundary)"),
-                                   ("Cache-Control", "no-store"), ("Connection", "close")])
-        headers.remove(name: "Content-Length")
-        channel.writeAndFlush(HTTPServerResponsePart.head(HTTPResponseHead(version: .http1_1, status: .ok, headers: headers)), promise: nil)
+        channel.sendHead(200, headers: [("Content-Type", "multipart/x-mixed-replace; boundary=\(boundary)"),
+                                        ("Cache-Control", "no-store"), ("Connection", "close")])
         let frames = self.frames
         DispatchQueue.global(qos: .userInitiated).async {
             frames.join()
@@ -213,11 +200,9 @@ private final class ScreenHandler: ChannelInboundHandler {
                 var part = Data("--\(boundary)\r\nContent-Type: image/jpeg\r\nContent-Length: \(jpeg.count)\r\n\r\n".utf8)
                 part.append(jpeg)
                 part.append(Data("\r\n".utf8))
-                let sent = DispatchSemaphore(value: 0)
-                channel.writeAndFlush(HTTPServerResponsePart.body(.byteBuffer(ByteBuffer(bytes: part)))).whenComplete { _ in sent.signal() }
-                sent.wait()
+                channel.sendAndWait(part)
             }
-            channel.close(promise: nil)
+            channel.close()
         }
     }
 }

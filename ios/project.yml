@@ -34,8 +34,6 @@ targets:
         product: NIOCore
       - package: SwiftNIO
         product: NIOPosix
-      - package: SwiftNIO
-        product: NIOHTTP1
       - package: SwiftNIOSSH
         product: NIOSSH
       - package: SwiftTerm
@@ -85,13 +83,6 @@ targets:
     sources:
       - path: Screen
       - path: Shared
-    dependencies:
-      - package: SwiftNIO
-        product: NIOCore
-      - package: SwiftNIO
-        product: NIOPosix
-      - package: SwiftNIO
-        product: NIOHTTP1
     info:
       path: Screen/Info.plist
       properties:

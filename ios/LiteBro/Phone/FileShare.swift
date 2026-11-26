@@ -188,7 +188,7 @@ private final class DAVHandler: HTTPHandler {
                 }
                 return channel.respond(204, keepAlive: keepAlive)
             }
-            let info = "{\"available\":\(Touch.available)}"
+            let info = "{\"available\":\(Touch.available),\"client\":\"\(Touch.kind)\"}"
             return channel.respond(200, headers: [("Content-Type", "application/json")], body: Data(info.utf8), keepAlive: keepAlive)
         }
         guard let f = file(h.uri) else {

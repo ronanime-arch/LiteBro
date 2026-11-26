@@ -16,6 +16,14 @@ enum Touch {
     private typealias SetSender = @convention(c) (UnsafeMutableRawPointer, UInt64) -> Void
     private typealias Dispatch = @convention(c) (UnsafeMutableRawPointer, UnsafeMutableRawPointer) -> Void
 
+    private typealias DigitizerInfo = @convention(c) (UnsafeMutableRawPointer, UInt32, UInt8, UInt8, CFString?, Double, Float) -> Void
+    /// backboardd routes a touch by this info: without it a touch event may be dropped
+    private static let digitizerInfo: DigitizerInfo? = {
+        guard let bks = dlopen("/System/Library/PrivateFrameworks/BackBoardServices.framework/BackBoardServices", RTLD_NOW),
+              let p = dlsym(bks, "BKSHIDEventSetDigitizerInfo") else { return nil }
+        return unsafeBitCast(p, to: DigitizerInfo.self)
+    }()
+
     private static let iokit = dlopen("/System/Library/Frameworks/IOKit.framework/IOKit", RTLD_NOW)
     private static func fn<T>(_ name: String, _: T.Type) -> T? {
         guard let iokit, let p = dlsym(iokit, name) else { return nil }
@@ -30,7 +38,19 @@ enum Touch {
     private static let setInteger = fn("IOHIDEventSetIntegerValue", SetInteger.self)
     private static let setSender = fn("IOHIDEventSetSenderID", SetSender.self)
     private static let dispatch = fn("IOHIDEventSystemClientDispatchEvent", Dispatch.self)
-    private static let client: UnsafeMutableRawPointer? = createClient?(kCFAllocatorDefault)
+    private typealias ClientCreateWithType = @convention(c) (CFAllocator?, Int32, CFDictionary?) -> UnsafeMutableRawPointer?
+    private static let createSimple = fn("IOHIDEventSystemClientCreateSimpleClient", ClientCreate.self)
+    private static let createWithType = fn("IOHIDEventSystemClientCreateWithType", ClientCreateWithType.self)
+    /// A client that may send events: the simple client, as tools that tap system-wide use (the plain
+    /// IOHIDEventSystemClientCreate one only monitors, and its events went nowhere on the phone)
+    private static let made: (UnsafeMutableRawPointer?, String) = {
+        if let c = createSimple?(kCFAllocatorDefault) { return (c, "simple") }
+        if let c = createWithType?(kCFAllocatorDefault, 1, nil) { return (c, "admin") } // kIOHIDEventSystemClientTypeAdmin
+        return (createClient?(kCFAllocatorDefault), "plain")
+    }()
+    private static var client: UnsafeMutableRawPointer? { made.0 }
+    /// Which client was made, for the computer's check (GET _touch)
+    static var kind: String { made.1 }
 
     // IOHIDEventTypes.h
     private static let handType: UInt32 = 3
@@ -38,7 +58,7 @@ enum Touch {
     private static let fieldIsBuiltIn: UInt32 = 4
     private static let fieldDisplayIntegrated: UInt32 = (11 << 16) + 25
     /// The sender of the built-in touch screen, as tools of this kind use
-    private static let sender: UInt64 = 0x0000_0001_0000_027F
+    private static let sender: UInt64 = 0x8000_0008_1731_9372
 
     static var available: Bool { client != nil && digitizer != nil && fingerEvent != nil && dispatch != nil }
 
@@ -58,6 +78,7 @@ enum Touch {
         setInteger?(hand, fieldDisplayIntegrated, 1)
         append(hand, one, 0)
         setSender?(hand, sender)
+        digitizerInfo?(hand, 0, 0, 0, nil, 0, 0)
         dispatch(client, hand)
         Unmanaged<AnyObject>.fromOpaque(one).release()
         Unmanaged<AnyObject>.fromOpaque(hand).release()

@@ -286,16 +286,29 @@ sealed partial class BrowserForm : Form
     }
 
     /// <summary>The toolbar's hints that do not change with the page (the others are set in ShowState).</summary>
+    /// <summary>
+    /// A toolbar button's tooltip, also its name for screen readers and UI Automation (the buttons are glyphs only,
+    /// so without it they read as unnamed panes and test tools cannot find them).
+    /// </summary>
+    void Tip(Control c, string text)
+    {
+        tips.SetToolTip(c, text);
+        if (c is not Button) return; // the memory label keeps its number as its name
+        c.AccessibleName = text.Split('(')[0].Trim().TrimEnd('.');
+        c.AccessibleRole = AccessibleRole.PushButton;
+    }
+
     void SetTips()
     {
-        tips.SetToolTip(back, L.T("Назад (Alt+←)"));
-        tips.SetToolTip(forward, L.T("Вперёд (Alt+→)"));
-        tips.SetToolTip(reload, L.T("Обновить (F5)"));
-        tips.SetToolTip(reset, L.T("Сбросить Service Worker и кэш сайта, загрузить заново (Ctrl+Shift+R)"));
-        tips.SetToolTip(home, L.T("Проекты (Alt+Home). Ctrl+клик или колёсико — в новой вкладке"));
-        tips.SetToolTip(country, L.T("Страна поиска"));
-        tips.SetToolTip(emulate, L.T("Инструменты: эмуляция устройства и сети"));
-        tips.SetToolTip(ram, L.T("Память браузера, как в диспетчере задач. Клик — диспетчер процессов (Shift+Esc)"));
+        Tip(back, L.T("Назад (Alt+←)"));
+        Tip(forward, L.T("Вперёд (Alt+→)"));
+        Tip(reload, L.T("Обновить (F5)"));
+        Tip(reset, L.T("Сбросить Service Worker и кэш сайта, загрузить заново (Ctrl+Shift+R)"));
+        Tip(home, L.T("Проекты (Alt+Home). Ctrl+клик или колёсико — в новой вкладке"));
+        Tip(country, L.T("Страна поиска"));
+        Tip(emulate, L.T("Инструменты: эмуляция устройства и сети"));
+        Tip(ram, L.T("Память браузера, как в диспетчере задач. Клик — диспетчер процессов (Shift+Esc)"));
+        address.AccessibleName = L.T("Адрес или поиск");
         if (IsHandleCreated) SendMessage(address.Handle, SetCueBanner, (IntPtr)1, L.T("Адрес или поиск"));
     }
 
@@ -310,7 +323,7 @@ sealed partial class BrowserForm : Form
         update.Visible = Updates.Available != null;
         update.Enabled = !Updates.Busy;
         if (Updates.Available is { } r)
-            tips.SetToolTip(update, Updates.Busy ? Updates.State
+            Tip(update, Updates.Busy ? Updates.State
                 : L.T("Доступна новая версия LiteBro ") + r.Version + L.T(". Установить (LiteBro и программы проектов закроются)"));
     }
 
@@ -811,7 +824,7 @@ sealed partial class BrowserForm : Form
         if (tab != active) return;
         Text = tab.Title.Length == 0 ? "LiteBro" : tab.Title + " — LiteBro";
         reload.Text = tab.Loading ? GlyphStop : GlyphReload;
-        tips.SetToolTip(reload, tab.Loading ? L.T("Остановить") : L.T("Обновить (F5)"));
+        Tip(reload, tab.Loading ? L.T("Остановить") : L.T("Обновить (F5)"));
         if (switched || !address.Focused) address.Text = AddressOf(tab);
         ShowCountry(tab);
         ShowStar(tab);
@@ -877,7 +890,7 @@ sealed partial class BrowserForm : Form
             var glyph = tile == null ? GlyphStar : GlyphStarFilled;
             if (star.Text != glyph) star.Text = glyph;
             star.ForeColor = tile == null ? Theme.Text : Color.FromArgb(0xf5, 0xb3, 0x01);
-            tips.SetToolTip(star, tile != null ? L.T("В избранном: плитка «") + tile.Name + L.T("»")
+            Tip(star, tile != null ? L.T("В избранном: плитка «") + tile.Name + L.T("»")
                 : L.T("Добавить в избранное: терминал в этой папке") + (t.Command.Length > 0 ? L.T(" с командой ") + t.Command : ""));
             return;
         }
@@ -888,7 +901,7 @@ sealed partial class BrowserForm : Form
         var text = saved == null ? GlyphStar : GlyphStarFilled;
         if (star.Text != text) star.Text = text;
         star.ForeColor = saved == null ? Theme.Text : Color.FromArgb(0xf5, 0xb3, 0x01);
-        tips.SetToolTip(star, saved is { } s
+        Tip(star, saved is { } s
             ? L.T("В избранном: ") + (s.Link == null ? L.T("плитка «") + s.Project.Name + L.T("»") : L.T("ссылка проекта «") + s.Project.Name + L.T("»"))
             : L.T("Добавить в избранное: плиткой или ссылкой проекта"));
     }
@@ -1058,7 +1071,7 @@ sealed partial class BrowserForm : Form
         if (country.Text == text) return;
         country.Text = text;
         country.Font = picked == null ? countryGlyphFont : countryCodeFont;
-        tips.SetToolTip(country, picked == null ? L.T("Страна поиска") : L.T("Страна поиска: ") + picked.Name);
+        Tip(country, picked == null ? L.T("Страна поиска") : L.T("Страна поиска: ") + picked.Name);
     }
 
     void ShowCountryMenu()
@@ -2109,7 +2122,7 @@ sealed partial class BrowserForm : Form
         emulate.Visible = on || (any && !tab.ShowingInternalPage && !IsInternal(tab.Site) && tab.Term == null);
         emulate.ForeColor = on ? Color.FromArgb(0x1f, 0x9d, 0x55) : Theme.Text;
         var what = string.Join(", ", new[] { tab.Device?.Name, tab.Speed?.Name }.OfType<string>());
-        tips.SetToolTip(emulate, on ? L.T("Инструменты. Эмуляция: ") + what : L.T("Инструменты: эмуляция устройства и сети"));
+        Tip(emulate, on ? L.T("Инструменты. Эмуляция: ") + what : L.T("Инструменты: эмуляция устройства и сети"));
     }
 
     /// <summary>The tools button's menu: the screen and the network the tab emulates.</summary>

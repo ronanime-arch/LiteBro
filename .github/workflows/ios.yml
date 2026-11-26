@@ -60,25 +60,8 @@ jobs:
           }
           pack TrollStore.entitlements LiteBro.tipa
           pack Browser.entitlements LiteBro-Browser.tipa
-          # The debug build, until the release: its own app beside LiteBro (own id and data, empty at the
-          # start), only the application id, without the screen extension. It launches and LiteBro does
-          # not: the rights or the data of LiteBro; neither launches: the code (its log in Files tells where).
-          rm -rf Payload && mkdir Payload
-          cp -R build/Build/Products/Release-iphoneos/LiteBro.app Payload/
-          rm -rf Payload/LiteBro.app/PlugIns
-          /usr/libexec/PlistBuddy -c "Set :CFBundleIdentifier io.github.ronanime-arch.LiteBro.debug" \
-            -c "Set :CFBundleDisplayName LiteBro Debug" Payload/LiteBro.app/Info.plist
-          ldid -SDebug.entitlements Payload/LiteBro.app/LiteBro
-          rm -f LiteBro-Debug.tipa && zip -qry LiteBro-Debug.tipa Payload
-          # The same with the two rights of LiteBro.tipa (no sandbox, the whole phone), its own id again:
-          # it does not launch — the rights are the cause; it launches — the PC sees the whole phone
-          # through it (LiteBro's log in /var/mobile/Media/LiteBro-Debug, the crash reports)
-          /usr/libexec/PlistBuddy -c "Set :CFBundleIdentifier io.github.ronanime-arch.LiteBro.debugfull" \
-            -c "Set :CFBundleDisplayName LiteBro Debug+" Payload/LiteBro.app/Info.plist
-          ldid -SDebugFull.entitlements Payload/LiteBro.app/LiteBro
-          rm -f LiteBro-Debug-Full.tipa && zip -qry LiteBro-Debug-Full.tipa Payload
-          rm -f LiteBro-iOS.zip && zip -q LiteBro-iOS.zip LiteBro.tipa LiteBro-Browser.tipa LiteBro-Debug.tipa LiteBro-Debug-Full.tipa
-          ls -l LiteBro.tipa LiteBro-Browser.tipa LiteBro-Debug.tipa LiteBro-Debug-Full.tipa LiteBro-iOS.zip
+          rm -f LiteBro-iOS.zip && zip -q LiteBro-iOS.zip LiteBro.tipa LiteBro-Browser.tipa
+          ls -l LiteBro.tipa LiteBro-Browser.tipa LiteBro-iOS.zip
 
       - name: File of the run
         uses: actions/upload-artifact@v4
@@ -87,8 +70,6 @@ jobs:
           path: |
             ios/LiteBro.tipa
             ios/LiteBro-Browser.tipa
-            ios/LiteBro-Debug.tipa
-            ios/LiteBro-Debug-Full.tipa
           retention-days: 14
 
       - name: Prerelease
@@ -97,7 +78,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          notes="LiteBro-iOS.zip для TrollStore на iOS 16: LiteBro.tipa — ПК видит весь телефон; LiteBro-Browser.tipa — можно сделать браузером по умолчанию, ПК видит только папку LiteBro; LiteBro-Debug.tipa — отдельное приложение для поиска причины, если LiteBro не запускается. LiteBro-Debug-Full.tipa — оно же с правами LiteBro.tipa (весь телефон). Заменяется после каждого изменения папки ios/ в main."
+          notes="LiteBro-iOS.zip для TrollStore на iOS 16: LiteBro.tipa — основная, ПК видит весь телефон, журнал запуска и падений встроен; LiteBro-Browser.tipa — можно сделать браузером по умолчанию, ПК видит только папку LiteBro. Заменяется после каждого изменения папки ios/ в main."
           if gh release view ios > /dev/null 2>&1; then
             gh release upload ios LiteBro-iOS.zip --clobber
             gh release edit ios --notes "$notes"

@@ -909,3 +909,29 @@ Windows спрашивает права администратора и, есл�
 Открыть порт отладки? Любая программа этого компьютера сможет управлять браузером и читать сайты, где вы вошли. Движок браузера перезапустится: вкладки перезагрузятся, открытые терминалы закроются.	Open the debugging port? Any program on this computer will be able to control the browser and read the sites you are signed in to. The browser engine will restart: tabs will reload, open terminals will close.
 Закрыть порт отладки? Движок браузера перезапустится: вкладки перезагрузятся, открытые терминалы закроются.	Close the debugging port? The browser engine will restart: tabs will reload, open terminals will close.
 Сменить порт отладки? Движок браузера перезапустится: вкладки перезагрузятся, открытые терминалы закроются.	Change the debugging port? The browser engine will restart: tabs will reload, open terminals will close.
+## Updates (Updates.cs, /dev)
+Обновления	Updates
+Проверить обновления	Check for updates
+Проверять обновления	Check for updates automatically
+Раз в 6 часов браузер смотрит последний выпуск LiteBro на GitHub. Если есть новая версия, на панели появляется зелёная кнопка со стрелкой. Установка спрашивает подтверждение: LiteBro закроется вместе с программами проектов (например, dsh), а после установки запустится снова. В режиме «только localhost» проверки нет.	Every 6 hours the browser looks at the latest LiteBro release on GitHub. When there is a new version, a green arrow button appears on the toolbar. Installing asks first: LiteBro closes together with the programs of the projects (dsh, for example) and starts again after the install. In localhost-only mode there is no check.
+Проверять новую версию в выпусках GitHub (раз в 6 часов, не в режиме «только localhost») и предлагать установить	Look for a new version in the GitHub releases (every 6 hours, not in localhost-only mode) and offer to install it
+Проверяется…	Checking…
+Доступна версия	Version available:
+у вас	you have
+Сейчас у вас	You have
+У вас последняя версия	You have the latest version
+Не удалось проверить обновления	Could not check for updates
+LiteBro закроется, а с ним остановятся программы проектов, которые он запустил (например, dsh), и текущая задача агента прервётся. Открытые терминалы тоже закроются.	LiteBro will close, and with it the project programs it started (dsh, for example) will stop, and the current agent task will be interrupted. Open terminals will close too.
+Сейчас работают	Running now
+Windows спросит разрешение на установку. Потом LiteBro запустится снова, плитки, входы на сайты и настройки останутся.	Windows will ask permission to install. Then LiteBro starts again; tiles, site sign-ins and settings stay.
+Загружается	Downloading
+Не удалось загрузить обновление	Could not download the update
+Устанавливается	Installing
+Установка отменена.	Installation cancelled.
+Не удалось запустить установку	Could not start the installer
+файл загрузился не полностью	the file did not download completely
+контрольная сумма не совпала	the checksum does not match
+в архиве нет установщика	no installer in the archive
+в архиве другой файл	the archive holds a different file
+Доступна новая версия	New version available:
+LiteBro и программы проектов закроются	LiteBro and the project programs will close

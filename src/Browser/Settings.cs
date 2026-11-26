@@ -91,6 +91,8 @@ sealed class Settings
     /// <summary>The engine opens the DevTools protocol on 127.0.0.1:DebugPort (Playwright connectOverCDP); off by default.</summary>
     public bool Cdp;
     public int DebugPort = 9222;
+    /// <summary>Looks for a new version in the GitHub releases and offers to install it (Updates.cs); on by default.</summary>
+    public bool AutoUpdate = true;
     /// <summary>Tabs in the background are paused after SuspendAfter minutes and closed after UnloadAfter (0 = never).</summary>
     public bool FreezeTabs = true;
     public int SuspendAfter = 1, UnloadAfter = 5;
@@ -102,7 +104,7 @@ sealed class Settings
 
     static readonly string[] Keys =
     {
-        "searchurl", "searchcountry", "theme", "language", "gpu", "extrabrowserargs", "localhosts", "otherbrowser", "externaltomain", "localonly", "netjournal", "allowhosts", "ignorecors", "clearonexit", "autoreload", "autofill", "stricttracking", "adblock", "tabmute", "trustlocalcerts", "claude", "userscripts", "cdp", "debugport", "freezetabs", "suspendafter", "unloadafter", "disabled", "defaults",
+        "searchurl", "searchcountry", "theme", "language", "gpu", "extrabrowserargs", "localhosts", "otherbrowser", "externaltomain", "localonly", "netjournal", "allowhosts", "ignorecors", "clearonexit", "autoreload", "autofill", "stricttracking", "adblock", "tabmute", "trustlocalcerts", "claude", "userscripts", "cdp", "debugport", "autoupdate", "freezetabs", "suspendafter", "unloadafter", "disabled", "defaults",
     };
 
     public static Settings Load()
@@ -156,6 +158,7 @@ sealed class Settings
                 case "userscripts": s.UserScripts = IsTrue(value); break;
                 case "cdp": s.Cdp = IsTrue(value); break;
                 case "debugport": s.DebugPort = Port(value, s.DebugPort); break;
+                case "autoupdate": s.AutoUpdate = IsTrue(value); break;
                 case "freezetabs": s.FreezeTabs = IsTrue(value); break;
                 case "suspendafter": s.SuspendAfter = Minutes(value, s.SuspendAfter, 1); break;
                 case "unloadafter": s.UnloadAfter = Minutes(value, s.UnloadAfter, 0); break;
@@ -342,6 +345,10 @@ sealed class Settings
         L.T("# Порт отладки CDP на 127.0.0.1 (Playwright, Puppeteer): полный доступ к браузеру для программ этого компьютера"),
         "Cdp = " + Bool(Cdp),
         "DebugPort = " + DebugPort.ToString(CultureInfo.InvariantCulture),
+        "",
+        L.T("# --- Обновления ---"),
+        L.T("# Проверять новую версию в выпусках GitHub (раз в 6 часов, не в режиме «только localhost») и предлагать установить"),
+        "AutoUpdate = " + Bool(AutoUpdate),
         "",
         L.T("# --- Вкладки ---"),
         L.T("# Клик по значку звука на вкладке выключает её звук"),

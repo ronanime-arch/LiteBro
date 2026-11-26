@@ -122,6 +122,13 @@ dialog div { display: flex; justify-content: flex-end; gap: 8px; }
     <span class="muted">Окна и страницы браузера; сайты тоже получают этот выбор.</span>
   </div>
   <section id="engine"></section>
+  <h2>Обновления</h2>
+  <section id="updates"></section>
+  <div class="row">
+    <button id="updateCheck">Проверить обновления</button>
+    <button id="updateInstall" hidden>Установить</button>
+    <span class="muted" id="updateState"></span>
+  </div>
   <h2>Кнопки и инструменты</h2>
   <div class="row">
     <button id="allOn" disabled>Включить всё</button>
@@ -182,13 +189,9 @@ const ICONS = {
   back: "\uE72B", forward: "\uE72A", reload: "\uE72C", home: "\uE80F", star: "\uE734", ram: { text: "МБ" },
   reset: "\uE75C", country: "\uE774", emulation: "\uE90F", snapshot: "\uE722", storage: "\uEDA2", json: { text: "{ }" },
   mocks: "\uE8A5", split: "\uE89A", perms: "\uE8D7", unblock: "\uE733",
-<<<<<<< HEAD
-  shell: { svg: POWERSHELL, cls: "shell" }, localonly: { svg: SHIELD, cls: "net" }, netlog: "\uE8FD", console: { text: ">_", cls: "console" },
-  claude: { text: "AI" }, userScripts: { text: "JS" }, cdp: "\uE943", tabMute: "\uE767", adBlock: "\uE733", strictTracking: "\uEA18", trustLocalCerts: "\uE72E", externalToMain: "\uE8A7", freezeTabs: "\uE769", gpu: "\uE7F4",
-=======
   shell: { svg: POWERSHELL, cls: "shell" }, localonly: { svg: SHIELD, cls: "net" }, netlog: "\uE8FD", phone: "\uE8EA", console: { text: ">_", cls: "console" },
-  tabMute: "\uE767", adBlock: "\uE733", strictTracking: "\uEA18", trustLocalCerts: "\uE72E", externalToMain: "\uE8A7", freezeTabs: "\uE769", gpu: "\uE7F4",
->>>>>>> origin/main
+  claude: { text: "AI" }, userScripts: { text: "JS" }, cdp: "\uE943", tabMute: "\uE767", adBlock: "\uE733", strictTracking: "\uEA18", trustLocalCerts: "\uE72E", externalToMain: "\uE8A7", freezeTabs: "\uE769", gpu: "\uE7F4",
+  autoUpdate: "\uE896",
 };
 function icon(id) {
   const i = ICONS[id], span = document.createElement("span");
@@ -286,6 +289,7 @@ const SETTINGS = [
   ["tabsSection", "tabMute", "Выключение звука по значку на вкладке", "Клик по значку динамика выключает и включает звук вкладки, пункт есть и в меню вкладки. Выключено — значок только показывает, что вкладка играет."],
   ["tabsSection", "freezeTabs", "Заморозка фоновых вкладок", "Экономит память и процессор: вкладка в фоне приостанавливается, потом выгружается и загружается снова по клику. Не замораживаются вкладки со звуком, терминал и сайты работающих проектов."],
   ["links", "externalToMain", "Открывать внешние ссылки в основном браузере", "Ссылка на сайт в интернете из другой программы (почта, мессенджер, документ) открывается в вашем основном браузере, обычно Chrome, а локальные адреса — в LiteBro. Выключено — LiteBro открывает и их. Работает, если LiteBro выбран для HTTP и HTTPS в «Приложениях по умолчанию». В режиме «только localhost» такие ссылки всё равно уходят в основной браузер."],
+  ["updates", "autoUpdate", "Проверять обновления", "Раз в 6 часов браузер смотрит последний выпуск LiteBro на GitHub. Если есть новая версия, на панели появляется зелёная кнопка со стрелкой. Установка спрашивает подтверждение: LiteBro закроется вместе с программами проектов (например, dsh), а после установки запустится снова. В режиме «только localhost» проверки нет."],
   ["engine", "gpu", "Видеокарта", "Страницы рисует видеокарта. Выключать только если на старом компьютере или драйвере страницы мерцают или рисуются с ошибками: без видеокарты всё рисует процессор, браузер заметно медленнее и сильнее нагружает процессор. Движок перезапустится."],
 ];
 const settingBoxes = {};
@@ -359,6 +363,8 @@ function showClaude(exe) {
 $("theme").addEventListener("change", () => post({ type: "setting", key: "theme", value: $("theme").value }));
 $("perms").addEventListener("click", () => post({ type: "permsOpen" }));
 $("adBlockOpen").addEventListener("click", () => post({ type: "adBlockOpen" }));
+$("updateCheck").addEventListener("click", () => post({ type: "updateCheck" }));
+$("updateInstall").addEventListener("click", () => post({ type: "updateInstall" }));
 $("allOn").addEventListener("click", () => post({ type: "devReset" }));
 $("defaults").addEventListener("click", () => post({ type: "settingsReset" }));
 
@@ -388,6 +394,10 @@ window.chrome.webview.addEventListener("message", e => {
   $("adBlockState").textContent = state;
   $("adBlockNote").hidden = !!state;
   if (set.theme) $("theme").value = set.theme;
+  $("updateCheck").disabled = $("updateInstall").disabled = !!set.updateBusy;
+  $("updateInstall").hidden = !set.updateVersion;
+  if (set.updateVersion) $("updateInstall").textContent = "Установить " + set.updateVersion;
+  $("updateState").textContent = set.updateState || (set.version ? "LiteBro " + set.version : "");
   const off = m.off || [];
   for (const id in boxes) {
     boxes[id].checked = !off.includes(id);

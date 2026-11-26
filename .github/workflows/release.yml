@@ -5,8 +5,8 @@ name: Release
 on:
   push:
     branches: [main]
-    # The site and the texts alone change nothing in the installer: no new release for them
-    paths-ignore: ['docs/**', '**.md']
+    # The site, the texts and the iOS app change nothing in the installer: no new release for them
+    paths-ignore: ['docs/**', '**.md', 'ios/**', '.github/workflows/ios.yml']
   pull_request:
   workflow_dispatch:
 

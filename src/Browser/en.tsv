@@ -872,3 +872,27 @@ Claude Desktop: Настройки → Разработчик → Изменит
 Потом попросите Claude, например: открой в LiteBro поиск и найди… Если LiteBro не запущен, Claude запустит его сам.	Then ask Claude, for example: open a search in LiteBro and find… If LiteBro is not running, Claude starts it.
 Claude Code и Claude Desktop видят открытые вкладки и действуют в них, как вы: открывают сайты, читают текст, делают снимки, нажимают и печатают. Это ваш профиль со входами на сайты, поэтому сайты видят обычного пользователя. Вкладка, в которой работает Claude, выходит вперёд, и вы видите, что он делает. Страницы самого браузера Claude может только читать. Пароли и оплату Claude не вводит.	Claude Code and Claude Desktop see the open tabs and act in them as you do: open sites, read text, take screenshots, click and type. It is your profile with your sign-ins, so sites see an ordinary user. The tab Claude works in comes to the front, and you see what it does. Pages of the browser itself Claude can only read. Claude does not enter passwords or payments.
 Включить доступ для Claude? Claude сможет открывать сайты, читать страницы и нажимать на них в вашем профиле, где вы вошли на сайты. Включайте, если доверяете тому, что запускаете в Claude.	Switch on Claude access? Claude will be able to open sites, read pages and click on them in your profile, where you are signed in to sites. Switch it on if you trust what you run in Claude.
+Не удалось включить вход по SSH: Windows не дала прав администратора или не смогла установить OpenSSH Server.	Could not turn on SSH sign-in: Windows did not give administrator rights or could not install OpenSSH Server.
+Не удалось выключить вход по SSH.	Could not turn off SSH sign-in.
+С телефона	From a phone
+QR-коды сайтов проектов и терминала для LiteBro на iPhone. Вход по SSH, если он включён, продолжает работать.	QR codes of project sites and of the terminal for LiteBro on iPhone. SSH sign-in, when on, keeps working.
+С телефона: QR-коды сайтов проектов и терминала	From a phone: QR codes of project sites and of the terminal
+Сайты проектов	Project sites
+Проект	Project
+Проверяю адреса…	Checking addresses…
+Компьютер не подключён к сети.	This computer is not connected to a network.
+Нет плиток с локальными сайтами.	No tiles with local sites.
+Наведите камеру телефона на код. Телефон должен быть в той же сети Wi-Fi, что и компьютер.	Point the phone camera at the code. The phone must be on the same Wi-Fi network as the computer.
+Сайт работает, но по адресу в сети не отвечает: сервер слушает только 127.0.0.1 или порт закрыт брандмауэром Windows.	The site runs but does not answer at the network address: the server listens on 127.0.0.1 only, or Windows Firewall blocks the port.
+Запустите сервер на адресе 0.0.0.0 (Vite: --host, Next: -H 0.0.0.0, Python: --bind 0.0.0.0) и разрешите программу в брандмауэре для частных сетей.	Start the server on 0.0.0.0 (Vite: --host, Next: -H 0.0.0.0, Python: --bind 0.0.0.0) and allow the program in the firewall for private networks.
+Сайт сейчас не запущен: откройте плитку, а потом покажите код телефону.	The site is not running now: open the tile, then show the code to the phone.
+Включаю…	Turning on…
+Вход по SSH включён	SSH sign-in is on
+Вход по SSH выключен	SSH sign-in is off
+Пользователь:	User:
+Ключ компьютера:	Computer key:
+Выключить вход по SSH	Turn off SSH sign-in
+Включить вход по SSH	Turn on SSH sign-in
+Windows спрашивает права администратора и, если нужно, устанавливает OpenSSH Server. Это может занять несколько минут.	Windows asks for administrator rights and, if needed, installs OpenSSH Server. This may take a few minutes.
+Отсканируйте код камерой iPhone: откроется LiteBro и добавит этот компьютер в Терминал. Пароль — от учётной записи Windows, не ПИН-код. Потом в терминале можно включить вход по ключу с Face ID.	Scan the code with the iPhone camera: LiteBro opens and adds this computer to the Terminal. The password is that of the Windows account, not the PIN. Later the terminal can switch to key sign-in with Face ID.
+Командная строка этого компьютера в LiteBro на iPhone. Включится встроенный в Windows OpenSSH Server: он запускается вместе с Windows и пускает только из частных сетей. Сеть Wi-Fi в Windows должна быть частной.	The command line of this computer in LiteBro on iPhone. This turns on OpenSSH Server built into Windows: it starts with Windows and lets in only from private networks. The Wi-Fi network must be private in Windows.

@@ -168,12 +168,29 @@ summary { cursor: pointer; font-weight: 500; }
   font: 15px var(--icons); }
 #netLog:hover, #netLog:focus-visible { width: 46px; background: rgba(127, 127, 127, .55); outline: none; }
 /* «Для разработчика»: never switched off, so the switched-off things can always be switched back on */
-#dev { position: fixed; right: 0; top: 116px; width: 40px; height: 28px; padding: 0 0 0 10px; border: 0; border-radius: 10px 0 0 10px;
+#dev { position: fixed; right: 0; top: 152px; width: 40px; height: 28px; padding: 0 0 0 10px; border: 0; border-radius: 10px 0 0 10px;
   cursor: pointer; display: flex; align-items: center; color: #fff; background: rgba(127, 127, 127, .35); font: 15px var(--icons);
   transition: width .12s, background .12s; }
 #dev:hover, #dev:focus-visible { width: 46px; background: rgba(127, 127, 127, .55); outline: none; }
+/* «С телефона»: QR codes of the projects' sites and of the terminal */
+#phone { position: fixed; right: 0; top: 116px; width: 40px; height: 28px; padding: 0 0 0 10px; border: 0; border-radius: 10px 0 0 10px;
+  cursor: pointer; display: flex; align-items: center; color: #fff; background: rgba(127, 127, 127, .35); font: 15px var(--icons);
+  transition: width .12s, background .12s; }
+#phone:hover, #phone:focus-visible { width: 46px; background: rgba(127, 127, 127, .55); outline: none; }
+#phoneDlg form { gap: 12px; }
+#phoneDlg select { width: 100%; padding: 6px 8px; font: 14px var(--text); color: var(--fg); background: var(--field);
+  border: 1px solid var(--line); border-radius: 8px; }
+.qrbox { display: flex; gap: 16px; align-items: flex-start; }
+.qrbox canvas { flex: none; width: 180px; height: 180px; border-radius: 8px; image-rendering: pixelated; background: #fff; }
+.qrbox canvas[hidden] { display: none; }
+.qrside { display: grid; gap: 8px; min-width: 0; }
+.qrside .addr { font: 600 15px var(--text); word-break: break-all; }
+.qrside .fp { font: 12px ui-monospace, Consolas, monospace; word-break: break-all; color: var(--muted); }
+.ok { color: #2f9e62; }
+.warn { color: #d08a12; }
+#phoneSites[hidden], #phoneSsh[hidden] { display: none; }
 /* Switched off on the «Для разработчика» page */
-#shell[hidden], #net[hidden], #netLog[hidden] { display: none; }
+#shell[hidden], #net[hidden], #netLog[hidden], #phone[hidden] { display: none; }
 body.nolog .log { display: none; }
 </style>
 </head>
@@ -189,6 +206,7 @@ body.nolog .log { display: none; }
   <span class="knob"></span>
 </button>
 <button id="netLog" title="Журнал запросов в интернет и разрешённые сайты" aria-label="Журнал сети">&#xE8FD;</button>
+<button id="phone" title="С телефона: QR-коды сайтов проектов и терминала" aria-label="С телефона">&#xE8EA;</button>
 <button id="dev" title="Для разработчика: включить и выключить кнопки и инструменты браузера" aria-label="Для разработчика">&#xEC7A;</button>
 <main>
   <div class="grid" id="grid"></div>
@@ -264,6 +282,40 @@ body.nolog .log { display: none; }
   </form>
 </dialog>
 
+<dialog id="phoneDlg">
+  <form method="dialog">
+    <h2>С телефона</h2>
+    <div class="seg" id="phoneTabs">
+      <button type="button" data-tab="sites" class="on">Сайты проектов</button>
+      <button type="button" data-tab="ssh">Терминал</button>
+    </div>
+    <div id="phoneSites">
+      <select id="phoneSite" aria-label="Проект"></select>
+      <div class="qrbox">
+        <canvas id="qrSite" width="180" height="180" hidden></canvas>
+        <div class="qrside">
+          <div class="addr" id="siteAddr"></div>
+          <p class="muted" id="siteNote"></p>
+        </div>
+      </div>
+    </div>
+    <div id="phoneSsh" hidden>
+      <div class="qrbox">
+        <canvas id="qrSsh" width="180" height="180" hidden></canvas>
+        <div class="qrside">
+          <div class="addr" id="sshState"></div>
+          <p class="muted" id="sshNote"></p>
+          <div class="fp" id="sshFp"></div>
+          <div><button type="button" class="plain" id="sshToggle"></button></div>
+        </div>
+      </div>
+      <p class="error" id="sshError" hidden></p>
+    </div>
+    <div class="actions"><span class="grow"></span><button type="submit">Закрыть</button></div>
+  </form>
+</dialog>
+
+<script src="https://start.litebro/qrcode.js"></script>
 <script>
 "use strict";
 const COLORS = ["#4d6bfe", "#7c4dff", "#d9437a", "#ef6a35", "#e2a232", "#2f9e62", "#1f96b3", "#5c6a82"];
@@ -796,6 +848,11 @@ window.chrome.webview.addEventListener("message", e => {
     $("#net").title += ". Переключение перезапускает движок: вкладки перезагрузятся, терминалы закроются"
       + (m.cors ? (localOnly ? ". CORS не проверяется" : ". С включением отключится CORS") : "");
     showOff(m.off || []);
+  } else if (m.type === "phone") {
+    showPhone(m);
+  } else if (m.type === "phoneError") {
+    $("#sshError").hidden = false;
+    $("#sshError").textContent = m.text;
   } else if (m.type === "projects") {
     if (drag) waiting = m;
     else show(m);
@@ -831,14 +888,99 @@ $("#net").addEventListener("click", () => {
 opens($("#netLog"), newTab => post({ type: "netOpen", newTab }));
 opens($("#dev"), newTab => post({ type: "devOpen", newTab }));
 
+// ---- «С телефона»: the projects' sites at this computer's network address, and the terminal for LiteBro on iPhone
+
+let phone = null, phoneTab = "sites";
+$("#phone").addEventListener("click", () => {
+  $("#sshError").hidden = true;
+  $("#siteAddr").textContent = "";
+  $("#siteNote").textContent = "Проверяю адреса…";
+  $("#phoneDlg").showModal();
+  post({ type: "phone" });
+});
+for (const b of $("#phoneTabs").children) b.addEventListener("click", () => {
+  phoneTab = b.dataset.tab;
+  for (const x of $("#phoneTabs").children) x.classList.toggle("on", x === b);
+  $("#phoneSites").hidden = phoneTab !== "sites";
+  $("#phoneSsh").hidden = phoneTab !== "ssh";
+});
+$("#phoneSite").addEventListener("change", showSite);
+$("#sshToggle").addEventListener("click", () => {
+  $("#sshError").hidden = true;
+  post({ type: "phoneSsh", on: !(phone && phone.ssh.running) });
+});
+
+// A QR code on the canvas: dark modules on white, with the quiet border the cameras need
+function drawQr(canvas, text) {
+  canvas.hidden = !text || !window.qrcodegen;
+  if (canvas.hidden) return;
+  const qr = qrcodegen.QrCode.encodeText(text, qrcodegen.QrCode.Ecc.MEDIUM);
+  const n = qr.size + 8, scale = Math.max(1, Math.floor(360 / n));
+  canvas.width = canvas.height = n * scale;
+  const g = canvas.getContext("2d");
+  g.fillStyle = "#fff";
+  g.fillRect(0, 0, canvas.width, canvas.height);
+  g.fillStyle = "#000";
+  for (let y = 0; y < qr.size; y++)
+    for (let x = 0; x < qr.size; x++)
+      if (qr.getModule(x, y)) g.fillRect((x + 4) * scale, (y + 4) * scale, scale, scale);
+}
+
+function showPhone(m) {
+  phone = m;
+  const select = $("#phoneSite"), was = select.value;
+  select.replaceChildren(...m.sites.map(x => {
+    const o = el("option", "", (x.name || host(x.url)) + " — " + host(x.url));
+    o.value = x.id;
+    return o;
+  }));
+  if (m.sites.some(x => x.id === was)) select.value = was;
+  select.hidden = !m.sites.length;
+  showSite();
+  showSsh();
+}
+
+function showSite() {
+  const m = phone, x = m && m.sites.find(s => s.id === $("#phoneSite").value);
+  const note = $("#siteNote");
+  note.className = "muted";
+  $("#siteAddr").textContent = x ? x.lan : "";
+  drawQr($("#qrSite"), x && x.answers ? x.lan : "");
+  if (!m.ip) note.textContent = "Компьютер не подключён к сети.";
+  else if (!m.sites.length) note.textContent = "Нет плиток с локальными сайтами.";
+  else if (x.answers) note.textContent = "Наведите камеру телефона на код. Телефон должен быть в той же сети Wi-Fi, что и компьютер.";
+  else if (x.here) {
+    note.className = "warn";
+    note.textContent = "Сайт работает, но по адресу в сети не отвечает: сервер слушает только 127.0.0.1 или порт закрыт брандмауэром Windows. "
+      + "Запустите сервер на адресе 0.0.0.0 (Vite: --host, Next: -H 0.0.0.0, Python: --bind 0.0.0.0) и разрешите программу в брандмауэре для частных сетей.";
+  } else note.textContent = "Сайт сейчас не запущен: откройте плитку, а потом покажите код телефону.";
+}
+
+function showSsh() {
+  const s = phone.ssh;
+  $("#sshState").textContent = s.busy ? "Включаю…" : s.running ? "Вход по SSH включён" : "Вход по SSH выключен";
+  $("#sshState").className = "addr" + (s.running ? " ok" : "");
+  drawQr($("#qrSsh"), s.running && !s.busy ? s.link : "");
+  $("#sshFp").textContent = s.running && s.fp ? "Пользователь: " + s.user + "\nКлюч компьютера: " + s.fp : "";
+  $("#sshFp").style.whiteSpace = "pre-line";
+  $("#sshToggle").textContent = s.running ? "Выключить вход по SSH" : "Включить вход по SSH";
+  $("#sshToggle").disabled = s.busy;
+  $("#sshNote").textContent = s.busy
+    ? "Windows спрашивает права администратора и, если нужно, устанавливает OpenSSH Server. Это может занять несколько минут."
+    : s.running
+      ? "Отсканируйте код камерой iPhone: откроется LiteBro и добавит этот компьютер в Терминал. Пароль — от учётной записи Windows, не ПИН-код. Потом в терминале можно включить вход по ключу с Face ID."
+      : "Командная строка этого компьютера в LiteBro на iPhone. Включится встроенный в Windows OpenSSH Server: он запускается вместе с Windows и пускает только из частных сетей. Сеть Wi-Fi в Windows должна быть частной.";
+}
+
 // Buttons switched off on the «Для разработчика» page; the ones left on the right edge close up
 function showOff(off) {
   $("#shell").hidden = off.includes("shell");
   $("#net").hidden = off.includes("localonly");
   $("#netLog").hidden = off.includes("netlog");
+  $("#phone").hidden = off.includes("phone");
   document.body.classList.toggle("nolog", off.includes("console"));
   let top = 36;
-  for (const b of [$("#net"), $("#netLog"), $("#dev")]) {
+  for (const b of [$("#net"), $("#netLog"), $("#phone"), $("#dev")]) {
     if (b.hidden) continue;
     b.style.top = top + "px";
     top += b.offsetHeight + 6;

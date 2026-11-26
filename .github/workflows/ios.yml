@@ -46,19 +46,27 @@ jobs:
       - name: Pack .tipa
         working-directory: ios
         run: |
-          rm -rf Payload && mkdir Payload
-          cp -R build/Build/Products/Release-iphoneos/LiteBro.app Payload/
-          ldid -SScreen.entitlements Payload/LiteBro.app/PlugIns/LiteBroScreen.appex/LiteBroScreen
-          ldid -STrollStore.entitlements Payload/LiteBro.app/LiteBro
-          zip -qry LiteBro.tipa Payload
-          zip -q LiteBro-iOS.zip LiteBro.tipa
-          ls -l LiteBro.tipa LiteBro-iOS.zip
+          # Two builds from one: LiteBro.tipa with the whole phone for the PC (no-sandbox: TrollStore
+          # registers it as System) and LiteBro-Browser.tipa without it (User: can be the default browser)
+          pack() {
+            rm -rf Payload && mkdir Payload
+            cp -R build/Build/Products/Release-iphoneos/LiteBro.app Payload/
+            ldid -SScreen.entitlements Payload/LiteBro.app/PlugIns/LiteBroScreen.appex/LiteBroScreen
+            ldid -S"$1" Payload/LiteBro.app/LiteBro
+            rm -f "$2" && zip -qry "$2" Payload
+          }
+          pack TrollStore.entitlements LiteBro.tipa
+          pack Browser.entitlements LiteBro-Browser.tipa
+          rm -f LiteBro-iOS.zip && zip -q LiteBro-iOS.zip LiteBro.tipa LiteBro-Browser.tipa
+          ls -l LiteBro.tipa LiteBro-Browser.tipa LiteBro-iOS.zip
 
       - name: File of the run
         uses: actions/upload-artifact@v4
         with:
           name: LiteBro-iOS
-          path: ios/LiteBro.tipa
+          path: |
+            ios/LiteBro.tipa
+            ios/LiteBro-Browser.tipa
           retention-days: 14
 
       - name: Prerelease
@@ -67,7 +75,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          notes="LiteBro-iOS.zip: внутри LiteBro.tipa для TrollStore на iOS 16. Заменяется после каждого изменения папки ios/ в main."
+          notes="LiteBro-iOS.zip для TrollStore на iOS 16: LiteBro.tipa — ПК видит весь телефон; LiteBro-Browser.tipa — можно сделать браузером по умолчанию, ПК видит только папку LiteBro. Заменяется после каждого изменения папки ios/ в main."
           if gh release view ios > /dev/null 2>&1; then
             gh release upload ios LiteBro-iOS.zip --clobber
             gh release edit ios --notes "$notes"

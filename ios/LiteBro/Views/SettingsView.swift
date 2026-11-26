@@ -32,7 +32,11 @@ struct SettingsView: View {
                         Label(L("Сделать браузером по умолчанию"), systemImage: "safari")
                     }
                 } footer: {
-                    Text(L("Откроются настройки LiteBro: «Приложение браузера по умолчанию» → LiteBro. Тогда ссылки из других приложений открываются здесь."))
+                    // Entitlements are fixed at signing: the variant is chosen by the .tipa, not here
+                    Text(FileShare.shared.wholePhone
+                         ? L("Эта сборка (LiteBro.tipa) даёт ПК доступ ко всему телефону, поэтому TrollStore ставит её как системную, и браузером по умолчанию её не выбрать. Нужен браузер по умолчанию — поставьте поверх LiteBro-Browser.tipa из того же архива; вернуть доступ ко всему телефону — снова LiteBro.tipa.")
+                         : L("Откроются настройки LiteBro: «Приложение браузера по умолчанию» → LiteBro. Тогда ссылки из других приложений открываются здесь.") + " "
+                           + L("В этой сборке (LiteBro-Browser.tipa) ПК видит только папку LiteBro. Доступ ко всему телефону — LiteBro.tipa из того же архива, поверх."))
                 }
 
                 Section {

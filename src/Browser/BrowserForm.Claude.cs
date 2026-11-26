@@ -233,14 +233,31 @@ sealed partial class BrowserForm
             case "run_js":
             {
                 MustAct(tab);
+                // replMode (let again, top-level await) awaits only its own wrapper: a promise the code returns
+                // comes back as {}, so the result is kept as an object and a promise is awaited separately
                 var reply = Parse(await Cdp(core, "Runtime.evaluate", new Dictionary<string, object>
                 {
                     ["expression"] = Str(args, "code") ?? "",
                     ["awaitPromise"] = true,
-                    ["returnByValue"] = true,
                     ["replMode"] = true,
                     ["userGesture"] = true,
+                    ["objectGroup"] = "litebro-run-js",
                 }));
+                try
+                {
+                    if (ErrorOf(reply) == null && reply.TryGetValue("result", out var first) && first is Dictionary<string, object> obj
+                        && obj.TryGetValue("objectId", out var objectId))
+                        reply = Parse(obj.TryGetValue("subtype", out var sub) && sub as string == "promise"
+                            ? await Cdp(core, "Runtime.awaitPromise", new Dictionary<string, object>
+                                { ["promiseObjectId"] = objectId, ["returnByValue"] = true })
+                            : await Cdp(core, "Runtime.callFunctionOn", new Dictionary<string, object>
+                                { ["objectId"] = objectId, ["functionDeclaration"] = "function () { return this; }", ["returnByValue"] = true }));
+                }
+                finally
+                {
+                    try { await Cdp(core, "Runtime.releaseObjectGroup", new Dictionary<string, object> { ["objectGroup"] = "litebro-run-js" }); }
+                    catch (Exception) { }
+                }
                 if (ErrorOf(reply) is { } error) return Mcp.Text(error, true);
                 var result = reply.TryGetValue("result", out var res) ? res as Dictionary<string, object> : null;
                 var value = result == null ? "undefined"

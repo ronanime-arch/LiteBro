@@ -125,6 +125,9 @@ sealed class App : ApplicationContext
         SystemEvents.UserPreferenceChanged += OnUserPreferenceChanged;
         // Claude's tool calls (Mcp.cs): refused inside while «Доступ для Claude» is off
         Mcp.Listen(BrowserForm.RunClaudeToolAsync, action => ui.Post(_ => action(), null));
+        // A new version, a download, a failure: the toolbars and the developer pages follow
+        Updates.Changed += () => { foreach (var form in forms.ToList()) form.UpdateChanged(); };
+        Updates.Start();
         // A script saved or deleted: every WebView gets the new loader for its next page
         UserScripts.Changed += () => ui.Post(_ => { foreach (var form in forms.ToList()) form.ApplyUserScripts(); }, null);
         SingleInstance.Listen(message =>
@@ -598,6 +601,10 @@ sealed class App : ApplicationContext
                 if (Env != null && EngineKey() != engineKey) restart ??= RestartEngineAsync();
                 break;
             case "tabMute": S.Change(s => s.TabMute = on); break;
+            case "autoUpdate":
+                S.Change(s => s.AutoUpdate = on);
+                if (on && !S.LocalOnly) _ = Updates.CheckAsync();
+                break;
             case "externalToMain": S.Change(s => s.ExternalToMain = on); break;
             case "freezeTabs": S.Change(s => s.FreezeTabs = on); break;
             case "suspendAfter" when minutes >= 1 && minutes <= Settings.MaxMinutes: S.Change(s => s.SuspendAfter = minutes); break;
@@ -614,6 +621,17 @@ sealed class App : ApplicationContext
             default: return;
         }
         ApplyDev();
+    }
+
+    /// <summary>
+    /// Installs the new version (the toolbar's green button, /dev): asks, downloads, starts the installer and closes every
+    /// window, so the installer finds LiteBro gone; it starts LiteBro again when done.
+    /// </summary>
+    public async Task InstallUpdateAsync(BrowserForm owner)
+    {
+        var running = launchers.Values.Where(l => l.Running).Select(l => l.Project.Name).Distinct().ToList();
+        if (!await Updates.InstallAsync(owner, running)) return;
+        foreach (var form in forms.ToList()) form.Close();
     }
 
     /// <summary>A switch of the «Для разработчика» page: every window's toolbar, menus and pages follow it.</summary>

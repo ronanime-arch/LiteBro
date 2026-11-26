@@ -22,6 +22,8 @@ namespace LiteBroSetup;
 /// Up to 1.9.6 it was called LiteBrowser; installing takes that away (see RemoveLiteBrowser).
 ///   LiteBro-Setup.exe                        install with a dialog, then help the user give it the links
 ///   LiteBro-Setup.exe /S                     install silently (desktop shortcut, no launch)
+///   LiteBro-Setup.exe /update                from the browser's update (Updates.cs): no questions (the browser asked),
+///                                            waits for LiteBro to close itself, keeps the shortcuts, starts it again
 ///   Uninstall.exe /uninstall [/S] [/purge]   remove; /purge also deletes this user's settings and browser data
 /// Exit codes: 0 done, 1 cancelled or failed, 2 LiteBro is running (silent mode).
 /// </summary>
@@ -63,12 +65,13 @@ static class Program
     static readonly string Version = Assembly.GetExecutingAssembly().GetName().Version.ToString(3);
     public static readonly Icon AppIcon = new(Assembly.GetExecutingAssembly().GetManifestResourceStream("app.ico"));
 
-    static bool silent;
+    static bool silent, update;
 
     [STAThread]
     static int Main(string[] args)
     {
         silent = Has(args, "/S");
+        update = Has(args, "/update");
         Application.EnableVisualStyles();
         Application.SetCompatibleTextRenderingDefault(false);
         try
@@ -94,12 +97,18 @@ static class Program
         // Windows lets only the user choose the program for a link type; the checkbox opens that choice
         // right after the install.
         bool desktop = true, links = false, launch = false;
+        if (update)
+        {
+            // As the user had it: a desktop shortcut only if there was one
+            desktop = Shortcut.Target(DesktopLink) is { } linked && IsInside(linked, InstallDir);
+            launch = true;
+        }
         bool hasLinks = HandlesLinks();
         // Windows keeps the user's choice for links with LiteBrowser's ProgId, which goes with it. The choice
         // itself stays even once the ProgId is gone, as after an earlier run that stopped halfway.
         bool relink = !hasLinks && new[] { "http", "https" }.Any(protocol =>
             Associations.OldNameHandles(protocol) || UserChoice(protocol) == Associations.OldProgId);
-        if (!silent)
+        if (!silent && !update)
         {
             var desktopBox = new CheckBox { Text = L.T("Ярлык на рабочем столе"), Checked = true, AutoSize = true };
             var linksBox = new CheckBox
@@ -502,6 +511,24 @@ static class Program
         }).ToArray();
         if (running.Length == 0) return true;
         var name = running[0].ProcessName;
+        if (update)
+        {
+            // The browser closes its windows itself after starting this (cookies may be cleared first, up to 8 s);
+            // what is left, as the MCP bridge of Claude, is closed, then ended
+            if (running.All(p => p.WaitForExit(30000))) return Released();
+            foreach (var p in running.Where(p => !p.HasExited)) p.CloseMainWindow();
+            foreach (var p in running.Where(p => !p.WaitForExit(5000)))
+            {
+                try { p.Kill(); p.WaitForExit(5000); }
+                catch (Exception) { }
+            }
+            if (running.Any(p => !p.HasExited))
+            {
+                Report(name + L.T(" не закрылся. Закройте его вручную и повторите."), MessageBoxIcon.Warning);
+                return false;
+            }
+            return Released();
+        }
         if (silent)
         {
             Report(name + L.T(" запущен: закройте его и повторите."), MessageBoxIcon.Warning);
@@ -518,6 +545,11 @@ static class Program
             Report(name + L.T(" не закрылся. Закройте его вручную и повторите."), MessageBoxIcon.Warning);
             return false;
         }
+        return Released();
+    }
+
+    static bool Released()
+    {
         Thread.Sleep(1000); // WebView2 processes let go of their files
         return true;
     }

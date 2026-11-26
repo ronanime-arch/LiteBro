@@ -54,7 +54,9 @@ sealed partial class BrowserForm : Form
     };
     readonly ToolTip tips = new();
     readonly TableLayoutPanel bar;
-    readonly ToolButton back, forward, reload, reset, home, country, star, emulate;
+    readonly ToolButton back, forward, reload, reset, home, country, star, emulate, update;
+    const string GlyphUpdate = "\uE896";
+    static readonly Color UpdateGreen = Color.FromArgb(0x1f, 0x9d, 0x55);
     const string GlyphStar = "\uE734", GlyphStarFilled = "\uE735", GlyphReset = "\uE75C", GlyphTools = "\uE90F";
     readonly Font countryGlyphFont, countryCodeFont = new("Segoe UI", 9f, FontStyle.Bold);
     readonly Timer ramTimer = new() { Interval = 2000 };
@@ -119,20 +121,22 @@ sealed partial class BrowserForm : Form
         star = MakeButton(GlyphStar, ShowFavoriteMenu);
         emulate = MakeButton(GlyphTools, ShowToolsMenu);
         emulate.Visible = false;
+        update = MakeButton(GlyphUpdate, () => _ = App.Current.InstallUpdateAsync(this));
+        update.Visible = false;
         countryGlyphFont = country.Font;
 
         bar = new TableLayoutPanel
         {
             Dock = DockStyle.Top,
             AutoSize = true,
-            ColumnCount = 10,
+            ColumnCount = 11,
             RowCount = 1,
             Padding = new Padding(4, 3, 0, 3),
         };
         for (int i = 0; i < 5; i++) bar.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
         bar.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
-        for (int i = 0; i < 4; i++) bar.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
-        var cells = new Control[] { back, forward, reload, reset, home, address, emulate, star, country, ram };
+        for (int i = 0; i < 5; i++) bar.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+        var cells = new Control[] { back, forward, reload, reset, home, address, emulate, star, country, update, ram };
         bar.Controls.AddRange(cells);
         // Fixed cells: a hidden button (reset, emulate, star, country) leaves its column empty instead of shifting the rest along
         for (int i = 0; i < cells.Length; i++) bar.SetCellPosition(cells[i], new TableLayoutPanelCellPosition(i, 0));
@@ -193,7 +197,7 @@ sealed partial class BrowserForm : Form
     /// <summary>The toolbar's glyphs differ in width and height: every button gets the box of the largest.</summary>
     void EvenButtons()
     {
-        var buttons = new[] { back, forward, reload, reset, home, emulate, star, country };
+        var buttons = new[] { back, forward, reload, reset, home, emulate, star, country, update };
         foreach (var b in buttons) b.MinimumSize = Size.Empty;
         var size = new Size(buttons.Max(b => b.PreferredSize.Width), buttons.Max(b => b.PreferredSize.Height));
         size.Width = size.Height = Math.Max(size.Width, size.Height);
@@ -218,7 +222,7 @@ sealed partial class BrowserForm : Form
         BackColor = host.BackColor = Theme.PageBackground;
         divider.BackColor = Theme.Strip;
         bar.BackColor = Theme.Face;
-        foreach (var b in new[] { back, forward, reload, reset, home, emulate, star, country })
+        foreach (var b in new[] { back, forward, reload, reset, home, emulate, star, country, update })
         {
             b.BackColor = Theme.Face;
             b.ForeColor = Theme.Text;
@@ -227,6 +231,7 @@ sealed partial class BrowserForm : Form
         }
         if (active != null) ShowStar(active); // gold stays gold
         if (active != null) ShowEmulation(active); // and green green
+        ShowUpdate();
         address.BackColor = Theme.Field;
         address.ForeColor = Theme.Text;
         ram.ForeColor = Theme.Dim;
@@ -294,10 +299,29 @@ sealed partial class BrowserForm : Form
         if (IsHandleCreated) SendMessage(address.Handle, SetCueBanner, (IntPtr)1, L.T("Адрес или поиск"));
     }
 
+    /// <summary>The green button of a new version (Updates.cs): seen once a check found one.</summary>
+    public void ShowUpdate()
+    {
+        update.ForeColor = UpdateGreen;
+        update.Visible = Updates.Available != null;
+        update.Enabled = !Updates.Busy;
+        if (Updates.Available is { } r)
+            tips.SetToolTip(update, Updates.Busy ? Updates.State
+                : L.T("Доступна новая версия LiteBro ") + r.Version + L.T(". Установить (LiteBro и программы проектов закроются)"));
+    }
+
+    /// <summary>Updates.cs changed what it knows: the button, and the «Для разработчика» pages.</summary>
+    public void UpdateChanged()
+    {
+        ShowUpdate();
+        foreach (var tab in tabs) SendNet(tab);
+    }
+
     /// <summary>The interface language changed: the toolbar's words now, the pages when the engine loads them again.</summary>
     public void ApplyLanguage()
     {
         SetTips();
+        ShowUpdate();
         if (active != null) ShowState(active, switched: true);
         strip.Invalidate();
     }
@@ -2818,6 +2842,11 @@ sealed partial class BrowserForm : Form
                     ["unloadAfter"] = App.Current.S.UnloadAfter,
                     ["theme"] = App.Current.S.Theme,
                     ["gpu"] = App.Current.S.Gpu,
+                    ["autoUpdate"] = App.Current.S.AutoUpdate,
+                    ["version"] = Updates.Current.ToString(),
+                    ["updateVersion"] = Updates.Available?.Version.ToString() ?? "",
+                    ["updateState"] = Updates.State,
+                    ["updateBusy"] = Updates.Busy,
                 },
             }));
     }
@@ -3432,6 +3461,7 @@ sealed partial class BrowserForm : Form
         ["mockSave"] = new[] { "net" }, ["mockOn"] = new[] { "net" }, ["mockDelete"] = new[] { "net" },
         ["dev"] = new[] { "dev" }, ["lang"] = new[] { "dev" }, ["devReset"] = new[] { "dev" }, ["settingsReset"] = new[] { "dev" },
         ["storage"] = new[] { "storage" }, ["permsOpen"] = new[] { "dev" }, ["setting"] = new[] { "dev" }, ["adBlockOpen"] = new[] { "dev" }, ["scriptsOpen"] = new[] { "dev" },
+        ["updateCheck"] = new[] { "dev" }, ["updateInstall"] = new[] { "dev" },
         ["termStart"] = new[] { "term" }, ["termIn"] = new[] { "term" }, ["termSize"] = new[] { "term" },
         ["openLink"] = new[] { "term", "console" },
         ["profileOpen"] = new[] { "console" }, ["site"] = new[] { "profile" }, ["siteClear"] = new[] { "profile" },
@@ -3565,6 +3595,13 @@ sealed partial class BrowserForm : Form
                 break;
             case "devOpen":
                 OpenHereOrNew(tab, Dev.Url, Flag("newTab"));
+                break;
+            case "updateCheck" when Dev.Is(e.Source):
+                _ = Updates.CheckAsync(manual: true);
+                break;
+            case "updateInstall" when Dev.Is(e.Source):
+                // Not from inside the WebView's own event: installing closes the windows
+                BeginInvoke(new Action(() => _ = App.Current.InstallUpdateAsync(this)));
                 break;
             case "adBlockOpen" when Dev.Is(e.Source):
                 OpenAdBlockSettings(tab);

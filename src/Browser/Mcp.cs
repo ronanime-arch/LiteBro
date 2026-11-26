@@ -153,7 +153,10 @@ static class Mcp
         if (!SingleInstance.PrimaryRunning())
         {
             // Through the shell: the browser inherits none of this process's pipes (Claude's stdio)
-            try { Process.Start(new ProcessStartInfo(Application.ExecutablePath) { UseShellExecute = true }); }
+            // LiteBro.exe beside this one: after an update this bridge may run from a file set aside (LiteBro.exe.old-…)
+            var exe = System.IO.Path.Combine(System.IO.Path.GetDirectoryName(Application.ExecutablePath)!, "LiteBro.exe");
+            if (!System.IO.File.Exists(exe)) exe = Application.ExecutablePath;
+            try { Process.Start(new ProcessStartInfo(exe) { UseShellExecute = true }); }
             catch (Exception) { return null; }
         }
         // Starting, or restarting its engine: a few tries

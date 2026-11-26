@@ -148,7 +148,7 @@ static class Program
         foreach (var old in Directory.EnumerateFileSystemEntries(InstallDir))
         {
             if (Directory.Exists(old)) Directory.Delete(old, true);
-            else File.Delete(old);
+            else DeleteOrSetAside(old);
         }
         long bytes = 0;
         using (var zip = new ZipArchive(Assembly.GetExecutingAssembly().GetManifestResourceStream("payload.zip")))
@@ -281,6 +281,47 @@ static class Program
             }
             catch (Exception e) when (e is IOException || e is UnauthorizedAccessException) { }
         }
+    }
+
+    /// <summary>
+    /// Deletes a file of the old version. One still running (LiteBro.exe mcp of a Claude session) cannot be deleted
+    /// but can be renamed: it goes aside as *.old-xxxx and is deleted by the next install, once that session ended.
+    /// </summary>
+    static void DeleteOrSetAside(string file)
+    {
+        if (file.IndexOf(".old-", StringComparison.OrdinalIgnoreCase) >= 0)
+        {
+            TryDelete(file); // set aside by an earlier install: gone when its process ended, else left for the next one
+            return;
+        }
+        try { File.Delete(file); }
+        catch (Exception e) when (e is IOException || e is UnauthorizedAccessException)
+        {
+            File.Move(file, file + ".old-" + Guid.NewGuid().ToString("N").Substring(0, 8));
+        }
+    }
+
+    /// <summary>
+    /// LiteBro.exe mcp or cli: Claude's bridge to the browser, without a window. Claude Code and Claude Desktop keep it
+    /// for the whole session, so an update does not wait for it (its file is set aside instead).
+    /// </summary>
+    static bool IsBridge(Process p)
+    {
+        try
+        {
+            using var search = new System.Management.ManagementObjectSearcher(
+                "SELECT CommandLine FROM Win32_Process WHERE ProcessId = " + p.Id);
+            foreach (System.Management.ManagementObject o in search.Get())
+            {
+                var line = (o["CommandLine"] as string ?? "").Trim();
+                // After the program's path, quoted or not
+                var rest = line.StartsWith("\"") ? line.Substring(line.IndexOf('"', 1) + 1) : line.Substring(Math.Max(0, line.IndexOf(' ')));
+                var first = rest.Trim().Split(' ').FirstOrDefault() ?? "";
+                return first.Equals("mcp", StringComparison.OrdinalIgnoreCase) || first.Equals("cli", StringComparison.OrdinalIgnoreCase);
+            }
+        }
+        catch (Exception) { }
+        return false;
     }
 
     static void TryDelete(string file)
@@ -552,7 +593,7 @@ static class Program
             try
             {
                 var file = p.MainModule!.FileName;
-                return InOurFolders(file) || IsInside(file, OldInstallDir);
+                return (InOurFolders(file) || IsInside(file, OldInstallDir)) && !IsBridge(p);
             }
             catch (Exception) { return false; }
         }).ToArray();
@@ -561,7 +602,7 @@ static class Program
         if (update)
         {
             // The browser closes its windows itself after starting this (cookies may be cleared first, up to 8 s);
-            // a window still open is asked to close. Nothing is killed: what stays (Claude's MCP bridge) is left to the user.
+            // a window still open is asked to close. Nothing is killed; Claude's MCP bridges were left out above.
             if (running.All(p => p.WaitForExit(30000))) return Released();
             foreach (var p in running.Where(p => !p.HasExited)) p.CloseMainWindow();
             if (running.Any(p => !p.WaitForExit(15000)))

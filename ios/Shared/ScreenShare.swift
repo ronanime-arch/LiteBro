@@ -27,6 +27,20 @@ enum ScreenShare {
         set { d?.set(newValue, forKey: "screenControl") }
     }
 
+    /// What the extension is doing, for the app: "on" while the screen goes out, else why it stopped
+    static var state: (text: String, at: Date)? {
+        guard let t = d?.string(forKey: "screenState"), let at = d?.object(forKey: "screenStateAt") as? Date else { return nil }
+        return (t, at)
+    }
+
+    static func setState(_ text: String) {
+        d?.set(text, forKey: "screenState")
+        d?.set(Date(), forKey: "screenStateAt")
+    }
+
+    /// Does the app see the extension's settings at all (the App Group works with this signature)
+    static var shared: Bool { d != nil && FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: group) != nil }
+
     static func revoke() {
         d?.removeObject(forKey: "screenControl")
         d?.removeObject(forKey: "screenToken")

@@ -195,7 +195,7 @@
 "Открыть файлы телефона для компьютера" = "Open the phone files to the computer";
 "Папка LiteBro в «Файлах»: TrollStore не дал доступа ко всей памяти." = "The LiteBro folder in Files: TrollStore did not give access to the whole storage.";
 "Пока не закрою" = "Until I close it";
-"Показ идёт через запись экрана iOS: нажмите кнопку выше или в Пункте управления удержите «Запись экрана» и выберите LiteBro. Пока идёт показ, вверху горит красная полоска; остановить — нажать на неё. Показ работает и в других приложениях. Управление касаниями — через закрытые функции iOS: на странице показа мышь работает как палец, есть кнопки «Домой» и боковая; может не заработать." = "Sharing goes through iOS screen recording: tap the button above, or in Control Center long-press “Screen Recording” and choose LiteBro. While sharing, a red bar shows at the top; tap it to stop. It works in other apps too. Touch control uses private iOS functions: on the sharing page the mouse acts as a finger, with Home and side buttons; it may not work.";
+"Адрес отвечает, только пока идёт показ. Показ идёт через запись экрана iOS: нажмите «Начать показ» или в Пункте управления удержите «Запись экрана» и выберите LiteBro. Пока идёт показ, вверху горит красная полоска; остановить — нажать на неё. Показ работает и в других приложениях. Управление касаниями — через закрытые функции iOS: на странице показа мышь работает как палец, есть кнопки «Домой» и боковая; может не заработать." = "The address answers only while sharing. Sharing goes through iOS screen recording: tap Start sharing, or in Control Center long-press “Screen Recording” and choose LiteBro. While sharing, a red bar shows at the top; tap it to stop. It works in other apps too. Touch control uses private iOS functions: on the sharing page the mouse acts as a finger, with Home and side buttons; it may not work.";
 "С управлением касаниями" = "With touch control";
 "Управление касаниями (экспериментально)" = "Touch control (experimental)";
 "Показать экран телефона компьютеру" = "Show the phone screen to the computer";
@@ -268,3 +268,9 @@
 "На компьютере отказали." = "The computer said no.";
 "Компьютер уже спрашивает про другой телефон. Попробуйте через минуту." = "The computer is asking about another phone. Try again in a minute.";
 "Компьютер не смог добавить ключ: Windows не дала прав администратора или не смогла включить вход по SSH." = "The computer could not add the key: Windows gave no administrator rights or could not switch the SSH sign-in on.";
+"Показ идёт: откройте адрес на ПК." = "Sharing: open the address on the PC.";
+"Показ не запустится: у этой подписи нет общей папки приложения и расширения (App Group)." = "Sharing will not start: this signature has no folder shared by the app and the extension (App Group).";
+"Запись экрана началась раньше, чем показ был разрешён: остановите её и запустите снова." = "The screen recording started before sharing was allowed: stop it and start it again.";
+"Расширение не смогло открыть порт 8081:" = "The extension could not open port 8081:";
+"Показ не идёт, поэтому на ПК «отказано в подключении». Нажмите «Начать показ» ниже, выберите LiteBro и «Начать вещание»." = "Not sharing, so the PC says connection refused. Tap Start sharing below, choose LiteBro and Start Broadcast.";
+"Начать показ" = "Start sharing";

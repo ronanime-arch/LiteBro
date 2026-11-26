@@ -15,18 +15,23 @@ final class SampleHandler: RPBroadcastSampleHandler {
     private var last = Date.distantPast
 
     override func broadcastStarted(withSetupInfo setupInfo: [String: NSObject]?) {
+        ScreenShare.setState("starting")
         guard let token = ScreenShare.token else {
+            ScreenShare.setState("no-token")
             return stop(T("Сначала включите показ экрана в LiteBro: меню «…» → «Доступ с ПК».", "Turn on screen sharing in LiteBro first: “…” menu → “Access from PC”."))
         }
         let store = frames
         do {
             try server.start(port: ScreenShare.port) { ScreenHandler(token: token, frames: store) }
+            ScreenShare.setState("on")
         } catch {
+            ScreenShare.setState("port: \(error)")
             stop(T("Не удалось открыть порт", "Could not open port") + " \(ScreenShare.port)")
         }
     }
 
     override func broadcastFinished() {
+        ScreenShare.setState("off")
         frames.close()
         server.stop()
     }

@@ -4,7 +4,7 @@ import SwiftUI
 @main
 struct LiteBroApp: App {
     @StateObject private var browser = Browser()
-    @StateObject private var tiles = TileStore()
+    @StateObject private var tiles = TileStore.shared
     @StateObject private var downloads = DownloadManager.shared
     @AppStorage(Prefs.themeKey) private var theme = "dark"
 

@@ -41,6 +41,7 @@ final class Browser: NSObject, ObservableObject {
             self?.unloadIdle(all: true)
         }
         nc.addObserver(forName: UIApplication.willResignActiveNotification, object: nil, queue: .main) { [weak self] _ in
+            if let tab = self?.current { self?.keepThumb(tab) }
             self?.saveSession()
         }
     }
@@ -74,10 +75,17 @@ final class Browser: NSObject, ObservableObject {
     // MARK: Tabs
 
     func show(_ tab: BrowserTab) {
+        if let old = current, old.id != tab.id { keepThumb(old) }
         current?.lastShown = Date()
         currentID = tab.id
         tab.lastShown = Date()
         if !tab.showsHome || tab.url != nil, tab.blocked == nil { tab.ensureWebView() }
+    }
+
+    /// A saved page being left: its picture in the folders becomes the page as it is now
+    func keepThumb(_ tab: BrowserTab) {
+        guard !tab.showsHome, let u = tab.url, TileStore.shared.contains(u) else { return }
+        Thumbs.shared.capture(tab.webView, as: u.absoluteString)
     }
 
     @discardableResult

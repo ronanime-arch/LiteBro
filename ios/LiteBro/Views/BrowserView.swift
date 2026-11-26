@@ -154,6 +154,9 @@ struct AddressBar: View {
                     Image(systemName: "lock.shield.fill").foregroundStyle(.green)
                         .accessibilityLabel(L("Только localhost"))
                 }
+                if !editing, !tab.showsHome, let u = tab.url, ["http", "https", "file"].contains(u.scheme ?? "") {
+                    StarMenu(url: u, title: tab.title, webView: tab.webView, sheet: $sheet).equatable()
+                }
                 TextField(L("Адрес или поиск"), text: $text)
                     .keyboardType(.webSearch)
                     .textInputAutocapitalization(.never)
@@ -167,14 +170,6 @@ struct AddressBar: View {
                 if editing && !text.isEmpty {
                     Button { text = "" } label: { Image(systemName: "xmark.circle.fill").foregroundStyle(.secondary) }
                 } else if !tab.showsHome {
-                    if let u = tab.url, ["http", "https", "file"].contains(u.scheme ?? "") {
-                        // Gold when the address is already a tile or a link of one, as on Windows
-                        Button { sheet = .newTile } label: {
-                            Image(systemName: tiles.contains(u) ? "star.fill" : "star")
-                                .foregroundStyle(tiles.contains(u) ? Color.yellow : Color.secondary)
-                        }
-                        .accessibilityLabel(L("Сохранить плиткой"))
-                    }
                     Button { if tab.isLoading { tab.webView?.stopLoading() } else { tab.reload() } } label: {
                         Image(systemName: tab.isLoading ? "xmark" : "arrow.clockwise")
                     }
@@ -231,47 +226,8 @@ struct Toolbar: View {
                 .frame(maxWidth: .infinity, minHeight: 36)
             }
             .accessibilityLabel(L("Вкладки"))
-            Menu {
-                Button { browser.newTab() } label: { Label(L("Новая вкладка"), systemImage: "plus.square") }
-                Button { sheet = .downloads } label: { Label(L("Загрузки"), systemImage: "tray.and.arrow.down") }
-                Button { browser.openTerminal() } label: { Label(L("Терминал ПК"), systemImage: "terminal") }
-                Button { sheet = .phone } label: { Label(L("Доступ с ПК"), systemImage: "laptopcomputer.and.iphone") }
-                if !tab.showsHome, let u = tab.url {
-                    Button { sheet = .newTile } label: {
-                        Label(L("Сохранить плиткой"), systemImage: tiles.contains(u) ? "star.fill" : "star")
-                    }
-                    ShareLink(item: u) { Label(L("Поделиться"), systemImage: "square.and.arrow.up") }
-                    Button { UIPasteboard.general.string = u.absoluteString } label: {
-                        Label(L("Копировать ссылку"), systemImage: "link")
-                    }
-                    Button { tab.webView?.findInteraction?.presentFindNavigator(showingReplace: false) } label: {
-                        Label(L("Найти на странице"), systemImage: "doc.text.magnifyingglass")
-                    }
-                    Button { sheet = .console } label: {
-                        Label(L("Консоль страницы"), systemImage: "terminal")
-                    }
-                    if let t = Translate.url(for: u) {
-                        Button { tab.load(t) } label: { Label(L("Перевести страницу"), systemImage: "character.bubble") }
-                    }
-                    if let c = Translate.chrome(u), UIApplication.shared.canOpenURL(c) {
-                        Button { UIApplication.shared.open(c) } label: { Label(L("Открыть в Chrome"), systemImage: "globe") }
-                    }
-                }
-                if browser.adBlock, AdBlock.site(of: tab.url) != nil, !tab.showsHome {
-                    Toggle(isOn: Binding(get: { AdBlock.isOff(for: tab.url) }, set: { _ in browser.toggleAdBlock(for: tab) })) {
-                        Label(L("Не блокировать рекламу на этом сайте"), systemImage: "shield.slash")
-                    }
-                }
-                Toggle(isOn: Binding(get: { browser.localOnly }, set: { browser.setLocalOnly($0) })) {
-                    Label(L("Только localhost"), systemImage: "lock.shield")
-                }
-                Button { sheet = .settings } label: { Label(L("Настройки"), systemImage: "gearshape") }
-            } label: {
-                Image(systemName: "ellipsis.circle")
-                    .overlay(alignment: .topTrailing) { badge(downloads.items.filter { $0.state == .running || $0.state == .exporting }.count) }
-                    .frame(maxWidth: .infinity, minHeight: 36)
-            }
-            .accessibilityLabel(L("Меню"))
+            MainMenu(tab: tab, url: tab.showsHome ? nil : tab.url, summary: downloads.summary, sheet: $sheet)
+                .equatable()
         }
         .font(.system(size: 19))
         .padding(.horizontal, 6)
@@ -285,6 +241,146 @@ struct Toolbar: View {
     }
 
     @ViewBuilder private func badge(_ n: Int) -> some View {
+        if n > 0 {
+            Text(verbatim: "\(min(n, 99))")
+                .font(.system(size: 10, weight: .bold)).foregroundStyle(.white)
+                .padding(.horizontal, 4).frame(minWidth: 16, minHeight: 16)
+                .background(Capsule().fill(.red))
+                .offset(x: 9, y: -7)
+        }
+    }
+}
+
+/// The star at the left of the address: a new tile or this page into the folder of a tile.
+/// Equatable on the address, so the page loading does not rebuild the open menu.
+struct StarMenu: View, Equatable {
+    @EnvironmentObject var tiles: TileStore
+    let url: URL
+    let title: String
+    let webView: WKWebView?
+    @Binding var sheet: Sheet?
+
+    static func == (a: StarMenu, b: StarMenu) -> Bool { a.url == b.url && a.title == b.title && a.webView === b.webView }
+
+    var body: some View {
+        let s = url.absoluteString
+        let saved = tiles.contains(url)
+        Menu {
+            Button { keep(); sheet = .newTile } label: { Label(L("Новая плитка"), systemImage: "plus.square") }
+            if !tiles.tiles.isEmpty {
+                Section(L("Добавить в папку")) {
+                    ForEach(tiles.tiles) { t in
+                        Button {
+                            if !tiles.has(s, in: t) { keep() }
+                            tiles.toggle(s, name: title.isEmpty ? (url.host ?? s) : title, in: t.id)
+                        } label: {
+                            if tiles.has(s, in: t) {
+                                Label(t.name, systemImage: "checkmark")
+                            } else {
+                                Text(verbatim: t.name)
+                            }
+                        }
+                        .disabled(t.url == s)
+                    }
+                }
+            }
+        } label: {
+            // Gold when the address is already a tile or in a folder, as on Windows
+            Image(systemName: saved ? "star.fill" : "star")
+                .foregroundStyle(saved ? Color.yellow : Color.secondary)
+        }
+        .accessibilityLabel(L("Сохранить плиткой"))
+    }
+
+    private func keep() { Thumbs.shared.capture(webView, as: url.absoluteString) }
+}
+
+/// The "…" menu. Equatable on what it shows, so a download or a loading page does not rebuild it while
+/// it is open (it blinked).
+struct MainMenu: View, Equatable {
+    @EnvironmentObject var browser: Browser
+    @EnvironmentObject var tiles: TileStore
+    let tab: BrowserTab
+    let url: URL?
+    let summary: String
+    @Binding var sheet: Sheet?
+
+    static func == (a: MainMenu, b: MainMenu) -> Bool { a.tab === b.tab && a.url == b.url && a.summary == b.summary }
+
+    var body: some View {
+        Menu {
+            Button { browser.newTab() } label: { Label(L("Новая вкладка"), systemImage: "plus.square") }
+            Button { sheet = .downloads } label: {
+                Label(L("Загрузки"), systemImage: "tray.and.arrow.down")
+                if !summary.isEmpty { Text(verbatim: summary) }
+            }
+            Button { browser.openTerminal() } label: { Label(L("Терминал ПК"), systemImage: "terminal") }
+            Button { sheet = .phone } label: { Label(L("Доступ с ПК"), systemImage: "laptopcomputer.and.iphone") }
+            if let u = url {
+                Button { Thumbs.shared.capture(tab.webView, as: u.absoluteString); sheet = .newTile } label: {
+                    Label(L("Сохранить плиткой"), systemImage: tiles.contains(u) ? "star.fill" : "star")
+                }
+                ShareLink(item: u) { Label(L("Поделиться"), systemImage: "square.and.arrow.up") }
+                Button { UIPasteboard.general.string = u.absoluteString } label: {
+                    Label(L("Копировать ссылку"), systemImage: "link")
+                }
+                Button { tab.webView?.findInteraction?.presentFindNavigator(showingReplace: false) } label: {
+                    Label(L("Найти на странице"), systemImage: "doc.text.magnifyingglass")
+                }
+                Button { sheet = .console } label: {
+                    Label(L("Консоль страницы"), systemImage: "chevron.left.forwardslash.chevron.right")
+                }
+                if SearchCountry.isSearch(u) { countryMenu(u) }
+                if let t = Translate.url(for: u) {
+                    Button { tab.load(t) } label: { Label(L("Перевести страницу"), systemImage: "character.bubble") }
+                }
+                if let c = Translate.chrome(u), UIApplication.shared.canOpenURL(c) {
+                    Button { UIApplication.shared.open(c) } label: { Label(L("Открыть в Chrome"), systemImage: "globe") }
+                }
+                if browser.adBlock, AdBlock.site(of: u) != nil {
+                    Toggle(isOn: Binding(get: { AdBlock.isOff(for: u) }, set: { _ in browser.toggleAdBlock(for: tab) })) {
+                        Label(L("Не блокировать рекламу на этом сайте"), systemImage: "shield.slash")
+                    }
+                }
+            }
+            Button { sheet = .settings } label: { Label(L("Настройки"), systemImage: "gearshape") }
+        } label: {
+            Image(systemName: "ellipsis.circle")
+                .overlay(alignment: .topTrailing) { DownloadsBadge() }
+                .frame(maxWidth: .infinity, minHeight: 36)
+        }
+        .accessibilityLabel(L("Меню"))
+    }
+
+    /// Google results as seen from another country (gl and hl), the page reloads with them
+    private func countryMenu(_ u: URL) -> some View {
+        let now = SearchCountry.current
+        return Menu {
+            Button { pick(nil, u) } label: {
+                if now == nil { Label(L("Как обычно"), systemImage: "checkmark") } else { Text(L("Как обычно")) }
+            }
+            ForEach(SearchCountry.all) { c in
+                Button { pick(c, u) } label: {
+                    if now == c { Label(c.name, systemImage: "checkmark") } else { Text(verbatim: c.name) }
+                }
+            }
+        } label: {
+            Label(L("Страна поиска") + (now.map { ": " + $0.code } ?? ""), systemImage: "globe.europe.africa")
+        }
+    }
+
+    private func pick(_ c: SearchCountry.Country?, _ u: URL) {
+        SearchCountry.current = c
+        tab.load(SearchCountry.apply(c, to: u))
+    }
+}
+
+/// Downloads running or finished and not looked at: the red number on "…"
+struct DownloadsBadge: View {
+    @ObservedObject private var downloads = DownloadManager.shared
+
+    var body: some View {
+        let n = downloads.items.filter { $0.state == .running || $0.state == .exporting }.count + downloads.unseen
         if n > 0 {
             Text(verbatim: "\(min(n, 99))")
                 .font(.system(size: 10, weight: .bold)).foregroundStyle(.white)

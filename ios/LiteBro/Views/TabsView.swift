@@ -2,7 +2,9 @@ import SwiftUI
 
 struct TabsView: View {
     @EnvironmentObject var browser: Browser
+    @EnvironmentObject var tiles: TileStore
     let done: () -> Void
+    @State private var saved = false
 
     var body: some View {
         NavigationStack {
@@ -23,8 +25,38 @@ struct TabsView: View {
                     Button { browser.newTab(); done() } label: { Image(systemName: "plus") }
                         .accessibilityLabel(L("Новая вкладка"))
                 }
+                ToolbarItem(placement: .bottomBar) {
+                    Button { saveAll() } label: {
+                        Label(saved ? L("Сохранено в папку") : L("Сохранить все в папку"),
+                              systemImage: saved ? "checkmark" : "folder.badge.plus")
+                    }
+                    .disabled(saved || pages.isEmpty)
+                }
             }
         }
+    }
+}
+
+extension TabsView {
+    private var pages: [BrowserTab] {
+        var seen = Set<String>()
+        return browser.tabs.filter { t in
+            guard !t.showsHome, let u = t.url, ["http", "https", "file"].contains(u.scheme ?? "") else { return false }
+            return seen.insert(u.absoluteString).inserted
+        }
+    }
+
+    /// All pages as one tile «Вкладки <date>», as on Windows: the first is its address, the rest its folder
+    private func saveAll() {
+        let list = Array(pages.prefix(1 + Tile.maxLinks))
+        guard let first = list.first, let u = first.url else { return }
+        let name = L("Вкладки") + " " + Date().formatted(date: .numeric, time: .shortened)
+        let links = list.dropFirst().compactMap { t in
+            t.url.map { TileLink(name: t.title.isEmpty ? ($0.host ?? $0.absoluteString) : t.title, url: $0.absoluteString) }
+        }
+        tiles.upsert(Tile(name: name, url: u.absoluteString, links: links, color: 6))
+        for t in list { if let u = t.url { Thumbs.shared.capture(t.webView, as: u.absoluteString) } }
+        saved = true
     }
 }
 

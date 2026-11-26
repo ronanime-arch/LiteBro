@@ -5,13 +5,15 @@ struct DownloadsView: View {
     @EnvironmentObject var downloads: DownloadManager
     @Environment(\.dismiss) private var dismiss
     @State private var playing: Playing?
+    @AppStorage(Prefs.photosKey) private var toPhotos = true
 
     var body: some View {
         NavigationStack {
             List {
-                if downloads.items.isEmpty {
-                    Text(L("Здесь будут скачанные видео и файлы. Они же — в приложении «Файлы»: На iPhone › LiteBro › Downloads."))
-                        .foregroundStyle(.secondary)
+                Section {
+                    Toggle(L("Сохранять видео в «Фото»"), isOn: $toPhotos)
+                } footer: {
+                    Text(L("Все загрузки — в приложении «Файлы»: На iPhone › LiteBro › Downloads. Видео mp4 и mov ещё и копируются в «Фото» (Недавние)."))
                 }
                 ForEach(downloads.items) { item in
                     DownloadRow(item: item)
@@ -29,6 +31,8 @@ struct DownloadsView: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .confirmationAction) { Button(L("Готово")) { dismiss() } } }
             .fullScreenCover(item: $playing) { p in PlayerView(url: p.url) }
+            .onAppear { downloads.markSeen() }
+            .onDisappear { downloads.markSeen() }
         }
     }
 
@@ -77,7 +81,8 @@ private struct DownloadRow: View {
                     Text(L("Собираю mp4…")).font(.caption).foregroundStyle(.secondary)
                 case .done:
                     if let f = item.file, let size = try? f.resourceValues(forKeys: [.fileSizeKey]).fileSize {
-                        Text(ByteCountFormatter.string(fromByteCount: Int64(size), countStyle: .file))
+                        Text(ByteCountFormatter.string(fromByteCount: Int64(size), countStyle: .file)
+                             + (item.inPhotos == true ? " · " + L("есть в «Фото»") : ""))
                             .font(.caption).foregroundStyle(.secondary)
                     }
                 case .failed(let why):

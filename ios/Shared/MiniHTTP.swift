@@ -20,8 +20,14 @@ final class MiniHTTP {
             .childChannelOption(ChannelOptions.socket(SocketOptionLevel(IPPROTO_TCP), TCP_NODELAY), value: 1)
             .childChannelInitializer { ch in
                 ch.eventLoop.makeCompletedFuture {
-                    try ch.pipeline.syncOperations.configureHTTPServerPipeline(withErrorHandling: true)
-                    try ch.pipeline.syncOperations.addHandler(handler())
+                    // One by one, as configureHTTPServerPipeline would: its array cast to an existential
+                    // with Sendable aborts on the iOS 16 Swift runtime at every accepted connection
+                    let ops = ch.pipeline.syncOperations
+                    try ops.addHandler(HTTPResponseEncoder())
+                    try ops.addHandler(ByteToMessageHandler(HTTPRequestDecoder(leftOverBytesStrategy: .dropBytes)))
+                    try ops.addHandler(HTTPServerPipelineHandler())
+                    try ops.addHandler(HTTPServerProtocolErrorHandler())
+                    try ops.addHandler(handler())
                 }
             }
         let ch = try bootstrap.bind(host: "0.0.0.0", port: port).wait()

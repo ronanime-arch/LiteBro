@@ -11,6 +11,9 @@ final class SampleHandler: RPBroadcastSampleHandler {
     private let frames = FrameStore()
     private let context = CIContext(options: [.useSoftwareRenderer: false])
     private var last = Date.distantPast
+    /// Checks every second that LiteBro still allows the showing: «Запретить показ» or the end of its time stop it
+    /// even while the screen does not change (no frames come then, so the frame handler cannot notice)
+    private var watchdog: DispatchSourceTimer?
 
     override func broadcastStarted(withSetupInfo setupInfo: [String: NSObject]?) {
         ScreenShare.setState("starting")
@@ -22,6 +25,17 @@ final class SampleHandler: RPBroadcastSampleHandler {
         do {
             try server.start(port: ScreenShare.port) { ScreenHandler(token: token, frames: store) }
             ScreenShare.setState("on")
+            let timer = DispatchSource.makeTimerSource(queue: .global(qos: .utility))
+            timer.schedule(deadline: .now() + 1, repeating: 1)
+            timer.setEventHandler { [weak self] in
+                if ScreenShare.token != token {
+                    self?.stop(T("Показ экрана запрещён в LiteBro.", "Screen sharing was turned off in LiteBro."))
+                } else if let until = ScreenShare.until, until < Date() {
+                    self?.stop(T("Время показа экрана вышло.", "Screen sharing time is over."))
+                }
+            }
+            timer.resume()
+            watchdog = timer
         } catch {
             ScreenShare.setState("port: \(error)")
             stop(T("Не удалось открыть порт", "Could not open port") + " \(ScreenShare.port)")
@@ -29,12 +43,16 @@ final class SampleHandler: RPBroadcastSampleHandler {
     }
 
     override func broadcastFinished() {
+        watchdog?.cancel()
+        watchdog = nil
         ScreenShare.setState("off")
         frames.close()
         server.stop()
     }
 
     private func stop(_ why: String) {
+        watchdog?.cancel()
+        watchdog = nil
         finishBroadcastWithError(NSError(domain: "LiteBro", code: 1, userInfo: [NSLocalizedDescriptionKey: why]))
     }
 

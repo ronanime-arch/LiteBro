@@ -1,4 +1,5 @@
 import Foundation
+import notify
 
 /// What the app and the screen extension share: the secret of the screen address and until when it holds.
 /// The app writes it after Face ID; the extension shows the screen only while it holds.

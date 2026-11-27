@@ -1,3 +1,6 @@
 "NSLocalNetworkUsageDescription" = "LiteBro открывает сайты в вашей локальной сети.";
 "NSPhotoLibraryAddUsageDescription" = "LiteBro сохраняет скачанные видео в «Фото».";
 "NSFaceIDUsageDescription" = "LiteBro спрашивает Face ID перед подстановкой паролей и карт.";
+"NSMicrophoneUsageDescription" = "Сайты, которым вы разрешите, смогут пользоваться микрофоном, например для голосового ввода.";
+"NSCameraUsageDescription" = "Сайты, которым вы разрешите, смогут пользоваться камерой, например для видеозвонков.";
+"NSLocationWhenInUseUsageDescription" = "Сайты, которым вы разрешите, смогут узнать ваше местоположение, например карты.";

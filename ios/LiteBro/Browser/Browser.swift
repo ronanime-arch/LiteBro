@@ -132,6 +132,29 @@ final class Browser: NSObject, ObservableObject {
         return w
     }
 
+    /// A tab around a web view made for a test from the computer (`Probe`)
+    @discardableResult
+    func probeTab(_ url: URL, _ w: WKWebView) -> BrowserTab {
+        let tab = BrowserTab(url: nil, browser: self)
+        tab.showsHome = false
+        // Its web view is the test itself: unloaded, the tab would come back with LiteBro's usual one
+        tab.keepsWebView = true
+        tabs.append(tab)
+        tab.ensureWebView(load: false, adopting: w)
+        tab.load(url)
+        show(tab)
+        return tab
+    }
+
+    /// Only the tab on the screen stays
+    func closeOthers() {
+        guard let keep = current else { return }
+        for t in tabs where t.id != keep.id { t.unload() }
+        tabs = [keep]
+        show(keep)
+        saveSession()
+    }
+
     func close(_ tab: BrowserTab) {
         tab.unload()
         tabs.removeAll { $0.id == tab.id }
@@ -154,7 +177,7 @@ final class Browser: NSObject, ObservableObject {
         let minutes = Prefs.unloadAfter
         if minutes == 0 && !all { return }
         let limit = Date().addingTimeInterval(-Double(minutes) * 60)
-        for tab in tabs where tab.id != current?.id && tab.isLoaded && (all || tab.lastShown < limit) {
+        for tab in tabs where tab.id != current?.id && tab.isLoaded && !tab.keepsWebView && (all || tab.lastShown < limit) {
             tab.webView?.requestMediaPlaybackState { state in
                 if state != .playing { tab.unload() }
             }
@@ -204,6 +227,10 @@ final class Browser: NSObject, ObservableObject {
                                            forMainFrameOnly: false))
         content.addUserScript(WKUserScript(source: VaultScript.source, injectionTime: .atDocumentEnd,
                                            forMainFrameOnly: false, in: .defaultClient))
+        if RuffleFix.needed {
+            content.addUserScript(WKUserScript(source: RuffleFix.source, injectionTime: .atDocumentStart,
+                                               forMainFrameOnly: false))
+        }
         if Prefs.console {
             content.addUserScript(WKUserScript(source: PageConsole.source, injectionTime: .atDocumentStart,
                                                forMainFrameOnly: true))

@@ -38,6 +38,8 @@ final class BrowserTab: NSObject, ObservableObject, Identifiable {
     var openedFrom: UUID?
     private var history: Any?          // WKWebView.interactionState of an unloaded tab
     private var processEnded: Date?    // when iOS last killed the page for memory
+    /// A test tab from the computer (`Probe`): its web view is not swapped for a usual one behind the tester's back
+    var keepsWebView = false
     private var watches: [NSKeyValueObservation] = []
 
     init(url: URL?, browser: Browser) {
@@ -353,7 +355,7 @@ extension BrowserTab: WKNavigationDelegate {
         // iOS killed the page for memory: load it again
         Debug.write("page process ended: \(webView.url?.host ?? "?"), \(Debug.memoryMB()) MB")
         // A hidden tab stays unloaded until it is shown: loading it again now would take the memory back
-        guard browser?.current?.id == id else { return unload() }
+        guard browser?.current?.id == id || keepsWebView else { return unload() }
         // A page too heavy for the phone dies again after the reload: the second time in a minute it stays
         // down with a message. Not counted while the app is left for another one: iOS ends pages then too.
         let now = Date()

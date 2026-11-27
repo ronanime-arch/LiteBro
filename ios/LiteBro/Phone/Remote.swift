@@ -39,9 +39,27 @@ enum Remote {
                 // A test tab: WebKit's default web view plus the named parts of LiteBro's (see `Probe`)
                 guard let s = m["url"] as? String, let u = URL(string: s), u.scheme != nil, let b = Browser.live
                 else { return done(400, json(["error": "url"])) }
+                // The test web view has none of LiteBro's rules unless asked: never in the localhost-only mode
+                if Prefs.localOnly { return done(409, json(["error": "localhost-only mode is on"])) }
                 let parts = Set(m["parts"] as? [String] ?? [])
-                let tab = b.probeTab(u, Probe.webView(b, parts: parts, features: m["features"] as? [String: Bool] ?? [:]))
-                done(200, json(["tabs": b.tabs.count, "parts": parts.sorted(), "url": tab.url?.absoluteString ?? ""]))
+                let unknown = parts.subtracting(Probe.parts).sorted()
+                guard unknown.isEmpty, m["parts"] == nil || m["parts"] is [String]
+                else { return done(400, json(["error": "parts", "unknown": unknown, "known": Probe.parts])) }
+                var features: [String: Bool] = [:]
+                for (k, v) in m["features"] as? [String: Any] ?? [:] {
+                    // true and false only (a number or a text would be a mistake of the sender)
+                    guard let n = v as? NSNumber, CFGetTypeID(n) == CFBooleanGetTypeID()
+                    else { return done(400, json(["error": "features", "notBoolean": k])) }
+                    features[k] = n.boolValue
+                }
+                let (w, applied) = Probe.webView(b, parts: parts, features: features)
+                let missing = features.keys.filter { !applied.contains($0) }.sorted()
+                if !missing.isEmpty { return done(400, json(["error": "features", "unknown": missing])) }
+                b.probeTab(u, w)
+                var answer = state()
+                answer["parts"] = parts.sorted()
+                answer["features"] = applied
+                done(200, json(answer))
             case "features":
                 done(200, json(Probe.features(in: Browser.live?.current?.webView?.configuration.preferences ?? WKPreferences())))
             case "closeOthers":

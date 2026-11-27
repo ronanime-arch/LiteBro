@@ -17,6 +17,8 @@ final class BrowserTab: NSObject, ObservableObject, Identifiable {
     /// A page the localhost-only mode did not let through
     @Published var blocked: URL?
     @Published var failure: String?
+    /// The failure is the phone's memory, not the network
+    @Published var outOfMemory = false
     /// A page on the lists of malicious or phishing sites, not opened
     @Published var danger: URL?
     /// What the bar above the toolbar offers: logins, saving a password, a card
@@ -35,6 +37,9 @@ final class BrowserTab: NSObject, ObservableObject, Identifiable {
     /// The tab it was opened from: new tabs line up after it
     var openedFrom: UUID?
     private var history: Any?          // WKWebView.interactionState of an unloaded tab
+    private var processEnded: Date?    // when iOS last killed the page for memory
+    /// A test tab from the computer (`Probe`): its web view is not swapped for a usual one behind the tester's back
+    var keepsWebView = false
     private var watches: [NSKeyValueObservation] = []
 
     init(url: URL?, browser: Browser) {
@@ -124,6 +129,10 @@ final class BrowserTab: NSObject, ObservableObject, Identifiable {
             blocked = nil
             failure = nil
             w.goBack()
+        } else if !showsHome, let from = openedFrom, let b = browser, b.tabs.contains(where: { $0.id == from }) {
+            // A page opened from another tab (a link in a new tab, a pop-up) has nowhere back but that tab:
+            // the tab closes and the one it came from is shown, as in Safari
+            b.close(self)
         } else {
             showsHome = true
         }
@@ -262,9 +271,16 @@ extension BrowserTab: WKNavigationDelegate {
         if action.shouldPerformDownload { return decisionHandler(.download) }
         let scheme = u.scheme?.lowercased() ?? ""
         if !["http", "https", "about", "data", "blob", "file"].contains(scheme) {
-            // tel:, mailto:, App Store and other apps
-            UIApplication.shared.open(u)
-            return decisionHandler(.cancel)
+            // tel:, mailto:, App Store and other apps: only after the person agrees. Without the sandbox
+            // (TrollStore) a page could otherwise start any app's command by itself; TrollStore's own
+            // "install this" (apple-magnifier://) and LiteBro's litebro://ssh never come from a page.
+            decisionHandler(.cancel)
+            if ["litebro", "apple-magnifier"].contains(scheme) { return }
+            // The site is the frame the link is in, not the one it opens in (an ad frame may aim at the whole
+            // page). `sourceFrame` is missing for a load the app itself began, though declared as always there.
+            let source = action.value(forKey: "sourceFrame") as? WKFrameInfo
+            askToLeave(u, from: source?.securityOrigin.host ?? action.targetFrame?.securityOrigin.host ?? "")
+            return
         }
         if Prefs.localOnly && !LocalNet.permits(u) {
             if action.targetFrame?.isMainFrame ?? true { blocked = u }
@@ -307,6 +323,7 @@ extension BrowserTab: WKNavigationDelegate {
     func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {
         blocked = nil
         failure = nil
+        outOfMemory = false
         danger = nil
         showsHome = false
     }
@@ -341,6 +358,19 @@ extension BrowserTab: WKNavigationDelegate {
     func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
         // iOS killed the page for memory: load it again
         Debug.write("page process ended: \(webView.url?.host ?? "?"), \(Debug.memoryMB()) MB")
+        // A hidden tab stays unloaded until it is shown: loading it again now would take the memory back
+        guard browser?.current?.id == id || keepsWebView else { return unload() }
+        // A page too heavy for the phone dies again after the reload: the second time in a minute it stays
+        // down with a message. Not counted while the app is left for another one: iOS ends pages then too.
+        let now = Date()
+        let active = UIApplication.shared.applicationState == .active
+        if active, let last = processEnded, now.timeIntervalSince(last) < 60 {
+            processEnded = nil
+            outOfMemory = true
+            failure = L("Закройте другие вкладки и обновите страницу.")
+            return
+        }
+        processEnded = active ? now : nil
         webView.reload()
     }
 }
@@ -379,6 +409,25 @@ extension BrowserTab: WKUIDelegate {
         a.addAction(UIAlertAction(title: L("Отмена"), style: .cancel) { _ in completionHandler(nil) })
         a.addAction(UIAlertAction(title: "OK", style: .default) { _ in completionHandler(a.textFields?.first?.text) })
         present(a) { completionHandler(nil) }
+    }
+
+    /// One question about another app at a time, in the whole browser: a page that asks in a loop does not
+    /// pile them up. The question itself is watched, not a flag: one closed without a button (with the sheet
+    /// under it) must not leave the links dead.
+    private static weak var question: UIAlertController?
+
+    /// Another app for this address? Asked every time, with the site that asks and the address as it is.
+    /// Only the tab on the screen asks; while a question is up the next ones are dropped.
+    fileprivate func askToLeave(_ u: URL, from host: String) {
+        guard Self.question?.presentingViewController == nil, browser?.current?.id == id else { return }
+        let text = u.absoluteString
+        let site = host.isEmpty ? (url?.host ?? "") : host
+        let a = UIAlertController(title: site.isEmpty ? L("Открыть в другом приложении?") : site + ": " + L("Открыть в другом приложении?"),
+                                  message: text.count > 200 ? String(text.prefix(200)) + "…" : text, preferredStyle: .alert)
+        a.addAction(UIAlertAction(title: L("Отмена"), style: .cancel))
+        a.addAction(UIAlertAction(title: L("Открыть"), style: .default) { _ in UIApplication.shared.open(u) })
+        Self.question = a
+        present(a) {}
     }
 
     /// Shows a question over everything; `nobody` runs when there is nothing to show it on

@@ -47,22 +47,49 @@ final class SSHStore: ObservableObject {
     /// From the QR code of LiteBro on Windows: litebro://ssh?host=…&port=…&user=…&name=…&fp=SHA256:…
     /// The code comes from the computer itself, so its key replaces a remembered one.
     func add(from url: URL) -> SSHHost? {
-        guard url.scheme?.lowercased() == "litebro", url.host?.lowercased() == "ssh",
-              let items = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems else { return nil }
-        func value(_ k: String) -> String? { items.first { $0.name == k }?.value.flatMap { $0.isEmpty ? nil : $0 } }
-        guard let host = value("host"), let user = value("user"),
-              host.range(of: "^[A-Za-z0-9.:%-]+$", options: .regularExpression) != nil else { return nil }
-        let port = value("port").flatMap(Int.init) ?? 22
-        let fp = value("fp").flatMap { $0.hasPrefix("SHA256:") ? $0 : nil }
-        if var h = hosts.first(where: { $0.host == host && $0.user == user && $0.port == port }) {
-            if let fp { h.fingerprint = fp }
-            if let n = value("name") { h.name = n }
+        guard let l = Self.link(url) else { return nil }
+        if var h = known(l) {
+            if let fp = l.fingerprint { h.fingerprint = fp }
+            if let n = l.name { h.name = n }
             upsert(h)
             return h
         }
-        let h = SSHHost(name: value("name") ?? host, host: host, port: port, user: user, fingerprint: fp)
+        let h = SSHHost(name: l.name ?? l.host, host: l.host, port: l.port, user: l.user, fingerprint: l.fingerprint)
         upsert(h)
         return h
+    }
+
+    /// What a litebro://ssh link says
+    struct Link {
+        let host: String, user: String, port: Int
+        let fingerprint: String?, name: String?
+    }
+
+    static func link(_ url: URL) -> Link? {
+        guard url.scheme?.lowercased() == "litebro", url.host?.lowercased() == "ssh",
+              let items = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems else { return nil }
+        func value(_ k: String) -> String? { items.first { $0.name == k }?.value.flatMap { $0.isEmpty ? nil : $0 } }
+        // Plain short texts only: they are shown in the question, and a line break or a fake address in the
+        // user's name would push the real one out of sight
+        // (account names may have @, $ and the like: only line breaks and invisible characters are out)
+        func plain(_ s: String) -> Bool {
+            s.count <= 64 && !s.unicodeScalars.contains {
+                CharacterSet.controlCharacters.contains($0) || CharacterSet.newlines.contains($0) || CharacterSet.illegalCharacters.contains($0)
+            }
+        }
+        guard let host = value("host"), let user = value("user"),
+              host.count <= 253, host.range(of: "^[A-Za-z0-9.:%-]+\\z", options: .regularExpression) != nil,
+              plain(user),
+              let port = Optional(value("port").flatMap(Int.init) ?? 22), (1...65535).contains(port) else { return nil }
+        let fp = value("fp").flatMap { $0.hasPrefix("SHA256:") && $0.count <= 64
+            && $0.dropFirst(7).range(of: "^[A-Za-z0-9+/]+\\z", options: .regularExpression) != nil ? $0 : nil }
+        let name = value("name").flatMap { plain($0) ? $0 : nil }
+        return Link(host: host, user: user, port: port, fingerprint: fp, name: name)
+    }
+
+    /// The computer of a link, when LiteBro has it already
+    func known(_ l: Link) -> SSHHost? {
+        hosts.first { $0.host == l.host && $0.user == l.user && $0.port == l.port }
     }
 
     // MARK: Password

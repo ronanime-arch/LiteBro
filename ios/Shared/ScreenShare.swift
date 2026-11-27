@@ -1,4 +1,5 @@
 import Foundation
+import notify
 
 /// What the app and the screen extension share: the secret of the screen address and until when it holds.
 /// The app writes it after Face ID; the extension shows the screen only while it holds.
@@ -41,9 +42,15 @@ enum ScreenShare {
     /// Does the app see the extension's settings at all (the App Group works with this signature)
     static var shared: Bool { d != nil && FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: group) != nil }
 
+    /// «Запретить показ», said to the extension directly (a Darwin notification): its copy of the shared
+    /// settings can stay as it was, and then the showing went on (user bug 2026-11-26)
+    static let revoked = "io.github.ronanime-arch.LiteBro.screen.revoked"
+
     static func revoke() {
         d?.removeObject(forKey: "screenControl")
         d?.removeObject(forKey: "screenToken")
         d?.removeObject(forKey: "screenUntil")
+        d?.synchronize()
+        notify_post(revoked)
     }
 }

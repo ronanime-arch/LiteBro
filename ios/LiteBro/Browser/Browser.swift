@@ -73,6 +73,13 @@ final class Browser: NSObject, ObservableObject {
             c.applicationNameForUserAgent = "Version/\(v.majorVersion).\(v.minorVersion) Mobile/15E148 Safari/604.1"
             // Safe Browsing of WebKit: hashed address prefixes are checked through Apple
             c.preferences.isFraudulentWebsiteWarningEnabled = Prefs.protect
+            // In LiteBro on iOS 16 WebKit draws pages in its GPU process (the switch reads on), and then a tab
+            // that paints an image of certain sizes (100 or 200 points wide, as Wikipedia's logo) stops drawing
+            // for good: the old picture stays, also on the next sites. Found on the user's iPhone, iOS 16.2,
+            // 2026-11-27, with the test web views (`Probe`): with the switch off Wikipedia and ChatGPT draw.
+            if ProcessInfo.processInfo.operatingSystemVersion.majorVersion < 17 {
+                Probe.set("UseGPUProcessForDOMRenderingEnabled", false, in: c.preferences)
+            }
             return c
         }()
         let w = WKWebView(frame: .zero, configuration: c)
@@ -80,7 +87,8 @@ final class Browser: NSObject, ObservableObject {
         w.isFindInteractionEnabled = true
         w.isOpaque = false
         w.backgroundColor = .systemBackground
-        if #available(iOS 16.4, *) { w.isInspectable = true }   // Safari › Develop on a Mac
+        // Safari › Develop on a Mac reads and drives every page: only for one who turned the page console on
+        if #available(iOS 16.4, *) { w.isInspectable = Prefs.console }
         return w
     }
 
@@ -131,6 +139,29 @@ final class Browser: NSObject, ObservableObject {
         return w
     }
 
+    /// A tab around a web view made for a test from the computer (`Probe`)
+    @discardableResult
+    func probeTab(_ url: URL, _ w: WKWebView) -> BrowserTab {
+        let tab = BrowserTab(url: nil, browser: self)
+        tab.showsHome = false
+        // Its web view is the test itself: unloaded, the tab would come back with LiteBro's usual one
+        tab.keepsWebView = true
+        tabs.append(tab)
+        tab.ensureWebView(load: false, adopting: w)
+        tab.load(url)
+        show(tab)
+        return tab
+    }
+
+    /// Only the tab on the screen stays
+    func closeOthers() {
+        guard let keep = current else { return }
+        for t in tabs where t.id != keep.id { t.unload() }
+        tabs = [keep]
+        show(keep)
+        saveSession()
+    }
+
     func close(_ tab: BrowserTab) {
         tab.unload()
         tabs.removeAll { $0.id == tab.id }
@@ -153,7 +184,7 @@ final class Browser: NSObject, ObservableObject {
         let minutes = Prefs.unloadAfter
         if minutes == 0 && !all { return }
         let limit = Date().addingTimeInterval(-Double(minutes) * 60)
-        for tab in tabs where tab.id != current?.id && tab.isLoaded && (all || tab.lastShown < limit) {
+        for tab in tabs where tab.id != current?.id && tab.isLoaded && !tab.keepsWebView && (all || tab.lastShown < limit) {
             tab.webView?.requestMediaPlaybackState { state in
                 if state != .playing { tab.unload() }
             }
@@ -203,6 +234,10 @@ final class Browser: NSObject, ObservableObject {
                                            forMainFrameOnly: false))
         content.addUserScript(WKUserScript(source: VaultScript.source, injectionTime: .atDocumentEnd,
                                            forMainFrameOnly: false, in: .defaultClient))
+        if RuffleFix.needed {
+            content.addUserScript(WKUserScript(source: RuffleFix.source, injectionTime: .atDocumentStart,
+                                               forMainFrameOnly: false))
+        }
         if Prefs.console {
             content.addUserScript(WKUserScript(source: PageConsole.source, injectionTime: .atDocumentStart,
                                                forMainFrameOnly: true))
@@ -282,6 +317,7 @@ final class Browser: NSObject, ObservableObject {
     /// The page console from the start of every page, not only after it is opened
     func setConsole(_ on: Bool) {
         UserDefaults.standard.set(on, forKey: Prefs.consoleKey)
+        if #available(iOS 16.4, *) { tabs.forEach { $0.webView?.isInspectable = on } }
         objectWillChange.send()
         applyRules {}
     }

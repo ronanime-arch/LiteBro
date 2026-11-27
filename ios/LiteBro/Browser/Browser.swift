@@ -21,12 +21,15 @@ final class Browser: NSObject, ObservableObject {
     private var timer: Timer?
 
     var current: BrowserTab? { tabs.first { $0.id == currentID } ?? tabs.first }
+    /// The one the app shows, for the computer's test commands (`Remote`)
+    static weak var live: Browser?
 
     override init() {
         super.init()
         content.add(WeakHandler(self), name: "litebroMedia")
         content.add(WeakHandler(self), contentWorld: .defaultClient, name: "litebroVault")
         content.add(WeakHandler(self), contentWorld: .page, name: PageConsole.handler)
+        Browser.live = self
         Debug.step("browser init")
         if Debug.safeMode {
             tabs = [BrowserTab(url: nil, browser: self)]

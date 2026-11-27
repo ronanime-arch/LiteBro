@@ -107,7 +107,7 @@ enum Touch {
     static func finger(_ phase: Phase, x: Double, y: Double, _ o: Options = Options()) {
         if o.inApp {
             // On the main thread: the event is made, given the key window's context and queued in UIKit
-            DispatchQueue.main.async { fingerInApp(phase, x: x, y: y, o) }
+            DispatchQueue.main.async { _ = fingerInApp(phase, x: x, y: y, o) }
             return
         }
         guard let client = client(o.client), let digitizer, let fingerEvent, let append, let dispatch else { return }
@@ -143,9 +143,11 @@ enum Touch {
     }
 
     /// The in-app way (WebKit's HIDEventGenerator does the same): UIApplication._enqueueHIDEvent:, with the
-    /// digitizer info carrying the key window's context id
-    private static func fingerInApp(_ phase: Phase, x: Double, y: Double, _ o: Options) {
-        guard let digitizer, let fingerEvent, let append, let kw = keyWindow() else { return }
+    /// digitizer info carrying the key window's context id. On the main thread; returns what happened as JSON,
+    /// so the computer sees why a tap did nothing (the request used to answer 204 either way).
+    static func fingerInApp(_ phase: Phase, x: Double, y: Double, _ o: Options) -> String {
+        guard let digitizer, let fingerEvent, let append else { return "{\"error\":\"no IOHIDEvent functions\"}" }
+        guard let kw = keyWindow() else { return "{\"error\":\"no UIApplication\"}" }
         let app = kw.0, window = kw.1
         let size = window?.bounds.size ?? UIScreen.main.bounds.size
         let px = o.points ? x * Double(size.width) : x, py = o.points ? y * Double(size.height) : y
@@ -155,16 +157,37 @@ enum Touch {
         guard let hand = digitizer(kCFAllocatorDefault, now, handType, 0, 0, mask, 0, 0, 0, 0, 0, 0,
                                    DarwinBoolean(down), DarwinBoolean(down), 0),
               let one = fingerEvent(kCFAllocatorDefault, now, o.index, o.identity, mask, px, py, 0, down ? o.pressure : 0, 0,
-                                    DarwinBoolean(down), DarwinBoolean(down), 0) else { return }
+                                    DarwinBoolean(down), DarwinBoolean(down), 0) else { return "{\"error\":\"event not made\"}" }
         setInteger?(hand, fieldDisplayIntegrated, 1)
         append(hand, one, 0)
+        // As the system path does: UIKit may drop an event without a sender
+        setSender?(hand, o.sender)
         let context = (window?.value(forKey: "_contextId") as? NSNumber)?.uint32Value ?? 0
-        digitizerInfo?(hand, context, 0, 0, nil, 0, 0)
+        if o.bks { digitizerInfo?(hand, context, 0, 0, nil, 0, 0) }
         let event = Unmanaged<AnyObject>.fromOpaque(hand).takeUnretainedValue()
         let enqueue = NSSelectorFromString("_enqueueHIDEvent:")
-        if app.responds(to: enqueue) { _ = app.perform(enqueue, with: event) }
+        let responds = app.responds(to: enqueue)
+        if responds { _ = app.perform(enqueue, with: event) }
         Unmanaged<AnyObject>.fromOpaque(one).release()
         Unmanaged<AnyObject>.fromOpaque(hand).release()
+        let hit = window?.hitTest(CGPoint(x: px, y: py), with: nil).map { String(describing: Swift.type(of: $0)) } ?? ""
+        return "{\"window\":\(window != nil),\"key\":\(window?.isKeyWindow ?? false),\"context\":\(context),"
+            + "\"enqueue\":\(responds),\"x\":\(px),\"y\":\(py),\"hit\":\"\(hit)\"}"
+    }
+
+    /// A tap without the HID queue, for UIKit controls (bar buttons such as «Готово», switches, buttons):
+    /// the control under the point gets its actions as if a finger lifted on it. SwiftUI rows are not controls.
+    /// x, y are 0…1 of the window; on the main thread; returns what was found as JSON.
+    static func click(x: Double, y: Double) -> String {
+        guard let window = keyWindow()?.1 else { return "{\"error\":\"no key window\"}" }
+        let p = CGPoint(x: x * Double(window.bounds.width), y: y * Double(window.bounds.height))
+        var view = window.hitTest(p, with: nil)
+        let hit = view.map { String(describing: Swift.type(of: $0)) } ?? ""
+        while let v = view, !(v is UIControl) { view = v.superview }
+        guard let control = view as? UIControl else { return "{\"hit\":\"\(hit)\",\"control\":null}" }
+        if let s = control as? UISwitch { s.setOn(!s.isOn, animated: true); s.sendActions(for: .valueChanged) }
+        else { control.sendActions(for: .touchUpInside); control.sendActions(for: .primaryActionTriggered) }
+        return "{\"hit\":\"\(hit)\",\"control\":\"\(String(describing: Swift.type(of: control)))\"}"
     }
 
     /// Text into whatever has the focus in this app (a field of LiteBro or of a page); "\b" deletes one character

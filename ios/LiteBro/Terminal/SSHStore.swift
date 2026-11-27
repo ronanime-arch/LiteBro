@@ -71,16 +71,19 @@ final class SSHStore: ObservableObject {
         func value(_ k: String) -> String? { items.first { $0.name == k }?.value.flatMap { $0.isEmpty ? nil : $0 } }
         // Plain short texts only: they are shown in the question, and a line break or a fake address in the
         // user's name would push the real one out of sight
-        func plain(_ s: String, _ more: String) -> Bool {
-            s.count <= 64 && s.unicodeScalars.allSatisfy { CharacterSet.alphanumerics.contains($0) || more.unicodeScalars.contains($0) }
+        // (account names may have @, $ and the like: only line breaks and invisible characters are out)
+        func plain(_ s: String) -> Bool {
+            s.count <= 64 && !s.unicodeScalars.contains {
+                CharacterSet.controlCharacters.contains($0) || CharacterSet.newlines.contains($0) || CharacterSet.illegalCharacters.contains($0)
+            }
         }
         guard let host = value("host"), let user = value("user"),
-              host.count <= 253, host.range(of: "^[A-Za-z0-9.:%-]+$", options: .regularExpression) != nil,
-              plain(user, "._-\\ "),
+              host.count <= 253, host.range(of: "^[A-Za-z0-9.:%-]+\\z", options: .regularExpression) != nil,
+              plain(user),
               let port = Optional(value("port").flatMap(Int.init) ?? 22), (1...65535).contains(port) else { return nil }
         let fp = value("fp").flatMap { $0.hasPrefix("SHA256:") && $0.count <= 64
-            && $0.dropFirst(7).range(of: "^[A-Za-z0-9+/]+$", options: .regularExpression) != nil ? $0 : nil }
-        let name = value("name").flatMap { plain($0, "._- ()") ? $0 : nil }
+            && $0.dropFirst(7).range(of: "^[A-Za-z0-9+/]+\\z", options: .regularExpression) != nil ? $0 : nil }
+        let name = value("name").flatMap { plain($0) ? $0 : nil }
         return Link(host: host, user: user, port: port, fingerprint: fp, name: name)
     }
 

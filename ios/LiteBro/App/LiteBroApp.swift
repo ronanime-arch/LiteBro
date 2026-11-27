@@ -7,8 +7,6 @@ struct LiteBroApp: App {
     @StateObject private var tiles = TileStore.shared
     @StateObject private var downloads = DownloadManager.shared
     @AppStorage(Prefs.themeKey) private var theme = "dark"
-    /// A litebro://ssh link that waits for the person's answer
-    @State private var computer: URL?
 
     init() {
         // Before anything else: the launch log, crash traces and the safe mode
@@ -31,22 +29,33 @@ struct LiteBroApp: App {
                     if url.scheme?.lowercased() == "litebro" {
                         // Asked first: such a link sets the key LiteBro will trust for that computer,
                         // and any app can send one
-                        if SSHStore.link(url) != nil { computer = url }
+                        askComputer(url)
                     } else {
                         browser.newTab(url)
                     }
                 }
-                .alert(L("Добавить компьютер в терминал?"),
-                       isPresented: Binding(get: { computer != nil }, set: { if !$0 { computer = nil } }),
-                       presenting: computer) { url in
-                    Button(L("Отмена"), role: .cancel) {}
-                    Button(L("Добавить")) {
-                        if let h = SSHStore.shared.add(from: url) { browser.openTerminal(at: h.id) }
-                    }
-                } message: { url in
-                    Text(verbatim: Self.computerText(url))
-                }
         }
+    }
+
+    /// The question on the screen; a link that comes meanwhile is dropped, so the answer is about what is shown
+    private static weak var question: UIAlertController?
+
+    private func askComputer(_ url: URL, tries: Int = 20) {
+        guard SSHStore.link(url) != nil, Self.question?.presentingViewController == nil else { return }
+        var top = UIApplication.shared.connectedScenes.compactMap { ($0 as? UIWindowScene)?.keyWindow }.first?.rootViewController
+        while let next = top?.presentedViewController, !next.isBeingDismissed { top = next }
+        // Opened by the link itself: the window is not there yet
+        guard let top, top.viewIfLoaded?.window != nil else {
+            if tries > 0 { DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { askComputer(url, tries: tries - 1) } }
+            return
+        }
+        let a = UIAlertController(title: L("Добавить компьютер в терминал?"), message: Self.computerText(url), preferredStyle: .alert)
+        a.addAction(UIAlertAction(title: L("Отмена"), style: .cancel))
+        a.addAction(UIAlertAction(title: L("Добавить"), style: .default) { _ in
+            if let h = SSHStore.shared.add(from: url) { browser.openTerminal(at: h.id) }
+        })
+        Self.question = a
+        top.present(a, animated: true)
     }
 
     /// The address, the user and the key of a litebro://ssh link, each on a line of its own

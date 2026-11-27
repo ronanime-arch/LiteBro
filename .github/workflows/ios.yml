@@ -80,7 +80,7 @@ jobs:
         run: |
           # The same main build under the name the phone accepts for an update sent from the computer
           cp LiteBro.tipa LiteBro-PC-install.tipa
-          notes="LiteBro-iOS.zip для TrollStore на iOS 16: LiteBro.tipa — основная, ПК видит весь телефон, журнал запуска и падений встроен; LiteBro-Browser.tipa — можно сделать браузером по умолчанию, ПК видит только папку LiteBro. Заменяется после каждого изменения папки ios/ в main."
+          notes="LiteBro-iOS.zip для TrollStore на iOS 16: LiteBro.tipa — основная, ПК видит весь телефон, журнал запуска и падений встроен; LiteBro-Browser.tipa — можно сделать браузером по умолчанию, ПК видит только папку LiteBro. LiteBro-PC-install.tipa — та же основная сборка для обновления командой с ПК. Заменяется после каждого изменения папки ios/ в main."
           if gh release view ios > /dev/null 2>&1; then
             gh release upload ios LiteBro-iOS.zip LiteBro-PC-install.tipa --clobber
             gh release edit ios --notes "$notes"

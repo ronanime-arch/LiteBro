@@ -270,8 +270,10 @@ extension BrowserTab: WKNavigationDelegate {
             // "install this" (apple-magnifier://) and LiteBro's litebro://ssh never come from a page.
             decisionHandler(.cancel)
             if ["litebro", "apple-magnifier"].contains(scheme) { return }
-            // (the frame the link is in; `sourceFrame` can be missing for a load the app itself began)
-            askToLeave(u, from: action.targetFrame?.securityOrigin.host ?? "")
+            // The site is the frame the link is in, not the one it opens in (an ad frame may aim at the whole
+            // page). `sourceFrame` is missing for a load the app itself began, though declared as always there.
+            let source = action.value(forKey: "sourceFrame") as? WKFrameInfo
+            askToLeave(u, from: source?.securityOrigin.host ?? action.targetFrame?.securityOrigin.host ?? "")
             return
         }
         if Prefs.localOnly && !LocalNet.permits(u) {
@@ -350,18 +352,19 @@ extension BrowserTab: WKNavigationDelegate {
     func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
         // iOS killed the page for memory: load it again
         Debug.write("page process ended: \(webView.url?.host ?? "?"), \(Debug.memoryMB()) MB")
-        // A page too heavy for the phone dies again right after the reload: then it stays down with a message.
-        // Only the page on the screen of the app in use: iOS also ends pages of hidden tabs and of an app
-        // left for another one, and those just load again.
+        // A hidden tab stays unloaded until it is shown: loading it again now would take the memory back
+        guard browser?.current?.id == id else { return unload() }
+        // A page too heavy for the phone dies again after the reload: the second time in a minute it stays
+        // down with a message. Not counted while the app is left for another one: iOS ends pages then too.
         let now = Date()
-        let shown = browser?.current?.id == id && UIApplication.shared.applicationState == .active
-        if shown, let last = processEnded, now.timeIntervalSince(last) < 30 {
+        let active = UIApplication.shared.applicationState == .active
+        if active, let last = processEnded, now.timeIntervalSince(last) < 60 {
             processEnded = nil
             outOfMemory = true
             failure = L("Закройте другие вкладки и обновите страницу.")
             return
         }
-        processEnded = shown ? now : nil
+        processEnded = active ? now : nil
         webView.reload()
     }
 }
@@ -403,24 +406,22 @@ extension BrowserTab: WKUIDelegate {
     }
 
     /// One question about another app at a time, in the whole browser: a page that asks in a loop does not
-    /// pile them up
-    private static var asking = false
+    /// pile them up. The question itself is watched, not a flag: one closed without a button (with the sheet
+    /// under it) must not leave the links dead.
+    private static weak var question: UIAlertController?
 
     /// Another app for this address? Asked every time, with the site that asks and the address as it is.
     /// Only the tab on the screen asks; while a question is up the next ones are dropped.
     fileprivate func askToLeave(_ u: URL, from host: String) {
-        guard !Self.asking, browser?.current?.id == id else { return }
+        guard Self.question?.presentingViewController == nil, browser?.current?.id == id else { return }
         let text = u.absoluteString
         let site = host.isEmpty ? (url?.host ?? "") : host
         let a = UIAlertController(title: site.isEmpty ? L("Открыть в другом приложении?") : site + ": " + L("Открыть в другом приложении?"),
                                   message: text.count > 200 ? String(text.prefix(200)) + "…" : text, preferredStyle: .alert)
-        a.addAction(UIAlertAction(title: L("Отмена"), style: .cancel) { _ in Self.asking = false })
-        a.addAction(UIAlertAction(title: L("Открыть"), style: .default) { _ in
-            Self.asking = false
-            UIApplication.shared.open(u)
-        })
-        Self.asking = true
-        present(a) { Self.asking = false }
+        a.addAction(UIAlertAction(title: L("Отмена"), style: .cancel))
+        a.addAction(UIAlertAction(title: L("Открыть"), style: .default) { _ in UIApplication.shared.open(u) })
+        Self.question = a
+        present(a) {}
     }
 
     /// Shows a question over everything; `nobody` runs when there is nothing to show it on

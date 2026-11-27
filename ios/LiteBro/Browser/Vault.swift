@@ -108,9 +108,20 @@ final class Vault: ObservableObject {
 
     func isSaved(host: String, user: String, pass: String) -> Bool {
         guard let l = logins(for: host).first(where: { $0.user == user && Self.matches(pass, $0.check) }) else { return false }
-        // Written again with the slow check (the password is in hand; nothing is asked)
-        if Self.isOld(l.check) { save(host: l.host, user: l.user, pass: pass) }
+        if Self.isOld(l.check) { upgradeCheck(l, pass: pass) }
         return true
+    }
+
+    /// An old fast check becomes the slow one, in place: only that attribute is written, the password is not
+    /// touched, and nothing is asked (where iOS wants Face ID for it, the old check stays until the next save)
+    private func upgradeCheck(_ l: Login, pass: String) {
+        let quiet = LAContext()
+        quiet.interactionNotAllowed = true
+        let q: [String: Any] = [kSecClass as String: kSecClassInternetPassword, kSecAttrServer as String: l.host,
+                                kSecAttrAccount as String: l.user, kSecUseAuthenticationContext as String: quiet]
+        let check = Self.checksum(pass)
+        guard !check.isEmpty else { return }
+        if SecItemUpdate(q as CFDictionary, [kSecAttrComment as String: check] as CFDictionary) == errSecSuccess { reload() }
     }
 
     func save(host: String, user: String, pass: String) {

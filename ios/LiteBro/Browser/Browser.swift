@@ -80,7 +80,8 @@ final class Browser: NSObject, ObservableObject {
         w.isFindInteractionEnabled = true
         w.isOpaque = false
         w.backgroundColor = .systemBackground
-        if #available(iOS 16.4, *) { w.isInspectable = true }   // Safari › Develop on a Mac
+        // Safari › Develop on a Mac reads and drives every page: only for one who turned the page console on
+        if #available(iOS 16.4, *) { w.isInspectable = Prefs.console }
         return w
     }
 
@@ -282,6 +283,7 @@ final class Browser: NSObject, ObservableObject {
     /// The page console from the start of every page, not only after it is opened
     func setConsole(_ on: Bool) {
         UserDefaults.standard.set(on, forKey: Prefs.consoleKey)
+        if #available(iOS 16.4, *) { tabs.forEach { $0.webView?.isInspectable = on } }
         objectWillChange.send()
         applyRules {}
     }

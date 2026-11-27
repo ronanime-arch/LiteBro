@@ -180,7 +180,10 @@ final class DownloadManager: NSObject, ObservableObject {
         }
     }
 
-    private func place(_ name: String) -> URL {
+    private func place(_ given: String) -> URL {
+        // The name only, whatever the site sent: never a way out of the folder
+        var name = (given as NSString).lastPathComponent
+        if name.isEmpty || name == "." || name == ".." || name == "/" { name = "download" }
         let base = (name as NSString).deletingPathExtension
         let ext = (name as NSString).pathExtension
         var url = folder.appendingPathComponent(name)

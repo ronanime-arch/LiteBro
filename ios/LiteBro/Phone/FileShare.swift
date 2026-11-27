@@ -128,8 +128,13 @@ private final class DAVHandler: HTTPHandler {
         if parts.contains(where: { $0 == ".." || $0 == "." || $0.contains("\0") }) { return nil }
         let url = parts.reduce(root) { $0.appendingPathComponent($1) }
         // Through a link nothing outside the folder
-        let real = url.resolvingSymlinksInPath().standardizedFileURL.path
-        if FileManager.default.fileExists(atPath: url.path), !(real == rootPath || real.hasPrefix(rootPath + "/")) { return nil }
+        // (for a new file its folder is checked: the nearest one that is there)
+        var there = url
+        while !FileManager.default.fileExists(atPath: there.path), there.pathComponents.count > 1 {
+            there = there.deletingLastPathComponent()
+        }
+        let real = there.resolvingSymlinksInPath().standardizedFileURL.path
+        if !(real == rootPath || real.hasPrefix(rootPath + "/")) { return nil }
         return (url, parts)
     }
 
@@ -139,6 +144,12 @@ private final class DAVHandler: HTTPHandler {
         let enc = rel.map { $0.addingPercentEncoding(withAllowedCharacters: allowed) ?? $0 }
         return "/" + ([token] + enc).joined(separator: "/") + (dir && !rel.isEmpty ? "/" : rel.isEmpty ? "/" : "")
     }
+
+    /// Only LiteBro's own build is installed by a command from the computer: the address is sent over plain
+    /// HTTP, and what TrollStore installs gets the whole phone. The one file the iOS workflow publishes for it.
+    static let ownBuild = "https://github.com/ronanime-arch/LiteBro/releases/download/ios/LiteBro-PC-install.tipa"
+
+    private static func isOwnBuild(_ u: URL) -> Bool { u.absoluteString == ownBuild }
 
     // MARK: Request
 
@@ -182,7 +193,7 @@ private final class DAVHandler: HTTPHandler {
         if path == "/\(token)/_install", h.method == "POST" {
             guard ScreenShare.control,
                   let m = (try? JSONSerialization.jsonObject(with: body)) as? [String: Any],
-                  let from = m["url"] as? String, let src = URL(string: from), ["http", "https"].contains(src.scheme ?? ""),
+                  let from = m["url"] as? String, let src = URL(string: from), Self.isOwnBuild(src),
                   let enc = from.addingPercentEncoding(withAllowedCharacters: .alphanumerics),
                   let command = URL(string: "apple-magnifier://install?url=" + enc)
             else { return channel.respond(403, keepAlive: keepAlive) }
@@ -382,8 +393,15 @@ private final class DAVHandler: HTTPHandler {
             return channel.respond(416, headers: [("Content-Range", "bytes */\(size)")], keepAlive: keepAlive)
         }
         let length = size == 0 ? 0 : end - start + 1
-        var headers = [("Content-Type", Self.type(url)), ("Content-Length", String(length)), ("Accept-Ranges", "bytes"),
+        // A file of the phone is shown, never run: a saved web page opened by this address would otherwise act
+        // with the address's secret (read and delete the other files). Only what can carry script: a PDF or
+        // a video in such a sandbox would not open in Chrome and Edge.
+        let mime = Self.type(url)
+        let scripted = ["html", "xml", "svg"].contains { mime.contains($0) }
+        var headers = [("Content-Type", mime), ("Content-Length", String(length)), ("Accept-Ranges", "bytes"),
+                       ("X-Content-Type-Options", "nosniff"),
                        ("Last-Modified", Self.httpDate.string(from: attrs[.modificationDate] as? Date ?? Date()))]
+        if scripted { headers.append(("Content-Security-Policy", "sandbox")) }
         if partial { headers.append(("Content-Range", "bytes \(start)-\(end)/\(size)")) }
         if !keepAlive { headers.append(("Connection", "close")) }
         channel.sendHead(partial ? 206 : 200, headers: headers)

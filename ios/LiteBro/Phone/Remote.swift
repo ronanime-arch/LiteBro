@@ -5,7 +5,8 @@ import WebKit
 /// `state` (the current tab), `open` {url, newTab?}, `js` {code} (the body of an async function in the page's
 /// world, its `return` comes back), `click` {x, y} (a UIKit control at 0…1 of the window). So the computer
 /// tests sites on the phone without taps. Also `probe` {url, parts?, features?} (a test tab, see `Probe`),
-/// `features` (WebKit's switches by name) and `closeOthers` (only the tab on the screen stays). Only with «Управление касаниями» on (checked by `FileShare`).
+/// `features` (WebKit's switches by name), `closeOthers` (only the tab on the screen stays) and `shot` (LiteBro's
+/// screen as a JPEG, answered by `FileShare`). Only with «Управление касаниями» on (checked by `FileShare`).
 enum Remote {
     static func run(_ name: String, _ m: [String: Any], done: @escaping (Int, String) -> Void) {
         DispatchQueue.main.async {
@@ -73,6 +74,22 @@ enum Remote {
                 done(404, json(["error": "unknown command"]))
             }
         }
+    }
+
+    /// The windows of LiteBro as they are on the screen, one over another (menus and alerts have their own)
+    static func shot() -> Data? {
+        let scenes = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+        // The scene in use (an iPad may hold several)
+        guard let scene = scenes.first(where: { $0.activationState == .foregroundActive }) ?? scenes.first else { return nil }
+        let windows = scene.windows
+            .filter { !$0.isHidden && $0.alpha > 0 }.sorted { $0.windowLevel.rawValue < $1.windowLevel.rawValue }
+        guard let first = windows.first else { return nil }
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 2
+        let image = UIGraphicsImageRenderer(bounds: first.screen.bounds, format: format).image { _ in
+            for w in windows { w.drawHierarchy(in: w.frame, afterScreenUpdates: false) }
+        }
+        return image.jpegData(compressionQuality: 0.6)
     }
 
     /// What the current tab shows

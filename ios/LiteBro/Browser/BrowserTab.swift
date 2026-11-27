@@ -17,12 +17,16 @@ final class BrowserTab: NSObject, ObservableObject, Identifiable {
     /// A page the localhost-only mode did not let through
     @Published var blocked: URL?
     @Published var failure: String?
-    /// The failure is the phone's memory, not the network
-    @Published var outOfMemory = false
+    /// The failure is the page's process that iOS or WebKit ended, not the network
+    @Published var processEnd: ProcessEnd?
+    enum ProcessEnd { case memory, crash }
     /// A page on the lists of malicious or phishing sites, not opened
     @Published var danger: URL?
     /// What the bar above the toolbar offers: logins, saving a password, a card
-    @Published var offer: Offer?
+    @Published var offer: Offer? {
+        didSet { if case .save = offer { saveAskedAt = Date() } else { saveAskedAt = nil } }
+    }
+    private var saveAskedAt: Date?
     /// The page console (PageConsole), cleared with each new page
     @Published var console: [ConsoleLine] = []
 
@@ -32,12 +36,20 @@ final class BrowserTab: NSObject, ObservableObject, Identifiable {
         case card(frame: WKFrameInfo)
     }
     @Published private(set) var webView: WKWebView?
+    /// The name typed on the first page of a two-step sign-in, for saving the password of the next one
+    var signingIn: (host: String, user: String, at: Date, pages: Int)?
 
     var lastShown = Date()
     /// The tab it was opened from: new tabs line up after it
     var openedFrom: UUID?
+    /// The tab whose page opened this one (a link in a new tab, a pop-up): Back from its first page returns there.
+    /// Not `openedFrom`: "open all" of a folder also lines its tabs up one after another.
+    var opener: UUID?
     private var history: Any?          // WKWebView.interactionState of an unloaded tab
-    private var processEnded: Date?    // when iOS last killed the page for memory
+    private var processEnded: Date?    // when the page's process last ended
+    private var endedWithReason: Date?
+    /// The tiles are shown as the place before the first page (Back led there), not over a page
+    @Published private(set) var homeIsStart = false
     /// A test tab from the computer (`Probe`): its web view is not swapped for a usual one behind the tester's back
     var keepsWebView = false
     private var watches: [NSKeyValueObservation] = []
@@ -123,26 +135,53 @@ final class BrowserTab: NSObject, ObservableObject, Identifiable {
         if danger != nil {
             danger = nil
             if webView?.url == nil { showsHome = true }
-        } else if showsHome, webView?.url != nil {
+        } else if failure != nil || blocked != nil, let w = webView, let under = w.url {
+            // A page that did not open left the one before it in place (a failed load is not in the
+            // history): Back takes the notice away and shows that page, it does not go one more back
+            failure = nil
+            blocked = nil
+            processEnd = nil
+            url = under
+        } else if showsHome, webView?.url != nil, !homeIsStart {
+            // The tiles were opened over a page by their button: Back closes them
             showsHome = false
+        } else if showsHome {
+            // The tiles as the start of the history (or a new tab): nothing before them
         } else if let w = webView, w.canGoBack {
             blocked = nil
             failure = nil
             w.goBack()
-        } else if !showsHome, let from = openedFrom, let b = browser, b.tabs.contains(where: { $0.id == from }) {
-            // A page opened from another tab (a link in a new tab, a pop-up) has nowhere back but that tab:
-            // the tab closes and the one it came from is shown, as in Safari
+        } else if !showsHome, let from = opener, let b = browser, b.tabs.contains(where: { $0.id == from }) {
+            // A page a site opened in a new tab (target=_blank, a pop-up) has nowhere back but the tab it
+            // came from: this one closes and that one is shown, as in Safari
+            openedFrom = from
             b.close(self)
         } else {
+            // Back from the first page: the tiles, as the place before it. Forward returns to the page.
+            homeIsStart = true
             showsHome = true
         }
     }
 
     func goForward() {
+        if showsHome {
+            if homeIsStart, webView?.url != nil { showsHome = false }
+            return
+        }
         blocked = nil
         failure = nil
         webView?.goForward()
     }
+
+    /// The tiles by their button, over the page: Back returns to it
+    func showHome() {
+        if showsHome { return }
+        homeIsStart = false
+        showsHome = true
+    }
+
+    var canGoBackNow: Bool { showsHome ? (webView?.url != nil && !homeIsStart) : true }
+    var canGoForwardNow: Bool { showsHome ? (homeIsStart && webView?.url != nil) : canGoForward }
 
     // MARK: Media
 
@@ -291,6 +330,16 @@ extension BrowserTab: WKNavigationDelegate {
             if action.targetFrame?.isMainFrame ?? true { danger = u }
             return decisionHandler(.cancel)
         }
+        // A link to a site whose app is on the phone (PayPal, a bank) opens in that app, where the person is
+        // signed in, as in Safari. iOS says yes only for a universal link of an installed app; otherwise the
+        // page loads here as usual.
+        if Prefs.openApps, scheme == "https", action.targetFrame?.isMainFrame ?? true, wantsApp(action, in: webView) {
+            UIApplication.shared.open(u, options: [.universalLinksOnly: true]) { opened in
+                if opened { Debug.write("link opened in its app: \(u.host ?? "")") }
+                decisionHandler(opened ? .cancel : .allow)
+            }
+            return
+        }
         // A new search from the Google page goes again with the picked country (back and forward stay as they are)
         if action.targetFrame?.isMainFrame == true, action.navigationType != .backForward,
            action.request.httpMethod?.uppercased() ?? "GET" == "GET", let fixed = SearchCountry.fix(u) {
@@ -299,6 +348,26 @@ extension BrowserTab: WKNavigationDelegate {
             return
         }
         decisionHandler(.allow)
+    }
+
+    /// Only a tap on a link to another site: never a typed address, a reload, back and forward, a page the site
+    /// goes to by a script, or a window the site opened (a shop's PayPal window reports the payment back to
+    /// the shop's page, which would wait for it forever if the window went to the app)
+    private func wantsApp(_ action: WKNavigationAction, in webView: WKWebView) -> Bool {
+        guard action.navigationType == .linkActivated, let to = action.request.url?.host else { return false }
+        let sel = NSSelectorFromString("_isUserInitiated")
+        if action.responds(to: sel), action.value(forKey: "_isUserInitiated") as? Bool == false { return false }
+        guard let from = webView.url?.host else { return true }
+        return Self.site(from) != Self.site(to)
+    }
+
+    /// The last two parts of a host (shop.amazon.com and www.amazon.com are one site); on co.uk and the like
+    /// that joins sites, so a link there rather stays in the browser than leaves it
+    private static func site(_ host: String) -> String {
+        let h = host.lowercased()
+        // An address is a site of its own
+        if h.contains(":") || h.allSatisfy({ $0.isNumber || $0 == "." }) { return h }
+        return h.split(separator: ".").suffix(2).joined(separator: ".")
     }
 
     func webView(_ webView: WKWebView, decidePolicyFor response: WKNavigationResponse,
@@ -323,7 +392,7 @@ extension BrowserTab: WKNavigationDelegate {
     func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {
         blocked = nil
         failure = nil
-        outOfMemory = false
+        processEnd = nil
         danger = nil
         showsHome = false
     }
@@ -331,7 +400,11 @@ extension BrowserTab: WKNavigationDelegate {
     func webView(_ webView: WKWebView, didCommit navigation: WKNavigation!) {
         media.removeAll()
         masters.removeAll()
-        offer = nil
+        // "Save the password?" stays over the pages a sign-in goes to at once (with their redirects), not over
+        // a page opened later
+        if case .save = offer, let t = saveAskedAt, Date().timeIntervalSince(t) < 15 {} else { offer = nil }
+        // The name of a first sign-in step is for the next page only
+        if var s = signingIn { s.pages += 1; signingIn = s.pages > 1 ? nil : s }
         mseDuration = nil
         console.removeAll()
         browser?.saveSession()
@@ -356,18 +429,42 @@ extension BrowserTab: WKNavigationDelegate {
     }
 
     func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
-        // iOS killed the page for memory: load it again
-        Debug.write("page process ended: \(webView.url?.host ?? "?"), \(Debug.memoryMB()) MB")
+        // WebKit calls only one of the two; should one call both, the end counts once
+        if let t = endedWithReason, Date().timeIntervalSince(t) < 2 { return }
+        pageProcessEnded(webView, reason: nil)
+    }
+
+    /// WebKit's private form of the call above, with the reason (`_WKProcessTerminationReason`: 0 the memory
+    /// limit, 1 the CPU limit, 2 asked by the app, 3 a crash). WebKit calls this one instead when it is there.
+    @objc(_webView:webContentProcessDidTerminateWithReason:)
+    func webContentProcessDidTerminate(_ webView: WKWebView, reason: Int) {
+        endedWithReason = Date()
+        pageProcessEnded(webView, reason: reason)
+    }
+
+    private func pageProcessEnded(_ webView: WKWebView, reason: Int?) {
+        let names = ["memory limit", "CPU limit", "asked by the app", "crash"]
+        let why = reason.map { names.indices.contains($0) ? names[$0] : "reason \($0)" } ?? "reason unknown"
+        Debug.write("page process ended (\(why)): \(webView.url?.host ?? "?"), \(Debug.memoryMB()) MB")
         // A hidden tab stays unloaded until it is shown: loading it again now would take the memory back
         guard browser?.current?.id == id || keepsWebView else { return unload() }
-        // A page too heavy for the phone dies again after the reload: the second time in a minute it stays
-        // down with a message. Not counted while the app is left for another one: iOS ends pages then too.
+        // A page that ends its process again after the reload: the second time in a minute it stays down with
+        // a message. Not counted while the app is left for another one: iOS ends pages then too.
         let now = Date()
         let active = UIApplication.shared.applicationState == .active
         if active, let last = processEnded, now.timeIntervalSince(last) < 60 {
             processEnded = nil
-            outOfMemory = true
-            failure = L("Закройте другие вкладки и обновите страницу.")
+            // iOS ending the process for memory reaches WebKit as a crash (3) too: then a memory warning of
+            // the app in the last minute tells it; WebKit's own limit is 0, an older WebKit gives no reason
+            let warned = browser?.memoryWarned.map { now.timeIntervalSince($0) < 60 } ?? false
+            if reason == nil || reason == 0 || warned {
+                processEnd = .memory
+                failure = L("Закройте другие вкладки и обновите страницу.")
+            } else {
+                // Not certainly not the memory: iOS may end the page's process without warning the app
+                processEnd = .crash
+                failure = L("Страница закрывается снова после перезагрузки. Закройте другие вкладки и попробуйте ещё раз.")
+            }
             return
         }
         processEnded = active ? now : nil

@@ -1,7 +1,7 @@
 import Foundation
 import WebKit
 
-/// Full filter lists (EasyList, RU AdList, EasyPrivacy) turned into WebKit content rules on the phone,
+/// Full filter lists (EasyList, RU AdList, EasyPrivacy, EasyList Cookie) turned into WebKit content rules on the phone,
 /// and lists of malicious and phishing sites. Downloaded once, refreshed every 4 days, kept in
 /// Application Support/filters. Until they are there, the small built-in list of `AdBlock` works.
 enum FilterLists {
@@ -17,6 +17,10 @@ enum FilterLists {
         Source(name: "cookies", urls: ["https://secure.fanboy.co.nz/fanboy-cookiemonster.txt",
                                        "https://easylist-downloads.adblockplus.org/fanboy-cookiemonster.txt"]),
     ]
+    /// The ad lists in use: the cookie windows have a switch of their own (hiding one can leave a site that
+    /// locks its page behind the window without scrolling; then the user turns this off)
+    static var adSources: [Source] { ads.filter { $0.name != "cookies" || Prefs.hideCookies } }
+
     static let malware = [
         Source(name: "badware", urls: ["https://raw.githubusercontent.com/uBlockOrigin/uAssets/master/filters/badware.txt"]),
         Source(name: "urlhaus", urls: ["https://urlhaus.abuse.ch/downloads/hostfile/"]),
@@ -88,7 +92,7 @@ enum FilterLists {
     static func build() -> Bool {
         var lines: [Substring] = []
         var texts: [String] = []
-        for s in ads {
+        for s in adSources {
             if let t = try? String(contentsOf: file(s.name + ".txt")) { texts.append(t) }
         }
         if texts.isEmpty { return false }

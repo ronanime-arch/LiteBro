@@ -13,6 +13,9 @@ enum FilterLists {
         Source(name: "ruadlist", urls: ["https://easylist-downloads.adblockplus.org/advblock.txt"]),
         Source(name: "easyprivacy", urls: ["https://easylist.to/easylist/easyprivacy.txt",
                                            "https://raw.githubusercontent.com/easylist/easylist/gh-pages/easyprivacy.txt"]),
+        // The "accept cookies?" windows of sites (EasyList Cookie List): the user is asked on every site otherwise
+        Source(name: "cookies", urls: ["https://secure.fanboy.co.nz/fanboy-cookiemonster.txt",
+                                       "https://easylist-downloads.adblockplus.org/fanboy-cookiemonster.txt"]),
     ]
     static let malware = [
         Source(name: "badware", urls: ["https://raw.githubusercontent.com/uBlockOrigin/uAssets/master/filters/badware.txt"]),

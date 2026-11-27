@@ -129,6 +129,10 @@ final class BrowserTab: NSObject, ObservableObject, Identifiable {
             blocked = nil
             failure = nil
             w.goBack()
+        } else if !showsHome, let from = openedFrom, let b = browser, b.tabs.contains(where: { $0.id == from }) {
+            // A page opened from another tab (a link in a new tab, a pop-up) has nowhere back but that tab:
+            // the tab closes and the one it came from is shown, as in Safari
+            b.close(self)
         } else {
             showsHome = true
         }

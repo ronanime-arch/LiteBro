@@ -23,6 +23,8 @@ static class Associations
 
     // The names up to 1.9.6, when this browser was LiteBrowser
     public const string OldAppName = "LiteBrowser";
+    /// <summary>Set by the installer: Claude's MCP bridges (LiteBro.exe mcp) exit, so their exe can be replaced.</summary>
+    public const string QuitEvent = AppName + "-quit";
     public const string OldProgId = "LiteBrowserURL";
     const string OldStateKey = @"Software\" + OldAppName;
 

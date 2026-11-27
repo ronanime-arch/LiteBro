@@ -42,6 +42,9 @@ struct SettingsView: View {
 
                 Section {
                     Toggle(L("Блокировать рекламу и телеметрию"), isOn: Binding(get: { browser.adBlock }, set: { browser.setAdBlock($0) }))
+                    if browser.adBlock {
+                        Toggle(L("Скрывать окна про cookie"), isOn: Binding(get: { Prefs.hideCookies }, set: { browser.setHideCookies($0) }))
+                    }
                     Toggle(L("Защита от вредных сайтов"), isOn: Binding(get: { Prefs.protect }, set: { browser.setProtect($0) }))
                     if !Prefs.adBlockOff.isEmpty {
                         NavigationLink(L("Сайты без блокировки")) { AdBlockSites() }
@@ -63,7 +66,7 @@ struct SettingsView: View {
                 } header: {
                     Text(L("Защита"))
                 } footer: {
-                    Text(L("Реклама и счётчики — списки EasyList, RU AdList и EasyPrivacy, их применяет сам движок, почти без затрат памяти; реклама в видео YouTube проматывается. Вредные сайты — списки uBlock Badware, URLhaus и Phishing Army и проверка Safe Browsing: такой сайт не откроется без вашего согласия. Списки обновляются раз в 4 дня."))
+                    Text(L("Реклама, счётчики и окна про cookie — списки EasyList, RU AdList, EasyPrivacy и EasyList Cookie, их применяет сам движок, почти без затрат памяти; реклама в видео YouTube проматывается. Вредные сайты — списки uBlock Badware, URLhaus и Phishing Army и проверка Safe Browsing: такой сайт не откроется без вашего согласия. Списки обновляются раз в 4 дня."))
                 }
 
                 Section {

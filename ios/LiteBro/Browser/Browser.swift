@@ -23,6 +23,7 @@ final class Browser: NSObject, ObservableObject {
     var current: BrowserTab? { tabs.first { $0.id == currentID } ?? tabs.first }
     /// The one the app shows, for the computer's test commands (`Remote`)
     static weak var live: Browser?
+    private static var saidNoSwitch = false
 
     override init() {
         super.init()
@@ -77,8 +78,10 @@ final class Browser: NSObject, ObservableObject {
             // that paints an image of certain sizes (100 or 200 points wide, as Wikipedia's logo) stops drawing
             // for good: the old picture stays, also on the next sites. Found on the user's iPhone, iOS 16.2,
             // 2026-11-27, with the test web views (`Probe`): with the switch off Wikipedia and ChatGPT draw.
-            if ProcessInfo.processInfo.operatingSystemVersion.majorVersion < 17 {
-                Probe.set("UseGPUProcessForDOMRenderingEnabled", false, in: c.preferences)
+            if ProcessInfo.processInfo.operatingSystemVersion.majorVersion < 17,
+               !Probe.set("UseGPUProcessForDOMRenderingEnabled", false, in: c.preferences), !Browser.saidNoSwitch {
+                Browser.saidNoSwitch = true
+                Debug.write("!! WebKit has no switch UseGPUProcessForDOMRenderingEnabled: pages may stop drawing")
             }
             return c
         }()
@@ -133,6 +136,7 @@ final class Browser: NSObject, ObservableObject {
     func openPopup(configuration: WKWebViewConfiguration, from: BrowserTab) -> WKWebView {
         let tab = BrowserTab(url: nil, browser: self)
         tab.showsHome = false
+        tab.opener = from.id
         insert(tab, after: from)
         let w = tab.ensureWebView(load: false, adopting: makeWebView(configuration: configuration))
         show(tab)
@@ -286,7 +290,7 @@ final class Browser: NSObject, ObservableObject {
             }
             var rebuilt = false
             if ads {
-                let fresh = await FilterLists.refresh(FilterLists.ads, force: force)
+                let fresh = await FilterLists.refresh(FilterLists.adSources, force: force)
                 if fresh || FilterLists.built() == nil {
                     await MainActor.run { self?.listsState = L("Готовлю правила…") }
                     rebuilt = Debug.guarded("build-lists") { FilterLists.build() }
@@ -301,6 +305,13 @@ final class Browser: NSObject, ObservableObject {
                 self.objectWillChange.send()
             }
         }
+    }
+
+    /// The sites' "accept cookies?" windows: with or without their list, the rules are made again
+    func setHideCookies(_ on: Bool) {
+        UserDefaults.standard.set(on, forKey: Prefs.cookiesKey)
+        objectWillChange.send()
+        refreshLists(force: true)
     }
 
     func setProtect(_ on: Bool) {

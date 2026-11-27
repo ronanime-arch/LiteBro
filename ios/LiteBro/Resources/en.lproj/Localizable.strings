@@ -90,7 +90,7 @@
 "Попробовать ещё раз" = "Try again";
 "Правее" = "Move right";
 "Разрешённые сайты: x.com *.y.com" = "Allowed sites: x.com *.y.com";
-"Реклама и счётчики — списки EasyList, RU AdList и EasyPrivacy, их применяет сам движок, почти без затрат памяти; реклама в видео YouTube проматывается. Вредные сайты — списки uBlock Badware, URLhaus и Phishing Army и проверка Safe Browsing: такой сайт не откроется без вашего согласия. Списки обновляются раз в 4 дня." = "Ads and counters: the EasyList, RU AdList and EasyPrivacy lists, applied by the engine itself at almost no memory cost; video ads on YouTube are skipped. Harmful sites: the uBlock Badware, URLhaus and Phishing Army lists and the Safe Browsing check; such a site does not open without your consent. The lists update every 4 days.";
+"Реклама, счётчики и окна про cookie — списки EasyList, RU AdList, EasyPrivacy и EasyList Cookie, их применяет сам движок, почти без затрат памяти; реклама в видео YouTube проматывается. Вредные сайты — списки uBlock Badware, URLhaus и Phishing Army и проверка Safe Browsing: такой сайт не откроется без вашего согласия. Списки обновляются раз в 4 дня." = "Ads, counters and cookie windows: the EasyList, RU AdList, EasyPrivacy and EasyList Cookie lists, applied by the engine itself at almost no memory cost; video ads on YouTube are skipped. Harmful sites: the uBlock Badware, URLhaus and Phishing Army lists and the Safe Browsing check; such a site does not open without your consent. The lists update every 4 days.";
 "Сайт есть в списках вредоносных и фишинговых сайтов: он может украсть пароли и данные карт или заразить устройство." = "The site is on lists of malicious and phishing sites: it may steal passwords and card details or infect the device.";
 "Сайт не отвечает" = "The site does not respond";
 "Сайты без блокировки" = "Sites without blocking";
@@ -282,3 +282,4 @@
 "Добавить компьютер в терминал?" = "Add this computer to the terminal?";
 "Запомненный ключ этого компьютера будет заменён. Соглашайтесь, только если сами сканируете код с его экрана." = "The remembered key of this computer will be replaced. Agree only if you are scanning the code from its screen yourself.";
 "Пользователь" = "User";
+"Скрывать окна про cookie" = "Hide cookie windows";

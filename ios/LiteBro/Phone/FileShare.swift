@@ -216,10 +216,14 @@ private final class DAVHandler: HTTPHandler {
             if name == "shot" {
                 // LiteBro's own screen as a picture: its screens are checked from the computer without the
                 // screen recording (which shows the whole phone and needs its own address)
-                guard let jpeg = DispatchQueue.main.sync(execute: { Remote.shot() })
-                else { return channel.respond(409, keepAlive: keepAlive) }
-                return channel.respond(200, headers: [("Content-Type", "image/jpeg"), ("Cache-Control", "no-store")],
-                                       body: jpeg, keepAlive: keepAlive)
+                // (asked of the main thread without waiting for it here: closing the access from the main
+                // thread waits for this queue, and the two would wait for each other)
+                DispatchQueue.main.async {
+                    guard let jpeg = Remote.shot() else { return channel.respond(409, keepAlive: keepAlive) }
+                    channel.respond(200, headers: [("Content-Type", "image/jpeg"), ("Cache-Control", "no-store")],
+                                    body: jpeg, keepAlive: keepAlive)
+                }
+                return
             }
             Remote.run(name, m) { status, json in
                 channel.respond(status, headers: [("Content-Type", "application/json; charset=utf-8")],

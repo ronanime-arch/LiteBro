@@ -78,7 +78,10 @@ enum Remote {
 
     /// The windows of LiteBro as they are on the screen, one over another (menus and alerts have their own)
     static func shot() -> Data? {
-        let windows = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.flatMap(\.windows)
+        let scenes = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+        // The scene in use (an iPad may hold several)
+        guard let scene = scenes.first(where: { $0.activationState == .foregroundActive }) ?? scenes.first else { return nil }
+        let windows = scene.windows
             .filter { !$0.isHidden && $0.alpha > 0 }.sorted { $0.windowLevel.rawValue < $1.windowLevel.rawValue }
         guard let first = windows.first else { return nil }
         let format = UIGraphicsImageRendererFormat()

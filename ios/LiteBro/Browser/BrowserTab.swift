@@ -36,6 +36,9 @@ final class BrowserTab: NSObject, ObservableObject, Identifiable {
     var lastShown = Date()
     /// The tab it was opened from: new tabs line up after it
     var openedFrom: UUID?
+    /// The tab whose page opened this one (a link in a new tab, a pop-up): Back from its first page returns there.
+    /// Not `openedFrom`: "open all" of a folder also lines its tabs up one after another.
+    var opener: UUID?
     private var history: Any?          // WKWebView.interactionState of an unloaded tab
     private var processEnded: Date?    // when iOS last killed the page for memory
     /// The tiles are shown as the place before the first page (Back led there), not over a page
@@ -125,6 +128,13 @@ final class BrowserTab: NSObject, ObservableObject, Identifiable {
         if danger != nil {
             danger = nil
             if webView?.url == nil { showsHome = true }
+        } else if failure != nil || blocked != nil, let w = webView, let under = w.url {
+            // A page that did not open left the one before it in place (a failed load is not in the
+            // history): Back takes the notice away and shows that page, it does not go one more back
+            failure = nil
+            blocked = nil
+            outOfMemory = false
+            url = under
         } else if showsHome, webView?.url != nil, !homeIsStart {
             // The tiles were opened over a page by their button: Back closes them
             showsHome = false
@@ -134,9 +144,10 @@ final class BrowserTab: NSObject, ObservableObject, Identifiable {
             blocked = nil
             failure = nil
             w.goBack()
-        } else if !showsHome, let from = openedFrom, let b = browser, b.tabs.contains(where: { $0.id == from }) {
-            // A page opened from another tab (a link in a new tab, a pop-up) has nowhere back but that tab:
-            // the tab closes and the one it came from is shown, as in Safari
+        } else if !showsHome, let from = opener, let b = browser, b.tabs.contains(where: { $0.id == from }) {
+            // A page a site opened in a new tab (target=_blank, a pop-up) has nowhere back but the tab it
+            // came from: this one closes and that one is shown, as in Safari
+            openedFrom = from
             b.close(self)
         } else {
             // Back from the first page: the tiles, as the place before it. Forward returns to the page.
@@ -157,6 +168,7 @@ final class BrowserTab: NSObject, ObservableObject, Identifiable {
 
     /// The tiles by their button, over the page: Back returns to it
     func showHome() {
+        if showsHome { return }
         homeIsStart = false
         showsHome = true
     }

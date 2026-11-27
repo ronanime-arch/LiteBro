@@ -56,8 +56,10 @@ struct TabScreen: View {
                 } else if let w = tab.webView {
                     WebContainer(webView: w)
                     if let f = tab.failure {
-                        Notice(icon: tab.outOfMemory ? "memorychip" : "wifi.exclamationmark",
-                               title: tab.outOfMemory ? L("Странице не хватило памяти телефона") : L("Сайт не отвечает"),
+                        Notice(icon: tab.processEnd == .memory ? "memorychip"
+                                     : tab.processEnd == .crash ? "exclamationmark.triangle" : "wifi.exclamationmark",
+                               title: tab.processEnd == .memory ? L("Странице не хватило памяти телефона")
+                                      : tab.processEnd == .crash ? L("Страница закрылась с ошибкой") : L("Сайт не отвечает"),
                                detail: (tab.url?.absoluteString ?? "") + "\n" + f, action: L("Попробовать ещё раз")) {
                             tab.reload()
                         }

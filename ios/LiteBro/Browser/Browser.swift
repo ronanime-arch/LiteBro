@@ -23,7 +23,7 @@ final class Browser: NSObject, ObservableObject {
     var current: BrowserTab? { tabs.first { $0.id == currentID } ?? tabs.first }
     /// The one the app shows, for the computer's test commands (`Remote`)
     static weak var live: Browser?
-    private static var saidNoSwitch = false
+    private static var saidNoSwitch = Set<String>()
 
     override init() {
         super.init()
@@ -74,14 +74,18 @@ final class Browser: NSObject, ObservableObject {
             c.applicationNameForUserAgent = "Version/\(v.majorVersion).\(v.minorVersion) Mobile/15E148 Safari/604.1"
             // Safe Browsing of WebKit: hashed address prefixes are checked through Apple
             c.preferences.isFraudulentWebsiteWarningEnabled = Prefs.protect
-            // In LiteBro on iOS 16 WebKit draws pages in its GPU process (the switch reads on), and then a tab
-            // that paints an image of certain sizes (100 or 200 points wide, as Wikipedia's logo) stops drawing
-            // for good: the old picture stays, also on the next sites. Found on the user's iPhone, iOS 16.2,
-            // 2026-11-27, with the test web views (`Probe`): with the switch off Wikipedia and ChatGPT draw.
-            if ProcessInfo.processInfo.operatingSystemVersion.majorVersion < 17,
-               !Probe.set("UseGPUProcessForDOMRenderingEnabled", false, in: c.preferences), !Browser.saidNoSwitch {
-                Browser.saidNoSwitch = true
-                Debug.write("!! WebKit has no switch UseGPUProcessForDOMRenderingEnabled: pages may stop drawing")
+            // In LiteBro on iOS 16 WebKit's GPU process is not to be trusted with pages (found on the user's
+            // iPhone, iOS 16.2, 2026-11-27, with the test web views, `Probe`; a default WKWebView fails the same):
+            // - drawing the page there: a tab that paints an image of certain sizes (100 or 200 points wide, as
+            //   Wikipedia's logo) stops drawing for good, also on the next sites (Wikipedia, ChatGPT);
+            // - drawing a canvas there: an emoji drawn on a canvas ends the page's process, every time. Fraud
+            //   checks do that (PayPal's sign-in and checkout), so the page died twice and said "out of memory".
+            // With both off the page and its canvases are drawn in the page's own process, as before iOS 16.
+            if ProcessInfo.processInfo.operatingSystemVersion.majorVersion < 17 {
+                for key in ["UseGPUProcessForDOMRenderingEnabled", "UseGPUProcessForCanvasRenderingEnabled"]
+                where !Probe.set(key, false, in: c.preferences) && Browser.saidNoSwitch.insert(key).inserted {
+                    Debug.write("!! WebKit has no switch \(key): pages may stop drawing or end")
+                }
             }
             return c
         }()
@@ -390,9 +394,17 @@ extension Browser {
             if !vault.logins(for: host).isEmpty { tab.offer = .login(host: host, frame: message.frameInfo) }
         case "card":
             if !vault.cards.isEmpty && origin.protocol == "https" { tab.offer = .card(frame: message.frameInfo) }
+        case "ident":
+            // The name of a sign-in that asks the password on its next page
+            guard let user = body["user"] as? String, !user.isEmpty, user.count < 200 else { return }
+            tab.signingIn = (host, user, Date())
         case "save":
             guard let pass = body["pass"] as? String, !pass.isEmpty else { return }
-            let user = body["user"] as? String ?? ""
+            var user = body["user"] as? String ?? ""
+            if user.isEmpty, let s = tab.signingIn, Date().timeIntervalSince(s.at) < 600,
+               s.host == host || host.hasSuffix("." + s.host) || s.host.hasSuffix("." + host) {
+                user = s.user
+            }
             if Prefs.vaultNever.contains(host) || vault.isSaved(host: host, user: user, pass: pass) { return }
             tab.offer = .save(host: host, user: user, pass: pass)
         default: break

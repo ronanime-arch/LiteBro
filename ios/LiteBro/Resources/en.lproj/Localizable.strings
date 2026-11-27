@@ -279,6 +279,8 @@
 "Открыть в другом приложении?" = "Open in another app?";
 "Странице не хватило памяти телефона" = "The page ran out of the phone's memory";
 "Закройте другие вкладки и обновите страницу." = "Close other tabs and reload the page.";
+"Страница закрылась с ошибкой" = "The page closed with an error";
+"Страница закрывается снова после перезагрузки. Попробуйте ещё раз позже." = "The page closes again after reloading. Try again later.";
 "Добавить компьютер в терминал?" = "Add this computer to the terminal?";
 "Запомненный ключ этого компьютера будет заменён. Соглашайтесь, только если сами сканируете код с его экрана." = "The remembered key of this computer will be replaced. Agree only if you are scanning the code from its screen yourself.";
 "Пользователь" = "User";

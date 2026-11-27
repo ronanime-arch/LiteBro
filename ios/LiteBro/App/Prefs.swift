@@ -25,6 +25,8 @@ enum Prefs {
     static var videoToPhotos: Bool { d.object(forKey: photosKey) as? Bool ?? true }
     static let cookiesKey = "hideCookieWindows"  // the sites' "accept cookies?" windows, hidden by default
     static var hideCookies: Bool { d.object(forKey: cookiesKey) as? Bool ?? true }
+    static let appsKey = "openApps"          // links of sites with their app (PayPal) open in it, on by default
+    static var openApps: Bool { d.object(forKey: appsKey) as? Bool ?? true }
 
     /// Sites where LiteBro never offers to save a password
     static var vaultNever: [String] {

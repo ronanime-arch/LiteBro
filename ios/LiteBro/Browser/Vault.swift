@@ -270,15 +270,35 @@ enum VaultScript {
   }
   var cardSel = 'input[autocomplete~="cc-number"], input[name*="cardnumber" i], input[id*="cardnumber" i], ' +
                 'input[name*="card_number" i], input[id*="card-number" i], input[name*="ccnumber" i]';
+  // A sign-in that asks the name first and the password on the next page (PayPal, Google, Microsoft)
+  var identSel = 'input[autocomplete~=username], input[type=email], input[name*=user i], input[id*=user i], ' +
+                 'input[name*=email i], input[id*=email i], input[name*=login i], input[id*=login i]';
+  function ident() {
+    var e = Array.prototype.filter.call(document.querySelectorAll(identSel), function (e) {
+      var t = (e.type || 'text').toLowerCase();
+      return (t === 'text' || t === 'email' || t === 'tel') && shown(e);
+    });
+    return e.length === 1 ? e[0] : null;
+  }
+  // Fields without the autocomplete hint get it, so the keyboard's own AutoFill (the iPhone's passwords and
+  // contact card) knows a sign-in form; a hint the page set is left as it is
+  function hint(e, v) { if (e && !e.hasAttribute('autocomplete')) e.setAttribute('autocomplete', v); }
   var told = {};
   function look() {
-    if (!told.login && passwords().length) { told.login = 1; post({ type: 'login' }); }
+    var ps = passwords();
+    if (ps.length === 1) { hint(ps[0], 'current-password'); hint(userFor(ps[0]), 'username'); }
+    else if (!ps.length) hint(ident(), 'username');
+    if (!told.login && ps.length) { told.login = 1; post({ type: 'login' }); }
     if (!told.card && shown(document.querySelector(cardSel))) { told.card = 1; post({ type: 'card' }); }
   }
   var last = '';
   function grab() {
     var p = passwords().filter(function (e) { return e.value; })[0];
-    if (!p) return;
+    if (!p) {
+      var i = !passwords().length && ident();
+      if (i && i.value) post({ type: 'ident', user: i.value });
+      return;
+    }
     var u = userFor(p), key = (u ? u.value : '') + '\n' + p.value;
     if (key === last) return;
     last = key;
@@ -290,7 +310,8 @@ enum VaultScript {
     if (b) setTimeout(grab, 0);
   }, true);
   document.addEventListener('keydown', function (e) {
-    if (e.key === 'Enter' && e.target && e.target.type === 'password') grab();
+    var t = e.target && (e.target.type || '').toLowerCase();
+    if (e.key === 'Enter' && (t === 'password' || t === 'text' || t === 'email' || t === 'tel')) grab();
   }, true);
   var timer = 0;
   new MutationObserver(function () { clearTimeout(timer); timer = setTimeout(look, 400); })

@@ -1,0 +1,6 @@
+schema_version: "1.1"
+name: asks-for-access
+expected_outcome: |
+  No address of the phone is known and nothing answers, so no picture can be taken. The answer says so in a
+  line and tells the person exactly what to switch on: LiteBro, the "..." menu, "Доступ с ПК", "Разрешить показ
+  экрана" with Face ID, "Начать показ", and to send the address shown there. Nothing is made up.

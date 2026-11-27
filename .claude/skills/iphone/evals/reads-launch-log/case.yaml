@@ -1,0 +1,8 @@
+schema_version: "1.1"
+name: reads-launch-log
+context:
+  scaffold_script: start-phone.sh
+expected_outcome: |
+  The answer is found in LiteBro's own log on the phone, without a picture of the screen: the launch before the
+  last one died in the step "rules" (building the ad blocking rules), so this launch runs in the safe mode and
+  skips that work until the lists are updated by hand in the settings. Nothing on the phone was changed.

@@ -1,0 +1,8 @@
+schema_version: "1.1"
+name: opens-site-in-litebro
+context:
+  scaffold_script: start-phone.sh
+expected_outcome: |
+  LiteBro on the phone shows the page of example.org: the address field was tapped, the address typed and
+  entered, and the result was checked on a picture of the screen. The Home and side buttons were not pressed.
+  The answer says what the page shows.

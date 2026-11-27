@@ -47,22 +47,37 @@ final class SSHStore: ObservableObject {
     /// From the QR code of LiteBro on Windows: litebro://ssh?host=…&port=…&user=…&name=…&fp=SHA256:…
     /// The code comes from the computer itself, so its key replaces a remembered one.
     func add(from url: URL) -> SSHHost? {
+        guard let l = Self.link(url) else { return nil }
+        if var h = known(l) {
+            if let fp = l.fingerprint { h.fingerprint = fp }
+            if let n = l.name { h.name = n }
+            upsert(h)
+            return h
+        }
+        let h = SSHHost(name: l.name ?? l.host, host: l.host, port: l.port, user: l.user, fingerprint: l.fingerprint)
+        upsert(h)
+        return h
+    }
+
+    /// What a litebro://ssh link says
+    struct Link {
+        let host: String, user: String, port: Int
+        let fingerprint: String?, name: String?
+    }
+
+    static func link(_ url: URL) -> Link? {
         guard url.scheme?.lowercased() == "litebro", url.host?.lowercased() == "ssh",
               let items = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems else { return nil }
         func value(_ k: String) -> String? { items.first { $0.name == k }?.value.flatMap { $0.isEmpty ? nil : $0 } }
         guard let host = value("host"), let user = value("user"),
               host.range(of: "^[A-Za-z0-9.:%-]+$", options: .regularExpression) != nil else { return nil }
-        let port = value("port").flatMap(Int.init) ?? 22
-        let fp = value("fp").flatMap { $0.hasPrefix("SHA256:") ? $0 : nil }
-        if var h = hosts.first(where: { $0.host == host && $0.user == user && $0.port == port }) {
-            if let fp { h.fingerprint = fp }
-            if let n = value("name") { h.name = n }
-            upsert(h)
-            return h
-        }
-        let h = SSHHost(name: value("name") ?? host, host: host, port: port, user: user, fingerprint: fp)
-        upsert(h)
-        return h
+        return Link(host: host, user: user, port: value("port").flatMap(Int.init) ?? 22,
+                    fingerprint: value("fp").flatMap { $0.hasPrefix("SHA256:") ? $0 : nil }, name: value("name"))
+    }
+
+    /// The computer of a link, when LiteBro has it already
+    func known(_ l: Link) -> SSHHost? {
+        hosts.first { $0.host == l.host && $0.user == l.user && $0.port == l.port }
     }
 
     // MARK: Password

@@ -35,6 +35,7 @@ final class BrowserTab: NSObject, ObservableObject, Identifiable {
     /// The tab it was opened from: new tabs line up after it
     var openedFrom: UUID?
     private var history: Any?          // WKWebView.interactionState of an unloaded tab
+    private var processEnded: Date?    // when iOS last killed the page for memory
     private var watches: [NSKeyValueObservation] = []
 
     init(url: URL?, browser: Browser) {
@@ -262,9 +263,13 @@ extension BrowserTab: WKNavigationDelegate {
         if action.shouldPerformDownload { return decisionHandler(.download) }
         let scheme = u.scheme?.lowercased() ?? ""
         if !["http", "https", "about", "data", "blob", "file"].contains(scheme) {
-            // tel:, mailto:, App Store and other apps
-            UIApplication.shared.open(u)
-            return decisionHandler(.cancel)
+            // tel:, mailto:, App Store and other apps: only the page itself (not a frame of it), and only after
+            // the person agrees. Without the sandbox (TrollStore) a page could otherwise start any app's command
+            // by itself: TrollStore's own "install this" (apple-magnifier://), LiteBro's litebro://ssh.
+            decisionHandler(.cancel)
+            guard action.targetFrame?.isMainFrame ?? true, !["litebro", "apple-magnifier"].contains(scheme) else { return }
+            askToLeave(u)
+            return
         }
         if Prefs.localOnly && !LocalNet.permits(u) {
             if action.targetFrame?.isMainFrame ?? true { blocked = u }
@@ -341,6 +346,14 @@ extension BrowserTab: WKNavigationDelegate {
     func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
         // iOS killed the page for memory: load it again
         Debug.write("page process ended: \(webView.url?.host ?? "?"), \(Debug.memoryMB()) MB")
+        // A page too heavy for the phone dies again right after the reload: the second time in a minute it stays down
+        let now = Date()
+        if let last = processEnded, now.timeIntervalSince(last) < 60 {
+            processEnded = nil
+            failure = L("Странице не хватило памяти телефона. Закройте другие вкладки и обновите её.")
+            return
+        }
+        processEnded = now
         webView.reload()
     }
 }
@@ -379,6 +392,16 @@ extension BrowserTab: WKUIDelegate {
         a.addAction(UIAlertAction(title: L("Отмена"), style: .cancel) { _ in completionHandler(nil) })
         a.addAction(UIAlertAction(title: "OK", style: .default) { _ in completionHandler(a.textFields?.first?.text) })
         present(a) { completionHandler(nil) }
+    }
+
+    /// Another app for this address? Asked every time, with the address as it is
+    fileprivate func askToLeave(_ u: URL) {
+        let text = u.absoluteString
+        let a = UIAlertController(title: L("Открыть в другом приложении?"),
+                                  message: text.count > 200 ? String(text.prefix(200)) + "…" : text, preferredStyle: .alert)
+        a.addAction(UIAlertAction(title: L("Отмена"), style: .cancel))
+        a.addAction(UIAlertAction(title: L("Открыть"), style: .default) { _ in UIApplication.shared.open(u) })
+        present(a) {}
     }
 
     /// Shows a question over everything; `nobody` runs when there is nothing to show it on

@@ -276,3 +276,7 @@
 "Начать показ" = "Start sharing";
 "Порты 8080–8089 заняты. Скорее всего, доступ с ПК уже включён в другой сборке LiteBro (например, Debug): выключите его там или закройте её." = "Ports 8080–8089 are taken. PC access is most likely already on in another LiteBro build (such as Debug): turn it off there or close it.";
 "Команду установки примет не TrollStore: включите в настройках TrollStore схему URL (URL Scheme)." = "The install command would not go to TrollStore: turn on its URL scheme in TrollStore's settings.";
+"Открыть в другом приложении?" = "Open in another app?";
+"Странице не хватило памяти телефона. Закройте другие вкладки и обновите её." = "The page ran out of the phone's memory. Close other tabs and reload it.";
+"Добавить компьютер в терминал?" = "Add this computer to the terminal?";
+"Запомненный ключ этого компьютера будет заменён. Соглашайтесь, только если сами сканируете код с его экрана." = "The remembered key of this computer will be replaced. Agree only if you are scanning the code from its screen yourself.";

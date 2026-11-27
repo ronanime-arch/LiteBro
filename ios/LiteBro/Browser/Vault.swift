@@ -1,3 +1,4 @@
+import CommonCrypto
 import CryptoKit
 import Foundation
 import LocalAuthentication
@@ -14,7 +15,8 @@ final class Vault: ObservableObject {
     struct Login: Identifiable, Hashable {
         let host: String
         let user: String
-        /// salt:sha256 of the password, to know a form sends the same one without asking Face ID
+        /// A salted slow hash of the password ("p2:salt:hex", PBKDF2), to know a form sends the same one
+        /// without asking Face ID; passwords saved before 2026-11-27 have "salt:sha256" until saved again
         let check: String
         var id: String { host + "\n" + user }
     }
@@ -71,10 +73,29 @@ final class Vault: ObservableObject {
 
     // MARK: Passwords
 
+    /// The keychain keeps this next to the password but outside its Face ID lock, so it must not be a fast
+    /// hash: who reads the keychain's attributes would try passwords by the million against it
     static func checksum(_ pass: String, salt: String? = nil) -> String {
         let s = salt ?? UUID().uuidString
-        let d = SHA256.hash(data: Data((s + pass).utf8))
-        return s + ":" + d.map { String(format: "%02x", $0) }.joined()
+        let p = Array(pass.utf8CString.dropLast()), saltBytes = Array(s.utf8)
+        var out = [UInt8](repeating: 0, count: 32)
+        let status = CCKeyDerivationPBKDF(CCPBKDFAlgorithm(kCCPBKDF2), p, p.count, saltBytes, saltBytes.count,
+                                          CCPseudoRandomAlgorithm(kCCPRFHmacAlgSHA256), 150_000, &out, out.count)
+        guard status == kCCSuccess else { return "" }
+        return "p2:" + s + ":" + out.map { String(format: "%02x", $0) }.joined()
+    }
+
+    /// The same for a check written by an older build
+    private static func oldChecksum(_ pass: String, salt: String) -> String {
+        let d = SHA256.hash(data: Data((salt + pass).utf8))
+        return salt + ":" + d.map { String(format: "%02x", $0) }.joined()
+    }
+
+    private static func matches(_ pass: String, _ check: String) -> Bool {
+        let parts = check.split(separator: ":").map(String.init)
+        if parts.count == 3, parts[0] == "p2" { return checksum(pass, salt: parts[1]) == check }
+        if parts.count == 2 { return oldChecksum(pass, salt: parts[0]) == check }
+        return false
     }
 
     /// Saved logins for a site: the same host, or one above or below it (accounts.x.com and x.com)
@@ -85,7 +106,7 @@ final class Vault: ObservableObject {
 
     func isSaved(host: String, user: String, pass: String) -> Bool {
         logins(for: host).contains { l in
-            l.user == user && l.check.split(separator: ":").first.map { Self.checksum(pass, salt: String($0)) == l.check } == true
+            l.user == user && Self.matches(pass, l.check)
         }
     }
 

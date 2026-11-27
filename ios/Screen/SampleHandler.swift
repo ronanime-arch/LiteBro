@@ -14,12 +14,15 @@ final class SampleHandler: RPBroadcastSampleHandler {
     /// Checks every second that LiteBro still allows the showing: «Запретить показ» or the end of its time stop it
     /// even while the screen does not change (no frames come then, so the frame handler cannot notice)
     private var watchdog: DispatchSourceTimer?
+    /// «Запретить показ» from the app, heard at once (`ScreenShare.revoke`)
+    private var revokeWatch: Int32 = NOTIFY_TOKEN_INVALID
+    private var stopped = false
 
     override func broadcastStarted(withSetupInfo setupInfo: [String: NSObject]?) {
         ScreenShare.setState("starting")
         guard let token = ScreenShare.token else {
             ScreenShare.setState("no-token")
-            return stop(T("Сначала включите показ экрана в LiteBro: меню «…» → «Доступ с ПК».", "Turn on screen sharing in LiteBro first: “…” menu → “Access from PC”."))
+            return stop(T("Сначала включите показ экрана в LiteBro: меню «…» → «Доступ с ПК».", "Turn on screen sharing in LiteBro first: “…” menu → “Access from PC”."), off: false)
         }
         let store = frames
         do {
@@ -36,24 +39,38 @@ final class SampleHandler: RPBroadcastSampleHandler {
             }
             timer.resume()
             watchdog = timer
+            notify_register_dispatch(ScreenShare.revoked, &revokeWatch, DispatchQueue.global(qos: .utility)) { [weak self] _ in
+                self?.stop(T("Показ экрана запрещён в LiteBro.", "Screen sharing was turned off in LiteBro."))
+            }
         } catch {
             ScreenShare.setState("port: \(error)")
-            stop(T("Не удалось открыть порт", "Could not open port") + " \(ScreenShare.port)")
+            stop(T("Не удалось открыть порт", "Could not open port") + " \(ScreenShare.port)", off: false)
         }
     }
 
     override func broadcastFinished() {
+        shut()
+        ScreenShare.setState("off")
+    }
+
+    /// Nothing goes out any more: the address stops answering before iOS ends the extension
+    private func shut() {
         watchdog?.cancel()
         watchdog = nil
-        ScreenShare.setState("off")
+        if revokeWatch != NOTIFY_TOKEN_INVALID { notify_cancel(revokeWatch); revokeWatch = NOTIFY_TOKEN_INVALID }
         frames.close()
         server.stop()
     }
 
-    private func stop(_ why: String) {
-        watchdog?.cancel()
-        watchdog = nil
-        finishBroadcastWithError(NSError(domain: "LiteBro", code: 1, userInfo: [NSLocalizedDescriptionKey: why]))
+    /// `off`: the showing was on and ends here (a start that failed has left its own reason for the app)
+    private func stop(_ why: String, off: Bool = true) {
+        DispatchQueue.main.async { [self] in
+            if stopped { return }
+            stopped = true
+            shut()
+            if off { ScreenShare.setState("off") }
+            finishBroadcastWithError(NSError(domain: "LiteBro", code: 1, userInfo: [NSLocalizedDescriptionKey: why]))
+        }
     }
 
     override func processSampleBuffer(_ sampleBuffer: CMSampleBuffer, with type: RPSampleBufferType) {

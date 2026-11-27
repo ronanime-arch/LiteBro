@@ -48,6 +48,8 @@ final class MiniHTTP {
         guard let p = NWEndpoint.Port(rawValue: UInt16(port)) else { throw Failure.failed("bad port") }
         let params = NWParameters.tcp
         (params.defaultProtocolStack.transportProtocol as? NWProtocolTCP.Options)?.noDelay = true
+        // For the home network only: a mobile operator's address (IPv6 can be reached from the internet) gets no port
+        params.prohibitedInterfaceTypes = [.cellular]
         let l: NWListener
         do { l = try NWListener(using: params, on: p) } catch { throw Self.map(error) }
 

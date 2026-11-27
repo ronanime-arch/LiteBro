@@ -38,6 +38,8 @@ final class BrowserTab: NSObject, ObservableObject, Identifiable {
     var openedFrom: UUID?
     private var history: Any?          // WKWebView.interactionState of an unloaded tab
     private var processEnded: Date?    // when iOS last killed the page for memory
+    /// The tiles are shown as the place before the first page (Back led there), not over a page
+    @Published private(set) var homeIsStart = false
     /// A test tab from the computer (`Probe`): its web view is not swapped for a usual one behind the tester's back
     var keepsWebView = false
     private var watches: [NSKeyValueObservation] = []
@@ -123,8 +125,11 @@ final class BrowserTab: NSObject, ObservableObject, Identifiable {
         if danger != nil {
             danger = nil
             if webView?.url == nil { showsHome = true }
-        } else if showsHome, webView?.url != nil {
+        } else if showsHome, webView?.url != nil, !homeIsStart {
+            // The tiles were opened over a page by their button: Back closes them
             showsHome = false
+        } else if showsHome {
+            // The tiles as the start of the history (or a new tab): nothing before them
         } else if let w = webView, w.canGoBack {
             blocked = nil
             failure = nil
@@ -134,15 +139,30 @@ final class BrowserTab: NSObject, ObservableObject, Identifiable {
             // the tab closes and the one it came from is shown, as in Safari
             b.close(self)
         } else {
+            // Back from the first page: the tiles, as the place before it. Forward returns to the page.
+            homeIsStart = true
             showsHome = true
         }
     }
 
     func goForward() {
+        if showsHome {
+            if homeIsStart, webView?.url != nil { showsHome = false }
+            return
+        }
         blocked = nil
         failure = nil
         webView?.goForward()
     }
+
+    /// The tiles by their button, over the page: Back returns to it
+    func showHome() {
+        homeIsStart = false
+        showsHome = true
+    }
+
+    var canGoBackNow: Bool { showsHome ? (webView?.url != nil && !homeIsStart) : true }
+    var canGoForwardNow: Bool { showsHome ? (homeIsStart && webView?.url != nil) : canGoForward }
 
     // MARK: Media
 

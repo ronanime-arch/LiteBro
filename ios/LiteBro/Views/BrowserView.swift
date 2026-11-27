@@ -210,10 +210,10 @@ struct Toolbar: View {
     var body: some View {
         HStack {
             button("chevron.backward", L("Назад")) { tab.goBack() }
-                .disabled(tab.showsHome && tab.webView?.url == nil)
+                .disabled(!tab.canGoBackNow)
             button("chevron.forward", L("Вперёд")) { tab.goForward() }
-                .disabled(!tab.canGoForward || tab.showsHome)
-            button("house", L("Плитки")) { tab.showsHome = true }
+                .disabled(!tab.canGoForwardNow)
+            button("house", L("Плитки")) { tab.showHome() }
             Button { tab.rescan(); sheet = .media } label: {
                 Image(systemName: "arrow.down.circle")
                     .overlay(alignment: .topTrailing) { badge(tab.media.count) }

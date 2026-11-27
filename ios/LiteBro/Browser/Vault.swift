@@ -274,12 +274,27 @@ enum VaultScript {
   // the one name field of a small form with a button
   var identSel = 'input[autocomplete~=username], input[type=email], input[name*=user i], input[id*=user i], ' +
                  'input[name*=email i], input[id*=email i], input[name*=login i], input[id*=login i]';
+  // A form that says it is a sign-in (its address, names or buttons), not a newsletter or a search
+  var signIn = /log.?in|sign.?in|auth|account|next|continue|войти|вход|далее|продолжить|увійти|далі/i;
+  function looksSignIn(f) {
+    var b = f.querySelector('button, input[type=submit], [role=button]');
+    if (!b) return false;
+    var words = [f.getAttribute('action'), f.id, f.className, f.getAttribute('name'), b.textContent, b.value,
+                 b.id, b.getAttribute('name')].join(' ');
+    return signIn.test(words) && !signUp.test(words);
+  }
+  // A sign-up or a new password: the keyboard offers a new strong password there, not the saved ones
+  var signUp = /sign.?up|regist|create|new.?pass|confirm|join|регистр|созда|новый пароль/i;
+  function looksSignUp(p) {
+    var f = p.form || document;
+    return signUp.test([p.id, p.getAttribute('name'), f.id, f.className, f.getAttribute && f.getAttribute('action')].join(' '));
+  }
   function ident(form) {
     var forms = form ? [form] : Array.prototype.slice.call(document.forms);
     var found = [];
     forms.forEach(function (f) {
       var inputs = Array.prototype.filter.call(f.querySelectorAll('input:not([type=hidden])'), shown);
-      if (inputs.length > 3 || !f.querySelector('button, input[type=submit], [role=button]')) return;
+      if (inputs.length > 3 || !looksSignIn(f)) return;
       Array.prototype.forEach.call(f.querySelectorAll(identSel), function (e) {
         var t = (e.type || 'text').toLowerCase();
         if ((t === 'text' || t === 'email' || t === 'tel') && shown(e)) found.push(e);
@@ -293,7 +308,7 @@ enum VaultScript {
   var told = {};
   function look() {
     var ps = passwords();
-    if (ps.length === 1) {
+    if (ps.length === 1 && !looksSignUp(ps[0])) {
       hint(ps[0], 'current-password');
       var u = userFor(ps[0]);
       if (u && ps[0].form && u.form === ps[0].form) hint(u, 'username');

@@ -23,8 +23,10 @@ final class BrowserTab: NSObject, ObservableObject, Identifiable {
     /// A page on the lists of malicious or phishing sites, not opened
     @Published var danger: URL?
     /// What the bar above the toolbar offers: logins, saving a password, a card
-    @Published var offer: Offer? { didSet { offerKept = false } }
-    private var offerKept = false
+    @Published var offer: Offer? {
+        didSet { if case .save = offer { saveAskedAt = Date() } else { saveAskedAt = nil } }
+    }
+    private var saveAskedAt: Date?
     /// The page console (PageConsole), cleared with each new page
     @Published var console: [ConsoleLine] = []
 
@@ -35,7 +37,7 @@ final class BrowserTab: NSObject, ObservableObject, Identifiable {
     }
     @Published private(set) var webView: WKWebView?
     /// The name typed on the first page of a two-step sign-in, for saving the password of the next one
-    var signingIn: (host: String, user: String, at: Date)?
+    var signingIn: (host: String, user: String, at: Date, pages: Int)?
 
     var lastShown = Date()
     /// The tab it was opened from: new tabs line up after it
@@ -45,6 +47,7 @@ final class BrowserTab: NSObject, ObservableObject, Identifiable {
     var opener: UUID?
     private var history: Any?          // WKWebView.interactionState of an unloaded tab
     private var processEnded: Date?    // when the page's process last ended
+    private var endedWithReason: Date?
     /// The tiles are shown as the place before the first page (Back led there), not over a page
     @Published private(set) var homeIsStart = false
     /// A test tab from the computer (`Probe`): its web view is not swapped for a usual one behind the tester's back
@@ -361,7 +364,10 @@ extension BrowserTab: WKNavigationDelegate {
     /// The last two parts of a host (shop.amazon.com and www.amazon.com are one site); on co.uk and the like
     /// that joins sites, so a link there rather stays in the browser than leaves it
     private static func site(_ host: String) -> String {
-        host.lowercased().split(separator: ".").suffix(2).joined(separator: ".")
+        let h = host.lowercased()
+        // An address is a site of its own
+        if h.contains(":") || h.allSatisfy({ $0.isNumber || $0 == "." }) { return h }
+        return h.split(separator: ".").suffix(2).joined(separator: ".")
     }
 
     func webView(_ webView: WKWebView, decidePolicyFor response: WKNavigationResponse,
@@ -394,8 +400,11 @@ extension BrowserTab: WKNavigationDelegate {
     func webView(_ webView: WKWebView, didCommit navigation: WKNavigation!) {
         media.removeAll()
         masters.removeAll()
-        // "Save the password?" stays over the next page only: a sign-in sends it and goes there at once
-        if case .save = offer, !offerKept { offerKept = true } else { offer = nil; offerKept = false }
+        // "Save the password?" stays over the pages a sign-in goes to at once (with their redirects), not over
+        // a page opened later
+        if case .save = offer, let t = saveAskedAt, Date().timeIntervalSince(t) < 15 {} else { offer = nil }
+        // The name of a first sign-in step is for the next page only
+        if var s = signingIn { s.pages += 1; signingIn = s.pages > 1 ? nil : s }
         mseDuration = nil
         console.removeAll()
         browser?.saveSession()
@@ -420,6 +429,8 @@ extension BrowserTab: WKNavigationDelegate {
     }
 
     func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
+        // WebKit calls only one of the two; should one call both, the end counts once
+        if let t = endedWithReason, Date().timeIntervalSince(t) < 2 { return }
         pageProcessEnded(webView, reason: nil)
     }
 
@@ -427,6 +438,7 @@ extension BrowserTab: WKNavigationDelegate {
     /// limit, 1 the CPU limit, 2 asked by the app, 3 a crash). WebKit calls this one instead when it is there.
     @objc(_webView:webContentProcessDidTerminateWithReason:)
     func webContentProcessDidTerminate(_ webView: WKWebView, reason: Int) {
+        endedWithReason = Date()
         pageProcessEnded(webView, reason: reason)
     }
 
@@ -449,8 +461,9 @@ extension BrowserTab: WKNavigationDelegate {
                 processEnd = .memory
                 failure = L("Закройте другие вкладки и обновите страницу.")
             } else {
+                // Not certainly not the memory: iOS may end the page's process without warning the app
                 processEnd = .crash
-                failure = L("Страница закрывается снова после перезагрузки. Попробуйте ещё раз позже.")
+                failure = L("Страница закрывается снова после перезагрузки. Закройте другие вкладки и попробуйте ещё раз.")
             }
             return
         }

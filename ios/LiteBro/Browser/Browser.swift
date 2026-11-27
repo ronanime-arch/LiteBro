@@ -402,7 +402,7 @@ extension Browser {
         case "ident":
             // The name of a sign-in that asks the password on its next page
             guard let user = body["user"] as? String, !user.isEmpty, user.count < 200 else { return }
-            tab.signingIn = (host, user, Date())
+            tab.signingIn = (host, user, Date(), 0)
         case "save":
             guard let pass = body["pass"] as? String, !pass.isEmpty else { return }
             var user = body["user"] as? String ?? ""

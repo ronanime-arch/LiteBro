@@ -73,6 +73,13 @@ final class Browser: NSObject, ObservableObject {
             c.applicationNameForUserAgent = "Version/\(v.majorVersion).\(v.minorVersion) Mobile/15E148 Safari/604.1"
             // Safe Browsing of WebKit: hashed address prefixes are checked through Apple
             c.preferences.isFraudulentWebsiteWarningEnabled = Prefs.protect
+            // In LiteBro on iOS 16 WebKit draws pages in its GPU process (the switch reads on), and then a tab
+            // that paints an image of certain sizes (100 or 200 points wide, as Wikipedia's logo) stops drawing
+            // for good: the old picture stays, also on the next sites. Found on the user's iPhone, iOS 16.2,
+            // 2026-11-27, with the test web views (`Probe`): with the switch off Wikipedia and ChatGPT draw.
+            if ProcessInfo.processInfo.operatingSystemVersion.majorVersion < 17 {
+                Probe.set("UseGPUProcessForDOMRenderingEnabled", false, in: c.preferences)
+            }
             return c
         }()
         let w = WKWebView(frame: .zero, configuration: c)

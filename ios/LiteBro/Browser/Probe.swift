@@ -82,7 +82,8 @@ enum Probe {
     }
 
     /// False when WebKit has no switch of this name
-    private static func set(_ key: String, _ on: Bool, in p: WKPreferences) -> Bool {
+    @discardableResult
+    static func set(_ key: String, _ on: Bool, in p: WKPreferences) -> Bool {
         guard let f = all().first(where: { $0.key == key }) else { return false }
         let sel = NSSelectorFromString(f.kind.setter)
         guard let m = class_getInstanceMethod(WKPreferences.self, sel) else { return false }

@@ -170,7 +170,7 @@ enum Touch {
         if responds { _ = app.perform(enqueue, with: event) }
         Unmanaged<AnyObject>.fromOpaque(one).release()
         Unmanaged<AnyObject>.fromOpaque(hand).release()
-        let hit = window?.hitTest(CGPoint(x: px, y: py), with: nil).map { String(describing: type(of: $0)) } ?? ""
+        let hit = window?.hitTest(CGPoint(x: px, y: py), with: nil).map { String(describing: Swift.type(of: $0)) } ?? ""
         return "{\"window\":\(window != nil),\"key\":\(window?.isKeyWindow ?? false),\"context\":\(context),"
             + "\"enqueue\":\(responds),\"x\":\(px),\"y\":\(py),\"hit\":\"\(hit)\"}"
     }
@@ -182,12 +182,12 @@ enum Touch {
         guard let window = keyWindow()?.1 else { return "{\"error\":\"no key window\"}" }
         let p = CGPoint(x: x * Double(window.bounds.width), y: y * Double(window.bounds.height))
         var view = window.hitTest(p, with: nil)
-        let hit = view.map { String(describing: type(of: $0)) } ?? ""
+        let hit = view.map { String(describing: Swift.type(of: $0)) } ?? ""
         while let v = view, !(v is UIControl) { view = v.superview }
         guard let control = view as? UIControl else { return "{\"hit\":\"\(hit)\",\"control\":null}" }
         if let s = control as? UISwitch { s.setOn(!s.isOn, animated: true); s.sendActions(for: .valueChanged) }
         else { control.sendActions(for: .touchUpInside); control.sendActions(for: .primaryActionTriggered) }
-        return "{\"hit\":\"\(hit)\",\"control\":\"\(String(describing: type(of: control)))\"}"
+        return "{\"hit\":\"\(hit)\",\"control\":\"\(String(describing: Swift.type(of: control)))\"}"
     }
 
     /// Text into whatever has the focus in this app (a field of LiteBro or of a page); "\b" deletes one character

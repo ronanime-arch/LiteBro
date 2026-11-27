@@ -91,6 +91,8 @@ final class Vault: ObservableObject {
         return salt + ":" + d.map { String(format: "%02x", $0) }.joined()
     }
 
+    private static func isOld(_ check: String) -> Bool { !check.hasPrefix("p2:") }
+
     private static func matches(_ pass: String, _ check: String) -> Bool {
         let parts = check.split(separator: ":").map(String.init)
         if parts.count == 3, parts[0] == "p2" { return checksum(pass, salt: parts[1]) == check }
@@ -105,9 +107,10 @@ final class Vault: ObservableObject {
     }
 
     func isSaved(host: String, user: String, pass: String) -> Bool {
-        logins(for: host).contains { l in
-            l.user == user && Self.matches(pass, l.check)
-        }
+        guard let l = logins(for: host).first(where: { $0.user == user && Self.matches(pass, $0.check) }) else { return false }
+        // Written again with the slow check (the password is in hand; nothing is asked)
+        if Self.isOld(l.check) { save(host: l.host, user: l.user, pass: pass) }
+        return true
     }
 
     func save(host: String, user: String, pass: String) {

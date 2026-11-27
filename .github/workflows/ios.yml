@@ -78,13 +78,15 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          # The same main build under the name the phone accepts for an update sent from the computer
+          cp LiteBro.tipa LiteBro-PC-install.tipa
           notes="LiteBro-iOS.zip для TrollStore на iOS 16: LiteBro.tipa — основная, ПК видит весь телефон, журнал запуска и падений встроен; LiteBro-Browser.tipa — можно сделать браузером по умолчанию, ПК видит только папку LiteBro. Заменяется после каждого изменения папки ios/ в main."
           if gh release view ios > /dev/null 2>&1; then
-            gh release upload ios LiteBro-iOS.zip --clobber
+            gh release upload ios LiteBro-iOS.zip LiteBro-PC-install.tipa --clobber
             gh release edit ios --notes "$notes"
             # Earlier builds put the bare .tipa there
             gh release delete-asset ios LiteBro.tipa --yes 2> /dev/null || true
           else
-            gh release create ios LiteBro-iOS.zip --target "$GITHUB_SHA" --prerelease \
+            gh release create ios LiteBro-iOS.zip LiteBro-PC-install.tipa --target "$GITHUB_SHA" --prerelease \
               --title "LiteBro для iOS (TrollStore)" --notes "$notes"
           fi

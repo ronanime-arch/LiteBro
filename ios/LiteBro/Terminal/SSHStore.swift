@@ -69,10 +69,19 @@ final class SSHStore: ObservableObject {
         guard url.scheme?.lowercased() == "litebro", url.host?.lowercased() == "ssh",
               let items = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems else { return nil }
         func value(_ k: String) -> String? { items.first { $0.name == k }?.value.flatMap { $0.isEmpty ? nil : $0 } }
+        // Plain short texts only: they are shown in the question, and a line break or a fake address in the
+        // user's name would push the real one out of sight
+        func plain(_ s: String, _ more: String) -> Bool {
+            s.count <= 64 && s.unicodeScalars.allSatisfy { CharacterSet.alphanumerics.contains($0) || more.unicodeScalars.contains($0) }
+        }
         guard let host = value("host"), let user = value("user"),
-              host.range(of: "^[A-Za-z0-9.:%-]+$", options: .regularExpression) != nil else { return nil }
-        return Link(host: host, user: user, port: value("port").flatMap(Int.init) ?? 22,
-                    fingerprint: value("fp").flatMap { $0.hasPrefix("SHA256:") ? $0 : nil }, name: value("name"))
+              host.count <= 253, host.range(of: "^[A-Za-z0-9.:%-]+$", options: .regularExpression) != nil,
+              plain(user, "._-\\ "),
+              let port = Optional(value("port").flatMap(Int.init) ?? 22), (1...65535).contains(port) else { return nil }
+        let fp = value("fp").flatMap { $0.hasPrefix("SHA256:") && $0.count <= 64
+            && $0.dropFirst(7).range(of: "^[A-Za-z0-9+/]+$", options: .regularExpression) != nil ? $0 : nil }
+        let name = value("name").flatMap { plain($0, "._- ()") ? $0 : nil }
+        return Link(host: host, user: user, port: port, fingerprint: fp, name: name)
     }
 
     /// The computer of a link, when LiteBro has it already

@@ -17,6 +17,8 @@ final class BrowserTab: NSObject, ObservableObject, Identifiable {
     /// A page the localhost-only mode did not let through
     @Published var blocked: URL?
     @Published var failure: String?
+    /// The failure is the phone's memory, not the network
+    @Published var outOfMemory = false
     /// A page on the lists of malicious or phishing sites, not opened
     @Published var danger: URL?
     /// What the bar above the toolbar offers: logins, saving a password, a card
@@ -263,12 +265,13 @@ extension BrowserTab: WKNavigationDelegate {
         if action.shouldPerformDownload { return decisionHandler(.download) }
         let scheme = u.scheme?.lowercased() ?? ""
         if !["http", "https", "about", "data", "blob", "file"].contains(scheme) {
-            // tel:, mailto:, App Store and other apps: only the page itself (not a frame of it), and only after
-            // the person agrees. Without the sandbox (TrollStore) a page could otherwise start any app's command
-            // by itself: TrollStore's own "install this" (apple-magnifier://), LiteBro's litebro://ssh.
+            // tel:, mailto:, App Store and other apps: only after the person agrees. Without the sandbox
+            // (TrollStore) a page could otherwise start any app's command by itself; TrollStore's own
+            // "install this" (apple-magnifier://) and LiteBro's litebro://ssh never come from a page.
             decisionHandler(.cancel)
-            guard action.targetFrame?.isMainFrame ?? true, !["litebro", "apple-magnifier"].contains(scheme) else { return }
-            askToLeave(u)
+            if ["litebro", "apple-magnifier"].contains(scheme) { return }
+            // (the frame the link is in; `sourceFrame` can be missing for a load the app itself began)
+            askToLeave(u, from: action.targetFrame?.securityOrigin.host ?? "")
             return
         }
         if Prefs.localOnly && !LocalNet.permits(u) {
@@ -312,6 +315,7 @@ extension BrowserTab: WKNavigationDelegate {
     func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {
         blocked = nil
         failure = nil
+        outOfMemory = false
         danger = nil
         showsHome = false
     }
@@ -346,14 +350,18 @@ extension BrowserTab: WKNavigationDelegate {
     func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
         // iOS killed the page for memory: load it again
         Debug.write("page process ended: \(webView.url?.host ?? "?"), \(Debug.memoryMB()) MB")
-        // A page too heavy for the phone dies again right after the reload: the second time in a minute it stays down
+        // A page too heavy for the phone dies again right after the reload: then it stays down with a message.
+        // Only the page on the screen of the app in use: iOS also ends pages of hidden tabs and of an app
+        // left for another one, and those just load again.
         let now = Date()
-        if let last = processEnded, now.timeIntervalSince(last) < 60 {
+        let shown = browser?.current?.id == id && UIApplication.shared.applicationState == .active
+        if shown, let last = processEnded, now.timeIntervalSince(last) < 30 {
             processEnded = nil
-            failure = L("Странице не хватило памяти телефона. Закройте другие вкладки и обновите её.")
+            outOfMemory = true
+            failure = L("Закройте другие вкладки и обновите страницу.")
             return
         }
-        processEnded = now
+        processEnded = shown ? now : nil
         webView.reload()
     }
 }
@@ -394,14 +402,25 @@ extension BrowserTab: WKUIDelegate {
         present(a) { completionHandler(nil) }
     }
 
-    /// Another app for this address? Asked every time, with the address as it is
-    fileprivate func askToLeave(_ u: URL) {
+    /// One question about another app at a time, in the whole browser: a page that asks in a loop does not
+    /// pile them up
+    private static var asking = false
+
+    /// Another app for this address? Asked every time, with the site that asks and the address as it is.
+    /// Only the tab on the screen asks; while a question is up the next ones are dropped.
+    fileprivate func askToLeave(_ u: URL, from host: String) {
+        guard !Self.asking, browser?.current?.id == id else { return }
         let text = u.absoluteString
-        let a = UIAlertController(title: L("Открыть в другом приложении?"),
+        let site = host.isEmpty ? (url?.host ?? "") : host
+        let a = UIAlertController(title: site.isEmpty ? L("Открыть в другом приложении?") : site + ": " + L("Открыть в другом приложении?"),
                                   message: text.count > 200 ? String(text.prefix(200)) + "…" : text, preferredStyle: .alert)
-        a.addAction(UIAlertAction(title: L("Отмена"), style: .cancel))
-        a.addAction(UIAlertAction(title: L("Открыть"), style: .default) { _ in UIApplication.shared.open(u) })
-        present(a) {}
+        a.addAction(UIAlertAction(title: L("Отмена"), style: .cancel) { _ in Self.asking = false })
+        a.addAction(UIAlertAction(title: L("Открыть"), style: .default) { _ in
+            Self.asking = false
+            UIApplication.shared.open(u)
+        })
+        Self.asking = true
+        present(a) { Self.asking = false }
     }
 
     /// Shows a question over everything; `nobody` runs when there is nothing to show it on

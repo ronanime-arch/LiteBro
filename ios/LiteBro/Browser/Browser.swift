@@ -283,6 +283,7 @@ final class Browser: NSObject, ObservableObject {
     /// The page console from the start of every page, not only after it is opened
     func setConsole(_ on: Bool) {
         UserDefaults.standard.set(on, forKey: Prefs.consoleKey)
+        if #available(iOS 16.4, *) { tabs.forEach { $0.webView?.isInspectable = on } }
         objectWillChange.send()
         applyRules {}
     }

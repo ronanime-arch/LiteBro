@@ -213,6 +213,14 @@ private final class DAVHandler: HTTPHandler {
             guard ScreenShare.control else { return channel.respond(403, keepAlive: keepAlive) }
             let m = (try? JSONSerialization.jsonObject(with: body)) as? [String: Any] ?? [:]
             let name = String(path.dropFirst("/\(token)/_remote/".count))
+            if name == "shot" {
+                // LiteBro's own screen as a picture: its screens are checked from the computer without the
+                // screen recording (which shows the whole phone and needs its own address)
+                guard let jpeg = DispatchQueue.main.sync(execute: { Remote.shot() })
+                else { return channel.respond(409, keepAlive: keepAlive) }
+                return channel.respond(200, headers: [("Content-Type", "image/jpeg"), ("Cache-Control", "no-store")],
+                                       body: jpeg, keepAlive: keepAlive)
+            }
             Remote.run(name, m) { status, json in
                 channel.respond(status, headers: [("Content-Type", "application/json; charset=utf-8")],
                                 body: Data(json.utf8), keepAlive: keepAlive)

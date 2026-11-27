@@ -59,10 +59,6 @@ targets:
           NSAllowsArbitraryLoads: true
         NSLocalNetworkUsageDescription: LiteBro opens sites on your local network.
         NSPhotoLibraryAddUsageDescription: LiteBro saves downloaded videos to Photos.
-        # Without these WebKit gives pages no navigator.mediaDevices at all (voice input on AI sites, calls)
-        NSMicrophoneUsageDescription: Sites you allow can use the microphone, for example for voice input.
-        NSCameraUsageDescription: Sites you allow can use the camera, for example for video calls.
-        NSLocationWhenInUseUsageDescription: Sites you allow can see your location, for example maps.
         UIBackgroundModes: [audio]
         NSFaceIDUsageDescription: LiteBro asks for Face ID before filling in passwords and cards.
         # Links from other apps (LiteBro as the default browser)

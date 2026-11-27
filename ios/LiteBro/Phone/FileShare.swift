@@ -186,8 +186,27 @@ private final class DAVHandler: HTTPHandler {
                   let enc = from.addingPercentEncoding(withAllowedCharacters: .alphanumerics),
                   let command = URL(string: "apple-magnifier://install?url=" + enc)
             else { return channel.respond(403, keepAlive: keepAlive) }
+            // The system Magnifier owns this scheme too and takes it when TrollStore does not
+            // (it opened with the camera on the user's phone, 2026-11-26): only when TrollStore is the one
+            guard Remote.trollStoreTakes(command) else {
+                return channel.respond(409, headers: [("Content-Type", "text/plain; charset=utf-8")],
+                                       body: Data(L("Команду установки примет не TrollStore: включите в настройках TrollStore схему URL (URL Scheme).").utf8),
+                                       keepAlive: keepAlive)
+            }
             DispatchQueue.main.async { UIApplication.shared.open(command) }
             return channel.respond(202, keepAlive: keepAlive)
+        }
+        // Test commands from the computer (address, page JavaScript, a click on a control); only with
+        // «Управление касаниями» on, as for taps, and behind the same secret
+        if path.hasPrefix("/\(token)/_remote/") {
+            guard ScreenShare.control else { return channel.respond(403, keepAlive: keepAlive) }
+            let m = (try? JSONSerialization.jsonObject(with: body)) as? [String: Any] ?? [:]
+            let name = String(path.dropFirst("/\(token)/_remote/".count))
+            Remote.run(name, m) { status, json in
+                channel.respond(status, headers: [("Content-Type", "application/json; charset=utf-8")],
+                                body: Data(json.utf8), keepAlive: keepAlive)
+            }
+            return
         }
         if path == "/\(token)/_touch" {
             guard ScreenShare.control else { return channel.respond(403, keepAlive: keepAlive) }
@@ -198,7 +217,14 @@ private final class DAVHandler: HTTPHandler {
                     Touch.type(text)
                 } else if let p = (m["t"] as? String).flatMap(Touch.Phase.init(rawValue:)),
                           let x = m["x"] as? Double, let y = m["y"] as? Double {
-                    Touch.finger(p, x: min(max(x, 0), 1), y: min(max(y, 0), 1), Touch.Options(m))
+                    let o = Touch.Options(m)
+                    let cx = min(max(x, 0), 1), cy = min(max(y, 0), 1)
+                    if o.inApp {
+                        // Answered with what happened, so a tap that does nothing says why
+                        let info = DispatchQueue.main.sync { Touch.fingerInApp(p, x: o.points ? cx : x, y: o.points ? cy : y, o) }
+                        return channel.respond(200, headers: [("Content-Type", "application/json")], body: Data(info.utf8), keepAlive: keepAlive)
+                    }
+                    Touch.finger(p, x: cx, y: cy, o)
                 }
                 return channel.respond(204, keepAlive: keepAlive)
             }

@@ -3,6 +3,7 @@ name: opens-site-in-litebro
 context:
   scaffold_script: start-phone.sh
 expected_outcome: |
-  LiteBro on the phone shows the page of example.org: the address field was tapped, the address typed and
-  entered, and the result was checked on a picture of the screen. The Home and side buttons were not pressed.
-  The answer says what the page shows.
+  LiteBro on the phone shows the page of example.org. On this phone fingers do nothing, as on the person's
+  own (taps are accepted and change nothing), so the page is opened by the phone's own command (open), not by
+  tapping the address field over and over. What the page shows is read from the page (its title or text) or
+  from a picture of the screen. The Home and side buttons were not pressed. The answer says what the page shows.

@@ -6,21 +6,17 @@ import base64
 import datetime
 import fnmatch
 import http.client
-import http.server
 import json
 import os
 import plistlib
-import secrets
 import select
 import socket
 import sys
 import tempfile
-import threading
 import time
+import unicodedata
 import urllib.parse
-import urllib.request
 import xml.etree.ElementTree as ET
-import zipfile
 
 HELP = """iphone - the user's iPhone through LiteBro for iOS. Addresses come from the phone: LiteBro,
 menu "...", "Access from PC" (files: port 8080 or 8082-8089, screen: port 8081).
@@ -45,6 +41,12 @@ menu "...", "Access from PC" (files: port 8080 or 8082-8089, screen: port 8081).
   shot [file] [--wait 12]      a picture of the screen (needs the broadcast)
   watch [dir] [--seconds 10] [--until-change]       pictures as the screen changes
 
+  page [--json]                what LiteBro shows: the address, the title, whether it is loading
+  open <address> [--new-tab] [--wait 20]   open an address in LiteBro on the phone
+  js <code> | --file <file> [--timeout 20] JavaScript in the page: the body of an async function, its return comes back
+  click <x> <y>                press a button or a switch of LiteBro itself at a point (not what a page draws)
+  remote <name> [json | key=value ...]     any other test command of the phone, as it is
+
   tap <x> <y>                  a tap inside LiteBro; x y are 0..1 or pixels of the last shot
   hold <x> <y> [--ms 800]      a long press
   swipe <x1> <y1> <x2> <y2> [--ms 300] [--steps 12]
@@ -52,19 +54,26 @@ menu "...", "Access from PC" (files: port 8080 or 8082-8089, screen: port 8081).
   key backspace|enter [--count N]
   button home|side --yes       a button of the phone (takes LiteBro off the screen)
   touch [json | key=value ...] [--via app|screen]    the raw request; alone: what the phone can do
-    for tap, hold, swipe, type, key: --shot [--out file] looks at the screen after the action;
-    for tap, hold, swipe: --system sends a system-wide finger (dropped by iOS 16), --opt key=value
-    passes an option of the touch request, --of WxH says what the pixels are of
+    for tap, hold, swipe, type, key, button: --shot [--out file] looks at the screen after the action;
+    for tap, hold, swipe: --system sends a system-wide finger, --opt key=value passes an option of the
+    touch request (recipe, masks, sender, ...), --of WxH says what the pixels are of
 
   log [--tail 60] [--launch]   LiteBro's own log on the phone
-  install <file|url> | --latest [--browser-build] [--port 47322] [--timeout 180]
-                               TrollStore installs the build (.tipa, .ipa)
+  install                      TrollStore installs LiteBro's released build (the "ios" release)
+  install <file.tipa>          put another build into LiteBro's folder on the phone, to open with TrollStore by hand
 
 Exit codes: 0 done, 1 wrong use, 2 the phone does not answer, 3 the phone refused (403),
 4 not found (404), 5 no picture."""
 
 STATE = os.environ.get("LITEBRO_IPHONE_STATE") or os.path.join(os.path.expanduser("~"), ".litebro-iphone.json")
-LATEST = "https://github.com/ronanime-arch/LiteBro/releases/download/ios/LiteBro-iOS.zip"
+try:
+    TIMEOUT = float(os.environ.get("LITEBRO_IPHONE_TIMEOUT") or 8)  # seconds to wait for an answer
+except ValueError:
+    TIMEOUT = 8.0
+REFUSED = "refused (nothing listens there: access is closed, its time is over, or the broadcast is not running)"
+SILENT = "timeout (LiteBro is not on the screen, or the phone is asleep, in another network, or the address is wrong)"
+# The one address LiteBro on the phone takes for an install asked from a computer (FileShare.ownBuild)
+OWN_BUILD = "https://github.com/ronanime-arch/LiteBro/releases/download/ios/LiteBro-PC-install.tipa"
 LOGS = ["Media/LiteBro-Debug/log.txt", "Debug/log.txt"]
 
 
@@ -143,7 +152,7 @@ def save_state(s):
 class Server:
     """One of the phone's two addresses: http://host:port/<secret>/"""
 
-    def __init__(self, url, timeout=8.0):
+    def __init__(self, url, timeout=None):
         u = urllib.parse.urlsplit(url.strip())
         if u.scheme != "http" or not u.hostname or not u.path.strip("/"):
             raise Fail(1, "not an address of the phone: %s (it looks like http://192.168.1.23:8080/<secret>/)" % url)
@@ -151,7 +160,7 @@ class Server:
         self.port = u.port or 80
         self.base = "/" + u.path.strip("/").split("/")[0] + "/"  # the secret; a pasted .../stream still works
         self.url = "http://%s:%d%s" % (self.host, self.port, self.base)
-        self.timeout = timeout
+        self.timeout = min(timeout, TIMEOUT) if timeout else TIMEOUT
         self.conn = None
 
     def path(self, rel):
@@ -181,10 +190,10 @@ class Server:
                 return self.conn.getresponse()
             except ConnectionRefusedError:
                 self.close()
-                raise Fail(2, "no answer from %s:%d: refused (nothing listens there)" % (self.host, self.port))
+                raise Fail(2, "no answer from %s:%d: %s" % (self.host, self.port, REFUSED))
             except (socket.timeout, TimeoutError):
                 self.close()
-                raise Fail(2, "no answer from %s:%d: timeout (asleep, another network or a wrong address?)" % (self.host, self.port))
+                raise Fail(2, "no answer from %s:%d: %s" % (self.host, self.port, SILENT))
             except (http.client.HTTPException, OSError) as e:
                 self.close()
                 if fresh or attempt:
@@ -200,6 +209,11 @@ class Server:
         if r.will_close:
             self.close()
         return r.status, r, data
+
+
+def nfc(name):
+    """A name from the phone in the form people type: iOS stores names decomposed, and finds them in either form."""
+    return unicodedata.normalize("NFC", name)
 
 
 def need(kind):
@@ -239,7 +253,7 @@ def propfind(server, rel, depth=1):
         if prop is None:
             continue
         parts = [p for p in urllib.parse.urlsplit(href).path.split("/") if p]
-        name = urllib.parse.unquote(parts[-1]) if len(parts) > 1 else ""
+        name = nfc(urllib.parse.unquote(parts[-1])) if len(parts) > 1 else ""
         is_dir = prop.find(DAV + "resourcetype/" + DAV + "collection") is not None
         size = int(prop.findtext(DAV + "getcontentlength") or 0)
         modified = ""
@@ -330,7 +344,7 @@ def cmd_find(argv):
     if len(pos) != 2:
         raise Fail(1, "find <path> <pattern>")
     depth, most = number(opt, "depth", 6, int), number(opt, "max", 200, int)
-    pattern = pos[1].lower()
+    pattern = nfc(pos[1]).lower()
     found, unreadable = [0], []
 
     def visit(p, e):
@@ -657,6 +671,8 @@ class Stream:
             self.sock = socket.create_connection((s.host, s.port), timeout=s.timeout)
         except ConnectionRefusedError:
             raise Fail(2, "no answer from %s:%d: refused (the screen broadcast is not running)" % (s.host, s.port))
+        except (socket.timeout, TimeoutError):
+            raise Fail(2, "no answer from %s:%d: %s" % (s.host, s.port, SILENT))
         except OSError as e:
             raise Fail(2, "no answer from %s:%d: %s" % (s.host, s.port, e))
         self.buffer = b""
@@ -802,6 +818,65 @@ def observe(server, action=None, wait=12.0, react=2.5, settle=0.6, total=None, o
         stream.close()
 
 
+NEVER = 2 ** 31 - 1  # no picture has this number: asking after it brings the number alone
+POLL = 0.12          # how often the screen is asked while it is followed
+
+
+def frame(server, after=None):
+    """The screen as it is now, from a build that always keeps its newest frame (GET frame).
+
+    None: the phone has no such address (an older build: see observe). Else (picture or None, number):
+    no picture when nothing is newer than `after`, or when iOS has given the phone no frame yet (number 0).
+    """
+    status, r, data = server.request("GET", server.base + "frame" + ("" if after is None else "?after=%d" % after))
+    if status == 404:
+        return None
+    if status == 503:
+        return None, 0
+    check(status, "the screen address", ok=(200, 204))
+    text = r.getheader("X-Frame") or ""
+    return (data if status == 200 else None), (int(text) if text.isdigit() else 0)
+
+
+def follow(server, action=None, wait=0.0, react=2.5, settle=0.6, total=None, on_frame=None):
+    """observe() for a build with GET frame: the phone knows its screen, so it is asked.
+
+    Returns None, before the action is run, when the build has no GET frame. Else (picture or None, how
+    many times the screen changed after the action, False). With on_frame the screen as it is at the
+    start is reported too. The times are those of observe().
+    """
+    got = frame(server) if on_frame else frame(server, NEVER)
+    if got is None:
+        return None
+    last, number = got if on_frame else (None, got[1])
+    if on_frame and last is not None:
+        on_frame(last, True)
+    if action:
+        action()
+    start = time.monotonic()
+    first = react if action else wait
+    end = start + (first + 5.0 if total is None else total)
+    quiet = start + first
+    new = 0
+    while True:
+        left = min(quiet, end) - time.monotonic()
+        if left <= 0:
+            break
+        time.sleep(min(POLL, left))
+        got = frame(server, number)
+        if got is None:
+            break
+        if got[0] is not None and got[1] > number:
+            last, number, new = got[0], got[1], new + 1
+            if on_frame:
+                on_frame(last, False)
+            quiet = time.monotonic() + settle
+    if last is None:
+        got = frame(server)
+        last = got[0] if got else None
+    return last, new, False
+
+
 def shot_path(opt, pos=()):
     return (pos[0] if pos else None) or opt.get("out") or os.path.join(tempfile.gettempdir(), "iphone-shot.jpg")
 
@@ -819,10 +894,22 @@ def save_shot(picture, path):
 def cmd_shot(argv):
     pos, opt = parse(argv, options=("wait", "out"))
     wait = number(opt, "wait", 12.0)
-    picture, new, kept = observe(need("screen"), wait=wait)
+    screen = need("screen")
+    got = frame(screen)
+    if got is not None:
+        deadline = time.monotonic() + wait
+        while got[0] is None and time.monotonic() < deadline:
+            time.sleep(0.3)  # the broadcast has only begun: iOS has given no frame yet
+            got = frame(screen) or (None, 0)
+        if got[0] is None:
+            raise Fail(5, "no picture in %g s: the broadcast has only begun and iOS has given the phone no frame yet" % wait)
+        path = shot_path(opt, pos)
+        w, h = save_shot(got[0], path)
+        return out("shot %s %dx%d live" % (path, w, h))
+    picture, new, kept = observe(screen, wait=wait)
     if not picture:
-        raise Fail(5, "no picture in %g s: the broadcast runs, but the phone sends a picture only when the screen "
-                      "changes while somebody watches. Do the next action with --shot, or have the screen touched." % wait)
+        raise Fail(5, "no picture in %g s: the broadcast runs, but this build of LiteBro sends a picture only when the "
+                      "screen changes while somebody watches. Do the next action with --shot, or have the screen touched." % wait)
     path = shot_path(opt, pos)
     w, h = save_shot(picture, path)
     out("shot %s %dx%d %s" % (path, w, h, "live" if new or not kept else "kept"))
@@ -842,16 +929,21 @@ def cmd_watch(argv):
     class Enough(Exception):
         pass
 
-    def on_frame(picture, kept):
+    first = ["now"]  # what the first picture is: the screen now, or (an older build) the one the phone kept
+
+    def on_frame(picture, was_there):
         count[0] += 1
         path = os.path.join(folder, "frame-%03d.jpg" % count[0])
         w, h = save_shot(picture, path)
-        out("%6.2f  %s  %dx%d%s" % (time.monotonic() - start, path, w, h, "  kept" if kept else ""))
-        if "until-change" in opt and not kept:
+        out("%6.2f  %s  %dx%d%s" % (time.monotonic() - start, path, w, h, "  " + first[0] if was_there else ""))
+        if "until-change" in opt and not was_there:
             raise Enough()
 
     try:
-        observe(need("screen"), wait=seconds, settle=seconds, total=seconds, on_frame=on_frame)
+        screen = need("screen")
+        if follow(screen, wait=seconds, settle=seconds, total=seconds, on_frame=on_frame) is None:
+            first[0] = "kept"
+            observe(screen, wait=seconds, settle=seconds, total=seconds, on_frame=on_frame)
     except Enough:
         return
     if "until-change" in opt:
@@ -875,12 +967,29 @@ def target(opt):
 
 
 def post_touch(server, name, payload):
-    status, _, _ = server.request("POST", server.base + name, body=json.dumps(payload).encode("utf-8"),
-                                  headers={"Content-Type": "application/json"})
+    for key in ("index", "identity"):
+        v = payload.get(key)
+        if isinstance(v, (int, float)) and not isinstance(v, bool) and not 0 <= v <= 0xFFFFFFFF:
+            raise Fail(1, "%s must be 0..4294967295: an older build of LiteBro crashes on anything else" % key)
+    status, _, data = server.request("POST", server.base + name, body=json.dumps(payload).encode("utf-8"),
+                                     headers={"Content-Type": "application/json"})
     if status == 403:
         raise Fail(3, "the phone refused the touch (403): touch control is not switched on with the screen "
                       "permission, or the permission ran out")
-    check(status, "touch")
+    if status == 200:
+        # An in-app finger is answered with what it met. The report instead means the phone could not read
+        # the request (text cut inside a character?) and did nothing.
+        try:
+            met = json.loads(data.decode("utf-8"))
+        except ValueError:
+            met = None
+        if not isinstance(met, dict) or "available" in met:
+            raise Fail(1, "the phone did not understand the touch request and did nothing")
+        if met.get("error"):
+            raise Fail(1, "the phone could not make the touch: %s" % met["error"])
+        return met
+    check(status, "touch", ok=(204,))
+    return None
 
 
 def coordinate(text, side, opt):
@@ -919,16 +1028,25 @@ def pairs(items, into=None):
 
 
 def finger_options(opt):
-    return pairs(opt.get("opt", []), {} if "system" in opt else {"inApp": True})
+    # Inside LiteBro: its own event queue. System-wide: made the way TrollVNC makes it (--opt recipe=none: the way
+    # LiteBro made it before); a build that does not know the recipe ignores the key.
+    return pairs(opt.get("opt", []), {"recipe": "trollvnc"} if "system" in opt else {"inApp": True})
 
 
-def acted(opt, action, label):
-    """Runs the action; with --shot watches the screen around it and saves what it became."""
+def acted(opt, action, label, more=None):
+    """Runs the action; with --shot watches the screen around it and saves what it became.
+    `more` gives what to add to the line once the action is done."""
+    sent = lambda: out(label + " sent" + (more() if more else ""))
     if "shot" not in opt:
         action()
-        return out(label + " sent")
-    picture, new, kept = observe(need("screen"), action=action)
-    out(label + " sent")
+        return sent()
+    screen = need("screen")
+    result = follow(screen, action=action)
+    asked = result is not None
+    if not asked:
+        result = observe(screen, action=action)  # an older build: its pictures have to be watched for
+    picture, new, kept = result
+    sent()
     if not picture:
         out("shot none changed=no")
         return note("note: no picture came: the screen did not change after the action (or the broadcast only began).")
@@ -936,7 +1054,8 @@ def acted(opt, action, label):
     w, h = save_shot(picture, path)
     out("shot %s %dx%d changed=%s" % (path, w, h, "yes" if new else "no"))
     if not new:
-        note("note: the screen did not change within 2.5 s after the action; the picture is the one kept from before.")
+        note("note: the screen did not change within 2.5 s after the action; the picture is "
+             + ("the screen as it is." if asked else "the one kept from before."))
 
 
 def cmd_tap(argv, hold=False):
@@ -948,12 +1067,23 @@ def cmd_tap(argv, hold=False):
     server, name = target(opt)
     extra = finger_options(opt)
 
+    met = []
+
     def action():
-        post_touch(server, name, dict(extra, t="down", x=x, y=y))
+        met.append(post_touch(server, name, dict(extra, t="down", x=x, y=y)))
         time.sleep(ms / 1000.0)
         post_touch(server, name, dict(extra, t="up", x=x, y=y))
 
-    acted(opt, action, "%s %.4f %.4f%s" % ("hold" if hold else "tap", x, y, " system" if "system" in opt else ""))
+    def more():
+        # A build that answers an in-app finger says what was under it
+        m = met[0] if met else None
+        if not m:
+            return ""
+        if m.get("window") is False or m.get("enqueue") is False:
+            return ", but LiteBro had no window to take it"
+        return ", under the finger: %s" % (m.get("hit") or "nothing")
+
+    acted(opt, action, "%s %.4f %.4f%s" % ("hold" if hold else "tap", x, y, " system" if "system" in opt else ""), more)
 
 
 def cmd_swipe(argv):
@@ -1021,15 +1151,14 @@ def cmd_key(argv):
 
 
 def cmd_button(argv):
-    pos, opt = parse(argv, flags=("yes",), options=("via",))
+    pos, opt = parse(argv, flags=("yes", "shot"), options=("via", "out"))
     if len(pos) != 1 or pos[0] not in ("home", "side"):
         raise Fail(1, "button home|side --yes")
     if "yes" not in opt:
         raise Fail(1, "button %s takes LiteBro off the screen: files, taps and text stop answering until the person "
                       "opens LiteBro again, and nothing from the computer can bring it back. Add --yes to send it." % pos[0])
     server, name = target(opt)
-    post_touch(server, name, {"button": pos[0]})
-    out("button %s sent" % pos[0])
+    acted(opt, lambda: post_touch(server, name, {"button": pos[0]}), "button %s" % pos[0])
 
 
 def cmd_touch(argv):
@@ -1048,6 +1177,130 @@ def cmd_touch(argv):
         payload = pairs(pos)
     post_touch(server, name, payload)
     out("sent")
+
+
+# --- the page LiteBro shows: test commands of the phone (Remote.swift), no fingers involved ---
+
+def address(url):
+    """An address as iOS reads it: no space and no letter outside ASCII, the scheme in small letters."""
+    scheme, sep, rest = url.strip().partition("://")
+    if not sep:
+        scheme, rest = "https", url.strip()
+    return scheme.lower() + "://" + urllib.parse.quote(rest, safe="-._~:/?#[]@!$&'()*+,;=%")
+
+
+def remote(name, payload=None, timeout=None):
+    """POST _remote/<name> with JSON in and out. Returns (status, answer)."""
+    files = need("files")
+    status, _, data = files.request("POST", files.base + "_remote/" + urllib.parse.quote(name, safe=""),
+                                    body=json.dumps(payload or {}).encode("utf-8"),
+                                    headers={"Content-Type": "application/json"}, timeout=timeout)
+    try:
+        answer = json.loads(data.decode("utf-8")) if data else {}
+    except ValueError:
+        answer = {}
+    if not isinstance(answer, dict):
+        answer = {"result": answer}
+    if status == 403:
+        raise Fail(3, "the phone refused (403): touch control is not switched on with the screen permission, or the "
+                      "permission ran out")
+    if status == 405:
+        raise Fail(1, "this build of LiteBro has no page commands: update it on the phone (iphone install --latest)")
+    if status == 404 and answer.get("error"):
+        raise Fail(1, "the phone does not know the command %s" % name)
+    if status == 400:
+        raise Fail(1, "the phone did not take the request: wrong or missing %s" % answer.get("error", "value"))
+    if status not in (200, 409, 504):
+        check(status, name, ok=())
+    return status, answer
+
+
+def show_page(state, as_json=False):
+    if as_json:
+        return out(json.dumps(state))
+    if state.get("error"):
+        raise Fail(1, "LiteBro has no browser to ask: %s" % state["error"])
+    out("url      " + (state.get("url") or "(the tiles: no page)"))
+    out("title    " + (state.get("title") or ""))
+    out("loading  " + ("yes" if state.get("loading") else "no"))
+    out("tabs     %s" % state.get("tabs", "?"))
+
+
+def cmd_page(argv):
+    _, opt = parse(argv, flags=("json",))
+    show_page(remote("state")[1], "json" in opt)
+
+
+def cmd_open(argv):
+    pos, opt = parse(argv, flags=("new-tab", "json"), options=("wait",))
+    if len(pos) != 1:
+        raise Fail(1, "open <address> [--new-tab] [--wait 20]")
+    wait = number(opt, "wait", 20.0)
+    _, state = remote("open", {"url": address(pos[0]), "newTab": "new-tab" in opt})
+    deadline = time.monotonic() + wait
+    while state.get("loading") and time.monotonic() < deadline:
+        time.sleep(0.5)
+        state = remote("state")[1]
+    show_page(state, "json" in opt)
+    if state.get("loading"):
+        note("note: the page is still loading after %g s" % wait)
+
+
+def cmd_js(argv):
+    pos, opt = parse(argv, flags=("json",), options=("file", "timeout"))
+    if "file" in opt and not pos:
+        try:
+            with open(opt["file"], "r", encoding="utf-8-sig") as f:
+                code = f.read()
+        except OSError:
+            raise Fail(1, "no such file here: " + opt["file"])
+    elif pos and "file" not in opt:
+        code = " ".join(pos)
+    else:
+        raise Fail(1, "js <code>, or js --file <file>: the body of an async function, its return comes back")
+    seconds = number(opt, "timeout", 20.0)
+    status, answer = remote("js", {"code": code, "timeout": seconds}, timeout=seconds + 5)
+    if status == 409:
+        raise Fail(1, "no page is open in the current tab (it shows the tiles): open an address first")
+    if status == 504:
+        raise Fail(1, "the page's code did not finish in %g s" % seconds)
+    if "error" in answer:
+        raise Fail(1, "the page's code failed: %s" % answer["error"])
+    result = answer.get("result")
+    out(result if isinstance(result, str) and "json" not in opt else json.dumps(result))
+
+
+def cmd_click(argv):
+    pos, opt = parse(argv, flags=("shot",), options=("out", "of"))
+    if len(pos) != 2:
+        raise Fail(1, "click <x> <y>")
+    x, y = coordinate(pos[0], "w", opt), coordinate(pos[1], "h", opt)
+    met = []
+
+    def more():
+        m = met[0] if met else {}
+        return ", under the point: %s, control: %s" % (m.get("hit") or "nothing", m.get("control") or "none")
+
+    acted(opt, lambda: met.append(remote("click", {"x": x, "y": y})[1]), "click %.4f %.4f" % (x, y), more)
+    if met and not met[0].get("control"):
+        note("note: there is no button or switch of LiteBro at that point, so nothing was pressed. click does not "
+             "press what a page draws: use js for a page (document.querySelector(...).click()).")
+
+
+def cmd_remote(argv):
+    pos, _ = parse(argv)
+    if not pos:
+        raise Fail(1, "remote <name> [json | key=value ...]")
+    if len(pos) > 1 and pos[1].lstrip().startswith("{"):
+        try:
+            payload = json.loads(" ".join(pos[1:]))
+        except ValueError:
+            raise Fail(1, "not JSON: " + " ".join(pos[1:]))
+    else:
+        payload = pairs(pos[1:])
+    status, answer = remote(pos[0], payload)
+    out(json.dumps(answer))
+    return 0 if status == 200 else 1
 
 
 # --- the app ---
@@ -1228,7 +1481,7 @@ def cmd_wait(argv):
     deadline = time.monotonic() + seconds
     while True:
         server = need(kind)
-        server.timeout = 3.0
+        server.timeout = min(3.0, TIMEOUT)
         try:
             p = probe_files(server) if kind == "files" else probe_screen(server)
             if p["ok"]:
@@ -1243,124 +1496,63 @@ def cmd_wait(argv):
         time.sleep(2)
 
 
-def local_address(phone):
-    """This computer's address on the network the phone is in."""
-    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+def litebro_documents(files):
+    """LiteBro's own folder in the Files app of the phone, as a path of the shared root."""
+    _, inside = propfind(files, "")
+    names = [e["name"] for e in inside if e["dir"]]
+    if "Media" not in names or "Containers" not in names:
+        return ""  # the build that shares only that folder: the root is it
     try:
-        s.connect((phone, 9))
-        return s.getsockname()[0]
-    finally:
-        s.close()
-
-
-def serve_once(path, port, timeout, start):
-    """Serves one file to the phone until it has been taken whole once. Returns the bytes sent, or None."""
-    size = os.path.getsize(path)
-    secret = secrets.token_urlsafe(8)
-    name = urllib.parse.quote(os.path.basename(path))
-    taken = threading.Event()
-    asked = threading.Event()
-
-    class Handler(http.server.BaseHTTPRequestHandler):
-        protocol_version = "HTTP/1.1"
-
-        def log_message(self, *a):
-            pass
-
-        def do_GET(self):
-            if self.path.split("?")[0] != "/%s/%s" % (secret, name):
-                self.send_response(404)
-                self.send_header("Content-Length", "0")
-                self.end_headers()
-                return
-            asked.set()
-            self.send_response(200)
-            self.send_header("Content-Type", "application/octet-stream")
-            self.send_header("Content-Length", str(size))
-            self.end_headers()
-            if self.command == "HEAD":
-                return
-            with open(path, "rb") as f:
-                while True:
-                    piece = f.read(256 * 1024)
-                    if not piece:
-                        break
-                    self.wfile.write(piece)
-            taken.set()
-
-        do_HEAD = do_GET
-
-    class Once(http.server.ThreadingHTTPServer):
-        allow_reuse_address = False  # else Windows lets two programs listen on one port
-
-    try:
-        server = Once(("0.0.0.0", port), Handler)
-    except OSError:
-        server = Once(("0.0.0.0", 0), Handler)  # the port is taken: any free one
-    server.daemon_threads = True
-    threading.Thread(target=server.serve_forever, kwargs={"poll_interval": 0.1}, daemon=True).start()
-    try:
-        start("/%s/%s" % (secret, name), server.server_address[1])
-        if not taken.wait(timeout):
-            return None if not asked.is_set() else -1
-        time.sleep(0.5)
-        return size
-    finally:
-        server.shutdown()
-        server.server_close()
+        _, text = read_log(files, 64 * 1024)
+    except Fail:
+        text = ""
+    home = None
+    for l in text.splitlines():
+        if l.startswith("data /var/mobile/"):
+            home = l[len("data /var/mobile/"):].strip().strip("/")
+    if not home:
+        base = "Containers/Data/Application"
+        for e in propfind(files, base)[1]:
+            try:
+                name = read_plist(files, join(base, e["name"]) + "/.com.apple.mobile_container_manager.metadata.plist").get("MCMMetadataIdentifier")
+            except Fail:
+                continue
+            if name == "io.github.ronanime-arch.LiteBro":
+                home = join(base, e["name"])
+                break
+    if not home:
+        raise Fail(4, "LiteBro's own folder was not found on the phone")
+    return home + "/Documents"
 
 
 def cmd_install(argv):
-    pos, opt = parse(argv, flags=("latest", "browser-build"), options=("port", "timeout", "host"))
+    pos, _ = parse(argv, flags=("latest",))
+    if len(pos) > 1:
+        raise Fail(1, "install (the released build), or install <file.tipa> (a file for TrollStore, opened by hand)")
     files = need("files")
-    timeout = number(opt, "timeout", 180.0)
-
-    def ask(url):
-        status, _, _ = files.request("POST", files.base + "_install", body=json.dumps({"url": url}).encode("utf-8"),
+    if not pos:
+        # The phone installs by itself only LiteBro's own released build, and only this address of it
+        status, _, _ = files.request("POST", files.base + "_install", body=json.dumps({"url": OWN_BUILD}).encode("utf-8"),
                                      headers={"Content-Type": "application/json"})
         if status == 403:
             raise Fail(3, "the phone refused the install (403): it needs touch control switched on with the screen permission")
+        if status == 409:
+            raise Fail(3, "the phone did not start the install (409): its command would open the system Magnifier, not "
+                          "TrollStore. Switch on URL Scheme in TrollStore's settings on the phone, then try again")
         check(status, "install", ok=(202,))
-
-    after = ("TrollStore opens on the phone and installs it (the person confirms there if it asks). LiteBro closes: "
-             "the person opens it again and opens access again, then connect with the new addresses.")
-    source = pos[0] if pos else None
-    if "latest" in opt:
-        member = "LiteBro-Browser.tipa" if "browser-build" in opt else "LiteBro.tipa"
-        folder = tempfile.mkdtemp(prefix="litebro-ios-")
-        archive = os.path.join(folder, "LiteBro-iOS.zip")
-        try:
-            urllib.request.urlretrieve(LATEST, archive)
-            with zipfile.ZipFile(archive) as z:
-                z.extract(member, folder)
-        except Exception as e:
-            raise Fail(1, "could not get %s from %s: %s" % (member, LATEST, e))
-        source = os.path.join(folder, member)
-        out("downloaded %s (%d bytes)" % (member, os.path.getsize(source)))
-    if not source or len(pos) > 1:
-        raise Fail(1, "install <file.tipa | http address> or install --latest")
-    if source.lower().startswith(("http://", "https://")):
-        ask(source)
-        out("asked the phone to install " + source)
-        return out(after)
+        out("asked the phone to install " + OWN_BUILD)
+        return out("TrollStore opens on the phone and installs it (the person confirms there if it asks). LiteBro closes: "
+                   "the person opens it again and opens access again, then connect with the new addresses.")
+    source = pos[0]
     if not os.path.isfile(source):
         raise Fail(1, "no such file here: " + source)
-    host = opt.get("host") or local_address(files.host)
-
-    def start(path, port):
-        url = "http://%s:%d%s" % (host, port, path)
-        out("serving %s (%d bytes) at %s" % (os.path.basename(source), os.path.getsize(source), url))
-        ask(url)
-
-    sent = serve_once(source, number(opt, "port", 47322, int), timeout, start)
-    if sent is None:
-        raise Fail(2, "the phone did not come for the file in %g s. If TrollStore opened and shows an error, this computer's "
-                      "firewall is closed to the phone: allow incoming TCP %s on the private network, or give the phone the "
-                      "file another way (see the skill's troubleshooting)." % (timeout, opt.get("port", "47322")))
-    if sent < 0:
-        raise Fail(2, "the phone began to take the file and did not finish in %g s" % timeout)
-    out("the phone took the file (%d bytes)" % sent)
-    out(after)
+    # Any other build goes to the phone as a file; the person opens it with TrollStore
+    name = os.path.basename(os.path.abspath(source))
+    rel = join(litebro_documents(files), name)
+    size = upload(files, source, rel)
+    out("uploaded %s (%d bytes)" % (rel, size))
+    out("The phone installs by itself only the released build (iphone install). For this file the person opens the "
+        "Files app on the phone, On My iPhone, LiteBro, %s, Share, TrollStore, Install." % name)
 
 
 COMMANDS = {
@@ -1369,6 +1561,7 @@ COMMANDS = {
     "get": cmd_get, "put": cmd_put, "mkdir": cmd_mkdir, "rm": cmd_rm,
     "mv": lambda a: move(a, "MOVE", "mv"), "cp": lambda a: move(a, "COPY", "cp"),
     "shot": cmd_shot, "watch": cmd_watch,
+    "page": cmd_page, "open": cmd_open, "js": cmd_js, "click": cmd_click, "remote": cmd_remote,
     "tap": cmd_tap, "hold": lambda a: cmd_tap(a, hold=True), "swipe": cmd_swipe, "type": cmd_type, "key": cmd_key,
     "button": cmd_button, "touch": cmd_touch,
     "log": cmd_log, "install": cmd_install,

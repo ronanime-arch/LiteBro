@@ -57,7 +57,7 @@ class T:
         self.last = ""
 
     def run(self, *args, code=0, cwd=None, timeout=120):
-        env = dict(os.environ, LITEBRO_IPHONE_STATE=self.state, PYTHONIOENCODING="utf-8")
+        env = dict(os.environ, LITEBRO_IPHONE_STATE=self.state, LITEBRO_IPHONE_TIMEOUT="2", PYTHONIOENCODING="utf-8")
         p = subprocess.run(self.cmd + [str(a) for a in args], env=env, cwd=cwd or self.work, timeout=timeout,
                            stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         out = p.stdout.decode("utf-8", "replace").lstrip("﻿").replace("\r\n", "\n")
@@ -85,6 +85,7 @@ class T:
 
     @contextlib.contextmanager
     def phone(self, whole=True, broadcast=True, connect=True, app=False, **kw):
+        """A made-up phone, by default with the build that keeps its screen (GET frame); old_build=True: the one before."""
         root = tempfile.mkdtemp(prefix="phone-", dir=self.work)
         if whole:
             sample_tree(root)
@@ -189,10 +190,22 @@ def test_status(t):
         out, _ = t.run("connect", "--files", ph.files_url, "--screen", dead)
         t.has(out, "files   ok")
         t.has(out, "screen  no answer")
-        ph.suspend()  # LiteBro left the screen
+        t.has(out, "refused")
+        # LiteBro left the screen: iOS froze it. The port is open and nothing answers.
+        ph.suspend()
         out, _ = t.run("status", code=2)
         t.has(out, "files   no answer")
-        t.has(out, "refused")
+        t.has(out, "timeout (LiteBro is not on the screen")
+        _, err = t.run("ls", code=2)
+        t.has(err, "timeout (LiteBro is not on the screen")
+        # The person came back to LiteBro: the same address answers again
+        ph.resume()
+        out, _ = t.run("status")
+        t.has(out, "files   ok")
+        # Access closed, or its time over: nothing listens
+        ph.close_access()
+        out, _ = t.run("status", code=2)
+        t.has(out, "refused (nothing listens there")
         _, err = t.run("ls", code=2)
         t.has(err, "refused")
     with t.phone(connect=False) as ph:
@@ -214,7 +227,15 @@ def test_listing(t):
         t.eq(lines[2].split()[1], str(size), "the size")
         t.ok(lines[2].split()[2].endswith("Z") and "T" in lines[2].split()[2], "the time is UTC, ISO")
         out, _ = t.run("ls", "/Media/Downloads/")
-        t.has(out, "Отчёт за ноябрь.pdf")
+        t.has(out, "Отчёт за ноябрь.pdf")  # as typed: iOS gives the name with ё and й taken apart
+        os.makedirs(os.path.join(ph.root, "Media", "Downloads", "Новый файл"))
+        out, _ = t.run("ls", "Media/Downloads", "--json")
+        t.eq([i["name"] for i in json.loads(out)], ["Новый файл", "Отчёт за ноябрь.pdf"], "names in the form people type")
+        out, _ = t.run("find", "Media", "*отчёт*")
+        t.eq(out.splitlines(), ["Media/Downloads/Отчёт за ноябрь.pdf\t17"])
+        out, _ = t.run("find", "Media", "новый*")
+        t.eq(out.splitlines(), ["Media/Downloads/Новый файл/"])
+        os.rmdir(os.path.join(ph.root, "Media", "Downloads", "Новый файл"))
         out, _ = t.run("ls", "Media/Downloads/Отчёт за ноябрь.pdf")  # a file: its own line
         t.eq(len(out.splitlines()), 1)
         out, _ = t.run("ls", "Media", "--json")
@@ -348,6 +369,19 @@ def test_get(t):
             t.eq(read(os.path.join(t.work, "dcim", "100APPLE", name)), read(os.path.join(src, name)), name)
         _, err = t.run("get", "Media/nothing.txt", code=4)
         t.has(err, "404")
+        # A folder with a Russian name comes under the name as typed, whatever form the phone keeps it in
+        out, _ = t.run("get", "Media/Downloads", os.path.join(t.work, "dl"), "-r")
+        t.ok(os.path.exists(os.path.join(t.work, "dl", "Отчёт за ноябрь.pdf")), "the local name is the typed one: %r" % os.listdir(os.path.join(t.work, "dl")))
+        if os.name != "nt":
+            # What a link leads to, not the link: a linked folder is a folder, a linked file comes whole
+            os.symlink(os.path.join(ph.root, "Media", "DCIM"), os.path.join(ph.root, "Media", "Camera"))
+            os.symlink(os.path.join(src, "IMG_0003.MOV"), os.path.join(ph.root, "Media", "movie-link.mov"))
+            out, _ = t.run("ls", "Media")
+            t.has(out, "Camera/")
+            t.run("get", "Media/movie-link.mov", os.path.join(t.work, "linked.mov"))
+            t.eq(read(os.path.join(t.work, "linked.mov")) == read(os.path.join(src, "IMG_0003.MOV")), True, "a linked file whole")
+            out, _ = t.run("ls", "Media/Camera/100APPLE")
+            t.eq(len(out.splitlines()), 3)
 
 
 def test_put(t):
@@ -394,6 +428,7 @@ def test_put(t):
 
         _, err = t.run("put", local, "Media/NoSuchFolder/x.txt", code=4)
         t.has(err, "is not there")
+        t.eq([n for n in os.listdir(os.path.join(ph.root, "Media")) if n.startswith(".litebro-upload-")], [], "no upload leftovers")
         _, err = t.run("put", os.path.join(t.work, "no-such-file"), "Media/x.txt", code=1)
         t.has(err, "no such file here")
 
@@ -462,7 +497,34 @@ def later(seconds, action):
 
 
 def test_shot(t):
-    with t.phone(idle=2.0) as ph:
+    # The build that keeps its screen: one question, the screen as it is
+    with t.phone() as ph:
+        frames = ph.frames
+        started = time.time()
+        _, err = t.run("shot", os.path.join(t.work, "s.jpg"), "--wait", "2", code=5)
+        t.has(err, "no picture in 2 s: the broadcast has only begun")
+        t.ok(time.time() - started >= 2, "it waited for the first frame")
+        frames.screen_changed(A)  # nobody watches: the phone keeps it all the same
+        out, err = t.run("shot", os.path.join(t.work, "s.jpg"))
+        t.has(out, "s.jpg 400x800 live")
+        t.eq(read(os.path.join(t.work, "s.jpg")), A)
+        t.lacks(err, "note:")
+        frames.screen_changed(B)
+        frames.screen_changed(C)  # at once after B: the older build would have lost it
+        out, _ = t.run("shot")
+        path = out.strip().rsplit(" ", 2)[0][len("shot "):]
+        t.ok(os.path.basename(path) == "iphone-shot.jpg" and os.path.exists(path), "the default file: " + path)
+        t.eq(read(path), C, "the newest frame, although it came at once after another")
+        t.run("shot", "--out", os.path.join(t.work, "o.jpg"))
+        t.eq(read(os.path.join(t.work, "o.jpg")), C)
+        ph.stop_broadcast()
+        _, err = t.run("shot", code=2)
+        t.has(err, "refused")
+        ph.start_broadcast()  # a new broadcast: the extension starts again, with the frames of its own start
+        out, _ = t.run("shot", os.path.join(t.work, "s.jpg"))
+        t.eq(read(os.path.join(t.work, "s.jpg")), C)
+    # The build before: pictures only while somebody watches the stream
+    with t.phone(idle=2.0, old_build=True) as ph:
         frames = ph.frames
         # A broadcast that has just begun and a still screen: the phone has nothing to send
         started = time.time()
@@ -487,17 +549,11 @@ def test_shot(t):
         out, err = t.run("shot", os.path.join(t.work, "s.jpg"))
         t.has(out, "300x650 live")
         t.eq(read(os.path.join(t.work, "s.jpg")), C, "the last of the new pictures")
-        # The default place is said and exists; --out names it too
-        out, _ = t.run("shot")
-        path = out.strip().rsplit(" ", 2)[0][len("shot "):]
-        t.ok(os.path.basename(path) == "iphone-shot.jpg" and os.path.exists(path), "the default file: " + path)
-        t.eq(read(path), C)
-        t.run("shot", "--out", os.path.join(t.work, "o.jpg"))
-        t.eq(read(os.path.join(t.work, "o.jpg")), C)
-        # The broadcast stopped
         ph.stop_broadcast()
         _, err = t.run("shot", code=2)
-        t.has(err, "the screen broadcast is not running")
+        t.has(err, "refused")
+        ph.start_broadcast()  # a new run of the extension has no picture
+        _, err = t.run("shot", "--wait", "1", code=5)
     with t.phone() as ph:
         state = json.loads(read(t.state).decode("utf-8"))
         state["screen"] = state["screen"].replace(ph.screen_token, "oldsecret")
@@ -508,10 +564,26 @@ def test_shot(t):
 
 
 def test_watch(t):
-    with t.phone(idle=2.0) as ph:
+    folder = os.path.join(t.work, "watch")
+    with t.phone() as ph:
+        frames = ph.frames
+        frames.screen_changed(A)
+        later(0.6, lambda: frames.screen_changed(B))
+        later(1.2, lambda: frames.screen_changed(C))
+        time.sleep(0.01)
+        out, _ = t.run("watch", folder, "--seconds", "2.5")
+        lines = out.splitlines()
+        if len(lines) == 3:  # the helper began before the first change
+            t.ok(lines[0].endswith("now"), "the first is the screen now")
+            t.eq(read(os.path.join(folder, "frame-001.jpg")), A)
+            t.eq(read(os.path.join(folder, "frame-003.jpg")), C)
+        t.ok(len(lines) in (2, 3), "the pictures as the screen changed")
+        t.eq(read(os.path.join(folder, "frame-%03d.jpg" % len(lines))), C, "the last picture is the last change")
+        _, err = t.run("watch", folder, "--seconds", "1", "--until-change", code=5)
+        t.has(err, "did not change")
+    with t.phone(idle=2.0, old_build=True) as ph:
         frames = ph.frames
         frames.frame, frames.number = A, 1
-        folder = os.path.join(t.work, "watch")
         frames.on_join = lambda: (setattr(frames, "on_join", None), later(0.5, lambda: frames.screen_changed(B)),
                                   later(1.0, lambda: frames.screen_changed(C)))
         out, _ = t.run("watch", folder, "--seconds", "2.5")
@@ -538,7 +610,7 @@ def fingers(ph):
 def test_touch(t):
     with t.phone() as ph:
         out, _ = t.run("tap", "0.25", "0.75")
-        t.has(out, "tap 0.2500 0.7500 sent")
+        t.has(out, "tap 0.2500 0.7500 sent, under the finger: UIView")
         e = fingers(ph)
         t.eq([(x["t"], x["x"], x["y"], x["inApp"], x["via"]) for x in e],
              [("down", 0.25, 0.75, True, "app"), ("up", 0.25, 0.75, True, "app")], "a tap inside the app")
@@ -549,7 +621,12 @@ def test_touch(t):
         t.has(out, "system")
         e = fingers(ph)
         t.eq(e[0]["inApp"], False)
-        t.eq(e[0]["opts"], {"client": "simple", "bks": False, "index": 3, "pressure": 0.5, "sender": "0x8000000817319371"})
+        t.eq(e[0]["opts"], {"recipe": "trollvnc", "client": "simple", "bks": False, "index": 3, "pressure": 0.5,
+                            "sender": "0x8000000817319371"}, "a system-wide finger names the recipe, and the options change it")
+        t.run("tap", "0.5", "0.5", "--system", "--opt", "recipe=none", "--opt", "masks=webkit", "--opt", "radius=5", "--opt", "twist=90")
+        t.eq(fingers(ph)[0]["opts"], {"recipe": "none", "masks": "webkit", "radius": 5, "twist": 90})
+        t.run("tap", "0.5", "0.5", "--opt", "recipe=trollvnc")
+        t.eq(fingers(ph)[0]["opts"], {"inApp": True, "recipe": "trollvnc"}, "the recipe for an in-app finger too")
         # Pixels of a picture
         t.run("tap", "250", "1500", "--of", "1000x2000")
         e = fingers(ph)
@@ -563,6 +640,11 @@ def test_touch(t):
         t.eq(fingers(ph)[0]["x"], 1.0)
         _, err = t.run("tap", "left", "0.5", code=1)
         t.has(err, "not a coordinate")
+        _, err = t.run("tap", "0.5", "0.5", "--system", "--opt", "index=-1", code=1)
+        t.has(err, "index must be 0..4294967295")
+        _, err = t.run("touch", "t=down", "x=0.5", "y=0.5", "identity=5000000000", code=1)
+        t.has(err, "identity must be")
+        t.eq(fingers(ph), [], "nothing was sent")
         _, err = t.run("tap", "0.5", code=1)
 
         t.run("hold", "0.1", "0.2", "--ms", "400")
@@ -607,44 +689,139 @@ def test_touch(t):
 
 
 def test_look(t):
+    for old in (False, True):
+        with t.phone(app=True, old_build=old) as ph:
+            app = ph.on_event.__self__
+
+            def seen(shot, what):
+                # The build that keeps its screen shows the screen at rest. The one before shows the last picture
+                # it made, and that can be a frame from the middle of the movement.
+                t.eq(read(shot), ph.frames.frame, what + ": the picture the phone made last")
+                if not old:
+                    t.eq(read(shot), ph.frames.truth, what + ": the screen at rest")
+
+            # The made-up LiteBro: a tap on the address field brings the keyboard
+            shot = os.path.join(t.work, "look.jpg")
+            out, err = t.run("tap", "0.3", "0.93", "--shot", "--out", shot)
+            t.has(out, "tap 0.3000 0.9300 sent" + ("" if old else ", under the finger: UITextField"))
+            t.has(out, "look.jpg 591x1280 changed=yes")
+            t.eq(app.focus, True, "the field took the tap")
+            seen(shot, "after the tap")
+            out, _ = t.run("type", "example.com", "--shot", "--out", shot)
+            t.has(out, "type 11 characters sent")
+            t.has(out, "changed=yes")
+            seen(shot, "after the text")
+            out, _ = t.run("key", "backspace", "--count", "4", "--shot", "--out", shot)
+            t.has(out, "key backspace x4 sent")
+            t.eq(app.field, "example")
+            seen(shot, "after the backspaces")
+            out, _ = t.run("type", ".org", "--enter", "--shot", "--out", shot)
+            t.has(out, "type 4 characters and enter sent")
+            t.eq(app.url, "https://example.org", "the made-up browser went there")
+            seen(shot, "after enter")
+            # A tap by the pixels of that picture
+            t.run("tap", "150", "1190", "--shot", "--out", shot)
+            t.eq(app.focus, True, "the field took the tap by pixels")
+            # A system-wide finger does nothing, as on the phone
+            time.sleep(0.3)
+            out, err = t.run("tap", "0.5", "0.3", "--system", "--shot", "--out", shot)
+            t.has(out, "changed=no")
+            t.has(err, "did not change")
+            t.has(err, "the one kept from before" if old else "the screen as it is")
+            seen(shot, "after nothing")
+            out, _ = t.run("swipe", "0.5", "0.8", "0.5", "0.3", "--shot", "--out", shot)
+            t.has(out, "changed=no")
     with t.phone(app=True) as ph:
-        # The made-up LiteBro: a tap on the address field brings the keyboard
-        shot = os.path.join(t.work, "look.jpg")
-        out, err = t.run("tap", "0.3", "0.93", "--shot", "--out", shot)
-        t.has(out, "tap 0.3000 0.9300 sent")
-        t.has(out, "look.jpg 591x1280 changed=yes")
-        t.eq(read(shot), ph.frames.truth, "the picture after the tap")
-        out, _ = t.run("type", "example.com", "--shot", "--out", shot)
-        t.has(out, "type 11 characters sent")
-        t.has(out, "changed=yes")
-        t.eq(read(shot), ph.frames.truth)
-        out, _ = t.run("key", "backspace", "--count", "4", "--shot", "--out", shot)
-        t.has(out, "key backspace x4 sent")
-        t.eq(read(shot), ph.frames.truth)
-        out, _ = t.run("type", ".org", "--enter", "--shot", "--out", shot)
-        t.has(out, "type 4 characters and enter sent")
-        t.eq(read(shot), ph.frames.truth)
-        t.eq(ph.on_event.__self__.url, "https://example.org", "the made-up browser went there")
-        # A tap by the pixels of that picture: the Go button is not there on a page, the field is
-        t.run("tap", "150", "1190", "--shot", "--out", shot)
-        t.eq(ph.on_event.__self__.focus, True, "the field took the tap")
-        # A system-wide finger does nothing, as on the phone: the picture is the one from before
-        before = ph.frames.truth
-        out, err = t.run("tap", "0.5", "0.3", "--system", "--shot", "--out", shot)
-        t.has(out, "changed=no")
-        t.has(err, "did not change")
-        t.eq(read(shot), before)
-        out, _ = t.run("swipe", "0.5", "0.8", "0.5", "0.3", "--shot", "--out", shot)
-        t.has(out, "changed=no")
-    with t.phone(app=True) as ph:
-        # A broadcast that has only begun: the first look is the action itself
+        # A broadcast that has only begun: the first look is already the screen
+        out, _ = t.run("shot", os.path.join(t.work, "first.jpg"))
+        t.has(out, "591x1280 live")
+        t.eq(read(os.path.join(t.work, "first.jpg")), ph.frames.truth)
+    with t.phone(app=True, old_build=True) as ph:
+        # The older build has nothing yet: the first look is the action itself
         out, _ = t.run("tap", "0.3", "0.93", "--shot", "--out", os.path.join(t.work, "first.jpg"))
         t.has(out, "changed=yes")
-        t.eq(read(os.path.join(t.work, "first.jpg")), ph.frames.truth)
-    with t.phone() as ph:
-        out, err = t.run("tap", "0.5", "0.5", "--shot")
-        t.has(out, "shot none changed=no")
-        t.has(err, "no picture came")
+        t.eq(read(os.path.join(t.work, "first.jpg")), ph.frames.frame)
+    for old in (False, True):
+        with t.phone(old_build=old) as ph:
+            out, err = t.run("tap", "0.5", "0.5", "--shot")
+            t.has(out, "shot none changed=no")
+            t.has(err, "no picture came")
+
+
+def test_page(t):
+    with t.phone(app=True) as ph:
+        app = ph.on_event.__self__
+        out, _ = t.run("page")
+        t.eq(out.splitlines(), ["url      (the tiles: no page)", "title    ", "loading  no", "tabs     1"])
+        _, err = t.run("js", "return document.title", code=1)
+        t.has(err, "no page is open")
+        # An address as people write it
+        out, _ = t.run("open", "example.org")
+        t.eq(out.splitlines()[:2], ["url      https://example.org", "title    The page of example.org"])
+        t.eq(app.url, "https://example.org")
+        t.eq([(e["kind"], e["url"], e["newTab"]) for e in ph.take_events()], [("open", "https://example.org", False)])
+        t.run("open", "HTTP://пример.рф/путь страницы?q=1", "--new-tab")
+        e = ph.take_events()
+        t.eq((e[0]["url"], e[0]["newTab"]), ("http://%D0%BF%D1%80%D0%B8%D0%BC%D0%B5%D1%80.%D1%80%D1%84/%D0%BF%D1%83%D1%82%D1%8C%20%D1%81%D1%82%D1%80%D0%B0%D0%BD%D0%B8%D1%86%D1%8B?q=1", True))
+        t.run("open", "https://example.org/")
+        out, _ = t.run("page", "--json")
+        t.eq(json.loads(out)["url"], "https://example.org/")
+        # JavaScript of the page
+        ph.take_events()
+        out, _ = t.run("js", "return document.title")
+        t.eq(out, "The page of example.org\n")
+        t.eq([(e["kind"], e["code"]) for e in ph.take_events()], [("js", "return document.title")])
+        out, _ = t.run("js", "return", "42")
+        t.eq(out, "42\n")
+        out, _ = t.run("js", "return document.title", "--json")
+        t.eq(json.loads(out), "The page of example.org")
+        out, _ = t.run("js", "document.querySelector('a').click()")
+        t.eq(out, "null\n")
+        code = 'const s = "кавычки \'и\' такие";\nreturn document.body.innerText'
+        out, _ = t.run("js", "--file", t.write("page.js", code))
+        t.eq(out.splitlines(), ["The page of example.org", "loaded."])
+        t.eq(ph.take_events()[-1]["code"], code)
+        _, err = t.run("js", "throw new Error(1)", code=1)
+        t.has(err, "the page's code failed")
+        _, err = t.run("js", code=1)
+        # A button of LiteBro itself, without a finger
+        out, _ = t.run("tap", "0.3", "0.93")
+        t.run("type", "claude.ai")
+        ph.take_events()
+        out, err = t.run("click", "0.87", "0.93")
+        t.has(out, "click 0.8700 0.9300 sent, under the point: UIButton, control: UIButton")
+        t.eq(app.url, "https://claude.ai", "the Go button got its action")
+        t.eq([(e["kind"], e["control"]) for e in ph.take_events()], [("click", "UIButton")])
+        out, err = t.run("click", "0.5", "0.3")
+        t.has(out, "control: none")
+        t.has(err, "nothing was pressed")
+        out, _ = t.run("click", "0.87", "0.93", "--shot", "--out", os.path.join(t.work, "click.jpg"))
+        t.has(out, "click 0.8700 0.9300 sent")
+        t.has(out, "changed=")
+        # Any other command of the phone, as it is
+        out, _ = t.run("remote", "state")
+        t.eq(json.loads(out)["page"], True)
+        out, _ = t.run("remote", "open", "url=https://example.com/", "newTab=true")
+        t.eq(json.loads(out)["url"], "https://example.com/")
+        out, _ = t.run("remote", "js", '{"code": "return location.href"}')
+        t.eq(json.loads(out), {"result": "https://example.com/"})
+        _, err = t.run("remote", "dance", code=1)
+        t.has(err, "does not know the command dance")
+        _, err = t.run("open", code=1)
+    with t.phone(app=True, control=False):
+        for args in (("page",), ("open", "example.org"), ("js", "return 1"), ("click", "0.5", "0.5")):
+            _, err = t.run(*args, code=3)
+            t.has(err, "refused (403)")
+    with t.phone(app=True, old_build=True):
+        _, err = t.run("page", code=1)
+        t.has(err, "has no page commands")
+    with t.phone(app=True) as ph:
+        # Fingers that do nothing, as on the user's phone on 2026-11-27: the page commands still do the work
+        ph.dead_taps = True
+        out, _ = t.run("tap", "0.3", "0.93", "--shot", "--out", os.path.join(t.work, "dead.jpg"))
+        t.has(out, "changed=no")
+        t.run("open", "example.org")
+        t.eq(ph.on_event.__self__.url, "https://example.org")
 
 
 def test_text(t):
@@ -670,67 +847,76 @@ def test_text(t):
 
 
 def test_button(t):
-    with t.phone() as ph:
+    with t.phone(app=True) as ph:
+        ph.leaves_after = None
         _, err = t.run("button", "home", code=1)
         t.has(err, "takes LiteBro off the screen")
         t.eq(ph.take_events(), [], "nothing is sent without --yes")
         _, err = t.run("button", "volume", "--yes", code=1)
-        ph.home_suspends = False
         out, _ = t.run("button", "side", "--yes")
         t.has(out, "button side sent")
         t.eq([(e["kind"], e["button"]) for e in ph.take_events()], [("button", "side")])
-        ph.home_suspends = True
-        t.run("button", "home", "--yes")
+        # Home, and a look at what the screen became: the screen server goes on while LiteBro is away
+        ph.leaves_after = 0.5
+        shot = os.path.join(t.work, "home.jpg")
+        out, _ = t.run("button", "home", "--yes", "--shot", "--out", shot)
+        t.has(out, "button home sent")
+        t.has(out, "changed=yes")
         t.eq([(e["kind"], e["button"]) for e in ph.take_events()], [("button", "home")])
-        time.sleep(0.8)  # LiteBro is off the screen now: its server is gone
+        t.eq(ph.on_event.__self__.screen, "springboard")
+        t.eq(read(shot), ph.frames.truth, "the Home screen of iOS")
+        # LiteBro is frozen now: its address takes connections and says nothing
         _, err = t.run("tap", "0.5", "0.5", code=2)
-        t.has(err, "refused")
+        t.has(err, "timeout (LiteBro is not on the screen")
+        out, _ = t.run("shot", shot)  # the screen is still shown
+        t.has(out, "live")
 
 
 def test_install(t):
+    own = mock_phone.OWN_BUILD
     with t.phone() as ph:
-        build = os.urandom(3 * 1024 * 1024 + 11)
-        local = t.write("builds/LiteBro test.tipa", build)
-        out, _ = t.run("install", local, "--host", "127.0.0.1", "--timeout", "30")
-        t.has(out, "serving LiteBro test.tipa (%d bytes) at http://127.0.0.1:" % len(build))
-        t.has(out, "the phone took the file (%d bytes)" % len(build))
+        # The phone installs by itself only LiteBro's own released build
+        out, _ = t.run("install")
+        t.has(out, "asked the phone to install " + own)
         t.has(out, "TrollStore opens on the phone")
-        e = [x for x in ph.take_events() if x["kind"] == "install"]
-        t.eq(len(e), 1)
-        t.ok(e[0]["url"].startswith("http://127.0.0.1:") and e[0]["url"].endswith("/LiteBro%20test.tipa"), e[0]["url"])
-        t.eq(e[0].get("data") == build, True, "TrollStore got the build whole")
+        t.eq([x["url"] for x in ph.take_events() if x["kind"] == "install"], [own])
+        time.sleep(0.9)  # TrollStore put the build in LiteBro's place: the old addresses are gone
+        _, err = t.run("ls", code=2)
+        t.has(err, "refused")
     with t.phone() as ph:
-        ph.fetch_installs = False
-        out, _ = t.run("install", "https://example.invalid/builds/LiteBro.tipa")
-        t.has(out, "asked the phone to install https://example.invalid/builds/LiteBro.tipa")
-        t.eq([x["url"] for x in ph.take_events()], ["https://example.invalid/builds/LiteBro.tipa"])
-        # The phone never comes for the file (a firewall between them)
-        local = t.write("builds/x.tipa", b"x" * 1000)
-        _, err = t.run("install", local, "--host", "127.0.0.1", "--timeout", "2", code=2)
-        t.has(err, "did not come for the file")
-        t.has(err, "firewall")
-        # The usual port is taken: another one is used
-        ph.fetch_installs = True
-        ph.take_events()
-        busy = socket.socket()
-        try:
-            busy.bind(("0.0.0.0", 47322))
-            busy.listen(1)
-        except OSError:
-            pass
-        try:
-            out, _ = t.run("install", local, "--host", "127.0.0.1", "--timeout", "30")
-            t.has(out, "the phone took the file (1000 bytes)")
-        finally:
-            busy.close()
-        _, err = t.run("install", code=1)
+        ph.installs = False
+        t.run("install", "--latest")
+        t.eq([x["url"] for x in ph.take_events()], [own])
+        # Any other build goes to the phone as a file, into LiteBro's own folder of the Files app
+        build = os.urandom(300 * 1024 + 11)
+        local = t.write("builds/LiteBro PR.tipa", build)
+        out, _ = t.run("install", local)
+        app = "Containers/Data/Application/0B9D7C2E-AAAA-4BBB-8CCC-DDDDEEEEFFFF"
+        t.has(out, "uploaded %s/Documents/LiteBro PR.tipa (%d bytes)" % (app, len(build)))
+        t.has(out, "TrollStore, Install")
+        t.eq(read(os.path.join(ph.root, *app.split("/"), "Documents", "LiteBro PR.tipa")) == build, True, "the build is in LiteBro's folder")
+        t.eq(ph.take_events(), [], "the phone was not asked to install it")
+        # The log does not say where LiteBro lives: its folder is found by its name
+        os.remove(os.path.join(ph.root, "Media", "LiteBro-Debug", "log.txt"))
+        t.run("install", local)
         _, err = t.run("install", os.path.join(t.work, "none.tipa"), code=1)
         t.has(err, "no such file here")
-    with t.phone(control=False) as ph:
+        _, err = t.run("install", local, local, code=1)
+        # TrollStore's URL scheme is off: the command would open the system Magnifier, and the phone says so
+        ph.magnifier = True
+        _, err = t.run("install", code=3)
+        t.has(err, "Magnifier")
+        t.has(err, "URL Scheme")
+        t.eq(ph.take_events(), [])
+    with t.phone(whole=False) as ph:
+        # The build that shares only LiteBro's folder: the file goes to its top
         local = t.write("builds/y.tipa", b"y" * 10)
-        _, err = t.run("install", local, "--host", "127.0.0.1", "--timeout", "5", code=3)
+        out, _ = t.run("install", local)
+        t.has(out, "uploaded y.tipa (10 bytes)")
+        t.eq(read(os.path.join(ph.root, "y.tipa")), b"y" * 10)
+    with t.phone(control=False) as ph:
+        _, err = t.run("install", code=3)
         t.has(err, "refused the install (403)")
-        _, err = t.run("install", "http://example.invalid/a.tipa", code=3)
 
 
 def test_wait(t):
@@ -750,7 +936,7 @@ def test_wait(t):
 
 
 TESTS = [test_help_and_misuse, test_connect, test_status, test_listing, test_reading, test_get, test_put, test_changes,
-         test_shot, test_watch, test_touch, test_look, test_text, test_button, test_install, test_wait]
+         test_shot, test_watch, test_touch, test_look, test_page, test_text, test_button, test_install, test_wait]
 
 
 def main():

@@ -413,11 +413,11 @@ def cmd_cat(argv):
         n = number(opt, "tail", 60, int)
         data, _ = fetch(server, pos[0], {"Range": "bytes=-%d" % limit})
         lines = text_of(data, pos[0]).splitlines()
-        return out("\n".join(lines[-n:]))
+        return out("\n".join(lines[max(0, len(lines) - n):]))
     data, r = fetch(server, pos[0], {"Range": "bytes=0-%d" % (limit - 1)})
     text = text_of(data, pos[0])
     if "head" in opt:
-        return out("\n".join(text.splitlines()[:number(opt, "head", 60, int)]))
+        return out("\n".join(text.splitlines()[:max(0, number(opt, "head", 60, int))]))
     out(text.rstrip("\n"))
     whole = (r.getheader("Content-Range") or "").rpartition("/")[2]
     if whole.isdigit() and int(whole) > len(data):
@@ -1205,7 +1205,7 @@ def remote(name, payload=None, timeout=None):
         raise Fail(3, "the phone refused (403): touch control is not switched on with the screen permission, or the "
                       "permission ran out")
     if status == 405:
-        raise Fail(1, "this build of LiteBro has no page commands: update it on the phone (iphone install --latest)")
+        raise Fail(1, "this build of LiteBro has no page commands: update it on the phone (iphone install)")
     if status == 404 and answer.get("error"):
         raise Fail(1, "the phone does not know the command %s" % name)
     if status == 400:
@@ -1324,7 +1324,7 @@ def cmd_log(argv):
         if starts:
             lines = lines[starts[-1]:]
         return out("\n".join(lines))
-    out("\n".join(lines[-number(opt, "tail", 60, int):]))
+    out("\n".join(lines[max(0, len(lines) - number(opt, "tail", 60, int)):]))
 
 
 def app_line(server):

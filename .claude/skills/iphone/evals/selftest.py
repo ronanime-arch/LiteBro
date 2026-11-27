@@ -57,7 +57,8 @@ class T:
         self.last = ""
 
     def run(self, *args, code=0, cwd=None, timeout=120):
-        env = dict(os.environ, LITEBRO_IPHONE_STATE=self.state, LITEBRO_IPHONE_TIMEOUT="2", PYTHONIOENCODING="utf-8")
+        # 3 s to answer: Windows takes a second to say that nothing listens on a port
+        env = dict(os.environ, LITEBRO_IPHONE_STATE=self.state, LITEBRO_IPHONE_TIMEOUT="3", PYTHONIOENCODING="utf-8")
         p = subprocess.run(self.cmd + [str(a) for a in args], env=env, cwd=cwd or self.work, timeout=timeout,
                            stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         out = p.stdout.decode("utf-8", "replace").lstrip("﻿").replace("\r\n", "\n")
@@ -568,10 +569,10 @@ def test_watch(t):
     with t.phone() as ph:
         frames = ph.frames
         frames.screen_changed(A)
-        later(0.6, lambda: frames.screen_changed(B))
-        later(1.2, lambda: frames.screen_changed(C))
+        later(2.0, lambda: frames.screen_changed(B))  # late enough for a helper that takes its time to start
+        later(4.0, lambda: frames.screen_changed(C))
         time.sleep(0.01)
-        out, _ = t.run("watch", folder, "--seconds", "2.5")
+        out, _ = t.run("watch", folder, "--seconds", "6")
         lines = out.splitlines()
         if len(lines) == 3:  # the helper began before the first change
             t.ok(lines[0].endswith("now"), "the first is the screen now")

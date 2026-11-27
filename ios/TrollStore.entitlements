@@ -22,6 +22,18 @@
 	<true/>
 	<key>com.apple.private.hid.manager.client</key>
 	<true/>
+	<key>com.apple.private.hid.client.event-filter</key>
+	<true/>
+	<key>com.apple.private.hid.client.event-monitor</key>
+	<true/>
+	<key>com.apple.backboard.client</key>
+	<true/>
+	<key>com.apple.security.iokit-user-client-class</key>
+	<array>
+		<string>IOHIDEventServiceFastPathUserClient</string>
+		<string>IOHIDLibUserClient</string>
+		<string>AppleSPUHIDDeviceUserClient</string>
+	</array>
 	<key>com.apple.private.security.no-sandbox</key>
 	<true/>
 	<key>platform-application</key>

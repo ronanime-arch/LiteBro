@@ -24,6 +24,8 @@ final class Browser: NSObject, ObservableObject {
     /// The one the app shows, for the computer's test commands (`Remote`)
     static weak var live: Browser?
     private static var saidNoSwitch = Set<String>()
+    /// The app's last memory warning: a page that ends soon after it ended for memory
+    private(set) var memoryWarned: Date?
 
     override init() {
         super.init()
@@ -51,6 +53,7 @@ final class Browser: NSObject, ObservableObject {
         timer = Timer.scheduledTimer(withTimeInterval: 30, repeats: true) { [weak self] _ in self?.unloadIdle() }
         let nc = NotificationCenter.default
         nc.addObserver(forName: UIApplication.didReceiveMemoryWarningNotification, object: nil, queue: .main) { [weak self] _ in
+            self?.memoryWarned = Date()
             self?.unloadIdle(all: true)
         }
         nc.addObserver(forName: UIApplication.willResignActiveNotification, object: nil, queue: .main) { [weak self] _ in
@@ -83,8 +86,10 @@ final class Browser: NSObject, ObservableObject {
             // With both off the page and its canvases are drawn in the page's own process, as before iOS 16.
             if ProcessInfo.processInfo.operatingSystemVersion.majorVersion < 17 {
                 for key in ["UseGPUProcessForDOMRenderingEnabled", "UseGPUProcessForCanvasRenderingEnabled"]
-                where !Probe.set(key, false, in: c.preferences) && Browser.saidNoSwitch.insert(key).inserted {
-                    Debug.write("!! WebKit has no switch \(key): pages may stop drawing or end")
+                where !Probe.set(key, false, in: c.preferences) {
+                    if Browser.saidNoSwitch.insert(key).inserted {
+                        Debug.write("!! WebKit has no switch \(key): pages may stop drawing or end")
+                    }
                 }
             }
             return c
@@ -405,6 +410,7 @@ extension Browser {
                s.host == host || host.hasSuffix("." + s.host) || s.host.hasSuffix("." + host) {
                 user = s.user
             }
+            tab.signingIn = nil
             if Prefs.vaultNever.contains(host) || vault.isSaved(host: host, user: user, pass: pass) { return }
             tab.offer = .save(host: host, user: user, pass: pass)
         default: break

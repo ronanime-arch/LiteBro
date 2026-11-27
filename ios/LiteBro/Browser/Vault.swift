@@ -270,32 +270,44 @@ enum VaultScript {
   }
   var cardSel = 'input[autocomplete~="cc-number"], input[name*="cardnumber" i], input[id*="cardnumber" i], ' +
                 'input[name*="card_number" i], input[id*="card-number" i], input[name*="ccnumber" i]';
-  // A sign-in that asks the name first and the password on the next page (PayPal, Google, Microsoft)
+  // A sign-in that asks the name first and the password on the next page (PayPal, Google, Microsoft):
+  // the one name field of a small form with a button
   var identSel = 'input[autocomplete~=username], input[type=email], input[name*=user i], input[id*=user i], ' +
                  'input[name*=email i], input[id*=email i], input[name*=login i], input[id*=login i]';
-  function ident() {
-    var e = Array.prototype.filter.call(document.querySelectorAll(identSel), function (e) {
-      var t = (e.type || 'text').toLowerCase();
-      return (t === 'text' || t === 'email' || t === 'tel') && shown(e);
+  function ident(form) {
+    var forms = form ? [form] : Array.prototype.slice.call(document.forms);
+    var found = [];
+    forms.forEach(function (f) {
+      var inputs = Array.prototype.filter.call(f.querySelectorAll('input:not([type=hidden])'), shown);
+      if (inputs.length > 3 || !f.querySelector('button, input[type=submit], [role=button]')) return;
+      Array.prototype.forEach.call(f.querySelectorAll(identSel), function (e) {
+        var t = (e.type || 'text').toLowerCase();
+        if ((t === 'text' || t === 'email' || t === 'tel') && shown(e)) found.push(e);
+      });
     });
-    return e.length === 1 ? e[0] : null;
+    return found.length === 1 ? found[0] : null;
   }
-  // Fields without the autocomplete hint get it, so the keyboard's own AutoFill (the iPhone's passwords and
-  // contact card) knows a sign-in form; a hint the page set is left as it is
+  // Fields of a sign-in form without the autocomplete hint get it, so the keyboard's own AutoFill (the
+  // iPhone's passwords) knows the form; a hint the page set is left as it is
   function hint(e, v) { if (e && !e.hasAttribute('autocomplete')) e.setAttribute('autocomplete', v); }
   var told = {};
   function look() {
     var ps = passwords();
-    if (ps.length === 1) { hint(ps[0], 'current-password'); hint(userFor(ps[0]), 'username'); }
+    if (ps.length === 1) {
+      hint(ps[0], 'current-password');
+      var u = userFor(ps[0]);
+      if (u && ps[0].form && u.form === ps[0].form) hint(u, 'username');
+    }
     else if (!ps.length) hint(ident(), 'username');
     if (!told.login && ps.length) { told.login = 1; post({ type: 'login' }); }
     if (!told.card && shown(document.querySelector(cardSel))) { told.card = 1; post({ type: 'card' }); }
   }
   var last = '';
-  function grab() {
+  function grab(form) {
     var p = passwords().filter(function (e) { return e.value; })[0];
     if (!p) {
-      var i = !passwords().length && ident();
+      // Only the form that is sent: a button or Enter in it
+      var i = form && form.tagName === 'FORM' && !passwords().length && ident(form);
       if (i && i.value) post({ type: 'ident', user: i.value });
       return;
     }
@@ -304,14 +316,14 @@ enum VaultScript {
     last = key;
     post({ type: 'save', user: u ? u.value : '', pass: p.value });
   }
-  document.addEventListener('submit', grab, true);
+  document.addEventListener('submit', function (e) { grab(e.target); }, true);
   document.addEventListener('click', function (e) {
     var b = e.target && e.target.closest && e.target.closest('button, input[type=submit], [role=button]');
-    if (b) setTimeout(grab, 0);
+    if (b) setTimeout(function () { grab(b.form || b.closest('form')); }, 0);
   }, true);
   document.addEventListener('keydown', function (e) {
     var t = e.target && (e.target.type || '').toLowerCase();
-    if (e.key === 'Enter' && (t === 'password' || t === 'text' || t === 'email' || t === 'tel')) grab();
+    if (e.key === 'Enter' && (t === 'password' || t === 'text' || t === 'email' || t === 'tel')) grab(e.target.form);
   }, true);
   var timer = 0;
   new MutationObserver(function () { clearTimeout(timer); timer = setTimeout(look, 400); })

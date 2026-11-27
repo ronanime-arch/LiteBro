@@ -285,3 +285,5 @@
 "Запомненный ключ этого компьютера будет заменён. Соглашайтесь, только если сами сканируете код с его экрана." = "The remembered key of this computer will be replaced. Agree only if you are scanning the code from its screen yourself.";
 "Пользователь" = "User";
 "Скрывать окна про cookie" = "Hide cookie windows";
+"Открывать ссылки в приложениях" = "Open links in apps";
+"Ссылка на сайт, у которого на телефоне стоит своё приложение (PayPal, банк, маркетплейс), открывается в этом приложении, где вы уже вошли, — как в Safari. Только по нажатию на ссылку, не при вводе адреса." = "A link to a site whose app is on the phone (PayPal, a bank, a marketplace) opens in that app, where you are already signed in, as in Safari. Only when you tap a link, not when you type an address.";

@@ -23,7 +23,8 @@ final class BrowserTab: NSObject, ObservableObject, Identifiable {
     /// A page on the lists of malicious or phishing sites, not opened
     @Published var danger: URL?
     /// What the bar above the toolbar offers: logins, saving a password, a card
-    @Published var offer: Offer?
+    @Published var offer: Offer? { didSet { offerKept = false } }
+    private var offerKept = false
     /// The page console (PageConsole), cleared with each new page
     @Published var console: [ConsoleLine] = []
 
@@ -346,21 +347,21 @@ extension BrowserTab: WKNavigationDelegate {
         decisionHandler(.allow)
     }
 
-    /// Only a tap on a link to another site, or the first page of a window a tap opened (PayPal's checkout):
-    /// never a typed address, a reload, back and forward, or a page the site itself goes to by a script
+    /// Only a tap on a link to another site: never a typed address, a reload, back and forward, a page the site
+    /// goes to by a script, or a window the site opened (a shop's PayPal window reports the payment back to
+    /// the shop's page, which would wait for it forever if the window went to the app)
     private func wantsApp(_ action: WKNavigationAction, in webView: WKWebView) -> Bool {
-        guard let to = action.request.url?.host?.lowercased() else { return false }
-        switch action.navigationType {
-        case .linkActivated:
-            let sel = NSSelectorFromString("_isUserInitiated")
-            if action.responds(to: sel), action.value(forKey: "_isUserInitiated") as? Bool == false { return false }
-            guard let from = webView.url?.host?.lowercased() else { return true }
-            return !(from == to || from.hasSuffix("." + to) || to.hasSuffix("." + from))
-        case .other:
-            return opener != nil && webView.backForwardList.currentItem == nil
-        default:
-            return false
-        }
+        guard action.navigationType == .linkActivated, let to = action.request.url?.host else { return false }
+        let sel = NSSelectorFromString("_isUserInitiated")
+        if action.responds(to: sel), action.value(forKey: "_isUserInitiated") as? Bool == false { return false }
+        guard let from = webView.url?.host else { return true }
+        return Self.site(from) != Self.site(to)
+    }
+
+    /// The last two parts of a host (shop.amazon.com and www.amazon.com are one site); on co.uk and the like
+    /// that joins sites, so a link there rather stays in the browser than leaves it
+    private static func site(_ host: String) -> String {
+        host.lowercased().split(separator: ".").suffix(2).joined(separator: ".")
     }
 
     func webView(_ webView: WKWebView, decidePolicyFor response: WKNavigationResponse,
@@ -393,8 +394,8 @@ extension BrowserTab: WKNavigationDelegate {
     func webView(_ webView: WKWebView, didCommit navigation: WKNavigation!) {
         media.removeAll()
         masters.removeAll()
-        // "Save the password?" stays: a sign-in sends it and goes to the next page at once
-        if case .save = offer {} else { offer = nil }
+        // "Save the password?" stays over the next page only: a sign-in sends it and goes there at once
+        if case .save = offer, !offerKept { offerKept = true } else { offer = nil; offerKept = false }
         mseDuration = nil
         console.removeAll()
         browser?.saveSession()
@@ -441,8 +442,10 @@ extension BrowserTab: WKNavigationDelegate {
         let active = UIApplication.shared.applicationState == .active
         if active, let last = processEnded, now.timeIntervalSince(last) < 60 {
             processEnded = nil
-            // Only the memory limit is the memory; without the reason (an older WebKit) it is the likely one
-            if reason == nil || reason == 0 {
+            // iOS ending the process for memory reaches WebKit as a crash (3) too: then a memory warning of
+            // the app in the last minute tells it; WebKit's own limit is 0, an older WebKit gives no reason
+            let warned = browser?.memoryWarned.map { now.timeIntervalSince($0) < 60 } ?? false
+            if reason == nil || reason == 0 || warned {
                 processEnd = .memory
                 failure = L("Закройте другие вкладки и обновите страницу.")
             } else {

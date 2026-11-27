@@ -4,7 +4,8 @@ import WebKit
 /// Test commands from the computer through the files address, `POST /<secret>/_remote/<name>` with JSON in and out:
 /// `state` (the current tab), `open` {url, newTab?}, `js` {code} (the body of an async function in the page's
 /// world, its `return` comes back), `click` {x, y} (a UIKit control at 0…1 of the window). So the computer
-/// tests sites on the phone without taps. Only with «Управление касаниями» on (checked by `FileShare`).
+/// tests sites on the phone without taps. Also `probe` {url, parts?, features?} (a test tab, see `Probe`),
+/// `features` (WebKit's switches by name) and `closeOthers` (only the tab on the screen stays). Only with «Управление касаниями» on (checked by `FileShare`).
 enum Remote {
     static func run(_ name: String, _ m: [String: Any], done: @escaping (Int, String) -> Void) {
         DispatchQueue.main.async {
@@ -34,6 +35,19 @@ enum Remote {
                     case .failure(let e): answer(200, json(["error": String(describing: e)]))
                     }
                 }
+            case "probe":
+                // A test tab: WebKit's default web view plus the named parts of LiteBro's (see `Probe`)
+                guard let s = m["url"] as? String, let u = URL(string: s), u.scheme != nil, let b = Browser.live
+                else { return done(400, json(["error": "url"])) }
+                let parts = Set(m["parts"] as? [String] ?? [])
+                let tab = b.probeTab(u, Probe.webView(b, parts: parts, features: m["features"] as? [String: Bool] ?? [:]))
+                done(200, json(["tabs": b.tabs.count, "parts": parts.sorted(), "url": tab.url?.absoluteString ?? ""]))
+            case "features":
+                done(200, json(Probe.features(in: Browser.live?.current?.webView?.configuration.preferences ?? WKPreferences())))
+            case "closeOthers":
+                guard let b = Browser.live else { return done(409, json(["error": "no browser"])) }
+                b.closeOthers()
+                done(200, json(state()))
             case "click":
                 guard let x = m["x"] as? Double, let y = m["y"] as? Double else { return done(400, json(["error": "x, y"])) }
                 done(200, Touch.click(x: min(max(x, 0), 1), y: min(max(y, 0), 1)))

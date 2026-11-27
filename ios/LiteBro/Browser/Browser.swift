@@ -132,6 +132,25 @@ final class Browser: NSObject, ObservableObject {
         return w
     }
 
+    /// A tab around a web view made for a test from the computer (`Probe`)
+    func probeTab(_ url: URL, _ w: WKWebView) -> BrowserTab {
+        let tab = BrowserTab(url: nil, browser: self)
+        tab.showsHome = false
+        tabs.append(tab)
+        tab.ensureWebView(load: false, adopting: w)
+        tab.load(url)
+        show(tab)
+        return tab
+    }
+
+    /// Only the tab on the screen stays
+    func closeOthers() {
+        guard let keep = current else { return }
+        for t in tabs where t.id != keep.id { t.unload() }
+        tabs = [keep]
+        saveSession()
+    }
+
     func close(_ tab: BrowserTab) {
         tab.unload()
         tabs.removeAll { $0.id == tab.id }
@@ -204,6 +223,10 @@ final class Browser: NSObject, ObservableObject {
                                            forMainFrameOnly: false))
         content.addUserScript(WKUserScript(source: VaultScript.source, injectionTime: .atDocumentEnd,
                                            forMainFrameOnly: false, in: .defaultClient))
+        if RuffleFix.needed {
+            content.addUserScript(WKUserScript(source: RuffleFix.source, injectionTime: .atDocumentStart,
+                                               forMainFrameOnly: false))
+        }
         if Prefs.console {
             content.addUserScript(WKUserScript(source: PageConsole.source, injectionTime: .atDocumentStart,
                                                forMainFrameOnly: true))

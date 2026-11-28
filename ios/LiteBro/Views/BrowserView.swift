@@ -56,8 +56,10 @@ struct TabScreen: View {
                 } else if let w = tab.webView {
                     WebContainer(webView: w)
                     if let f = tab.failure {
-                        Notice(icon: tab.outOfMemory ? "memorychip" : "wifi.exclamationmark",
-                               title: tab.outOfMemory ? L("Странице не хватило памяти телефона") : L("Сайт не отвечает"),
+                        Notice(icon: tab.processEnd == .memory ? "memorychip"
+                                     : tab.processEnd == .crash ? "exclamationmark.triangle" : "wifi.exclamationmark",
+                               title: tab.processEnd == .memory ? L("Странице не хватило памяти телефона")
+                                      : tab.processEnd == .crash ? L("Страница закрылась с ошибкой") : L("Сайт не отвечает"),
                                detail: (tab.url?.absoluteString ?? "") + "\n" + f, action: L("Попробовать ещё раз")) {
                             tab.reload()
                         }
@@ -210,10 +212,10 @@ struct Toolbar: View {
     var body: some View {
         HStack {
             button("chevron.backward", L("Назад")) { tab.goBack() }
-                .disabled(tab.showsHome && tab.webView?.url == nil)
+                .disabled(!tab.canGoBackNow)
             button("chevron.forward", L("Вперёд")) { tab.goForward() }
-                .disabled(!tab.canGoForward || tab.showsHome)
-            button("house", L("Плитки")) { tab.showsHome = true }
+                .disabled(!tab.canGoForwardNow)
+            button("house", L("Плитки")) { tab.showHome() }
             Button { tab.rescan(); sheet = .media } label: {
                 Image(systemName: "arrow.down.circle")
                     .overlay(alignment: .topTrailing) { badge(tab.media.count) }

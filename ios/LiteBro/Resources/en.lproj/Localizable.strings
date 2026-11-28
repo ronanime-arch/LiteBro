@@ -90,7 +90,7 @@
 "Попробовать ещё раз" = "Try again";
 "Правее" = "Move right";
 "Разрешённые сайты: x.com *.y.com" = "Allowed sites: x.com *.y.com";
-"Реклама и счётчики — списки EasyList, RU AdList и EasyPrivacy, их применяет сам движок, почти без затрат памяти; реклама в видео YouTube проматывается. Вредные сайты — списки uBlock Badware, URLhaus и Phishing Army и проверка Safe Browsing: такой сайт не откроется без вашего согласия. Списки обновляются раз в 4 дня." = "Ads and counters: the EasyList, RU AdList and EasyPrivacy lists, applied by the engine itself at almost no memory cost; video ads on YouTube are skipped. Harmful sites: the uBlock Badware, URLhaus and Phishing Army lists and the Safe Browsing check; such a site does not open without your consent. The lists update every 4 days.";
+"Реклама, счётчики и окна про cookie — списки EasyList, RU AdList, EasyPrivacy и EasyList Cookie, их применяет сам движок, почти без затрат памяти; реклама в видео YouTube проматывается. Вредные сайты — списки uBlock Badware, URLhaus и Phishing Army и проверка Safe Browsing: такой сайт не откроется без вашего согласия. Списки обновляются раз в 4 дня." = "Ads, counters and cookie windows: the EasyList, RU AdList, EasyPrivacy and EasyList Cookie lists, applied by the engine itself at almost no memory cost; video ads on YouTube are skipped. Harmful sites: the uBlock Badware, URLhaus and Phishing Army lists and the Safe Browsing check; such a site does not open without your consent. The lists update every 4 days.";
 "Сайт есть в списках вредоносных и фишинговых сайтов: он может украсть пароли и данные карт или заразить устройство." = "The site is on lists of malicious and phishing sites: it may steal passwords and card details or infect the device.";
 "Сайт не отвечает" = "The site does not respond";
 "Сайты без блокировки" = "Sites without blocking";
@@ -279,6 +279,11 @@
 "Открыть в другом приложении?" = "Open in another app?";
 "Странице не хватило памяти телефона" = "The page ran out of the phone's memory";
 "Закройте другие вкладки и обновите страницу." = "Close other tabs and reload the page.";
+"Страница закрылась с ошибкой" = "The page closed with an error";
+"Страница закрывается снова после перезагрузки. Закройте другие вкладки и попробуйте ещё раз." = "The page closes again after reloading. Close other tabs and try again.";
 "Добавить компьютер в терминал?" = "Add this computer to the terminal?";
 "Запомненный ключ этого компьютера будет заменён. Соглашайтесь, только если сами сканируете код с его экрана." = "The remembered key of this computer will be replaced. Agree only if you are scanning the code from its screen yourself.";
 "Пользователь" = "User";
+"Скрывать окна про cookie" = "Hide cookie windows";
+"Открывать ссылки в приложениях" = "Open links in apps";
+"Ссылка на сайт, у которого на телефоне стоит своё приложение (PayPal, банк, маркетплейс), открывается в этом приложении, где вы уже вошли, — как в Safari. Только по нажатию на ссылку, не при вводе адреса." = "A link to a site whose app is on the phone (PayPal, a bank, a marketplace) opens in that app, where you are already signed in, as in Safari. Only when you tap a link, not when you type an address.";

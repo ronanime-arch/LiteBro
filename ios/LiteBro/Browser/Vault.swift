@@ -270,27 +270,75 @@ enum VaultScript {
   }
   var cardSel = 'input[autocomplete~="cc-number"], input[name*="cardnumber" i], input[id*="cardnumber" i], ' +
                 'input[name*="card_number" i], input[id*="card-number" i], input[name*="ccnumber" i]';
+  // A sign-in that asks the name first and the password on the next page (PayPal, Google, Microsoft):
+  // the one name field of a small form with a button
+  var identSel = 'input[autocomplete~=username], input[type=email], input[name*=user i], input[id*=user i], ' +
+                 'input[name*=email i], input[id*=email i], input[name*=login i], input[id*=login i]';
+  // A form that says it is a sign-in (its address, names or buttons), not a newsletter or a search
+  var signIn = /log.?in|sign.?in|auth|account|next|continue|войти|вход|далее|продолжить|увійти|далі/i;
+  function looksSignIn(f) {
+    var b = f.querySelector('button, input[type=submit], [role=button]');
+    if (!b) return false;
+    var words = [f.getAttribute('action'), f.id, f.className, f.getAttribute('name'), b.textContent, b.value,
+                 b.id, b.getAttribute('name')].join(' ');
+    return signIn.test(words) && !signUp.test(words);
+  }
+  // A sign-up or a new password: the keyboard offers a new strong password there, not the saved ones
+  var signUp = /sign.?up|regist|create|new.?pass|confirm|join|регистр|созда|новый пароль/i;
+  function looksSignUp(p) {
+    var f = p.form || document;
+    return signUp.test([p.id, p.getAttribute('name'), f.id, f.className, f.getAttribute && f.getAttribute('action')].join(' '));
+  }
+  function ident(form) {
+    var forms = form ? [form] : Array.prototype.slice.call(document.forms);
+    var found = [];
+    forms.forEach(function (f) {
+      var inputs = Array.prototype.filter.call(f.querySelectorAll('input:not([type=hidden])'), shown);
+      if (inputs.length > 3 || !looksSignIn(f)) return;
+      Array.prototype.forEach.call(f.querySelectorAll(identSel), function (e) {
+        var t = (e.type || 'text').toLowerCase();
+        if ((t === 'text' || t === 'email' || t === 'tel') && shown(e)) found.push(e);
+      });
+    });
+    return found.length === 1 ? found[0] : null;
+  }
+  // Fields of a sign-in form without the autocomplete hint get it, so the keyboard's own AutoFill (the
+  // iPhone's passwords) knows the form; a hint the page set is left as it is
+  function hint(e, v) { if (e && !e.hasAttribute('autocomplete')) e.setAttribute('autocomplete', v); }
   var told = {};
   function look() {
-    if (!told.login && passwords().length) { told.login = 1; post({ type: 'login' }); }
+    var ps = passwords();
+    if (ps.length === 1 && !looksSignUp(ps[0])) {
+      hint(ps[0], 'current-password');
+      var u = userFor(ps[0]);
+      if (u && ps[0].form && u.form === ps[0].form) hint(u, 'username');
+    }
+    else if (!ps.length) hint(ident(), 'username');
+    if (!told.login && ps.length) { told.login = 1; post({ type: 'login' }); }
     if (!told.card && shown(document.querySelector(cardSel))) { told.card = 1; post({ type: 'card' }); }
   }
   var last = '';
-  function grab() {
+  function grab(form) {
     var p = passwords().filter(function (e) { return e.value; })[0];
-    if (!p) return;
+    if (!p) {
+      // Only the form that is sent: a button or Enter in it
+      var i = form && form.tagName === 'FORM' && !passwords().length && ident(form);
+      if (i && i.value) post({ type: 'ident', user: i.value });
+      return;
+    }
     var u = userFor(p), key = (u ? u.value : '') + '\n' + p.value;
     if (key === last) return;
     last = key;
     post({ type: 'save', user: u ? u.value : '', pass: p.value });
   }
-  document.addEventListener('submit', grab, true);
+  document.addEventListener('submit', function (e) { grab(e.target); }, true);
   document.addEventListener('click', function (e) {
     var b = e.target && e.target.closest && e.target.closest('button, input[type=submit], [role=button]');
-    if (b) setTimeout(grab, 0);
+    if (b) setTimeout(function () { grab(b.form || b.closest('form')); }, 0);
   }, true);
   document.addEventListener('keydown', function (e) {
-    if (e.key === 'Enter' && e.target && e.target.type === 'password') grab();
+    var t = e.target && (e.target.type || '').toLowerCase();
+    if (e.key === 'Enter' && (t === 'password' || t === 'text' || t === 'email' || t === 'tel')) grab(e.target.form);
   }, true);
   var timer = 0;
   new MutationObserver(function () { clearTimeout(timer); timer = setTimeout(look, 400); })

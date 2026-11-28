@@ -1,5 +1,6 @@
 import Darwin
 import Foundation
+import Metal
 import UIKit
 
 /// The debug module, kept until the app is ready for release: a launch log with memory, crash traces
@@ -50,6 +51,8 @@ enum Debug {
         write("data \(NSHomeDirectory())")
         write("sandbox: \(FileManager.default.isReadableFile(atPath: "/var/mobile/Media") ? "no (whole phone)" : "yes")"
               + ", free disk \(freeDiskMB()) MB")
+        // CoreImage in this process fell back to OpenGL and crashed in the share sheet: is Metal there at all
+        write("metal: \(MTLCreateSystemDefaultDevice() == nil ? "no device" : "yes")")
         if let s = failedStep { write("!! the last launch did not finish, its last step: \(s)") }
         if let c = lastCrash() { write("!! crash of an earlier run:\n" + c) }
         if safeMode { write("SAFE MODE: no saved tabs, no filter lists, no rules" + (forced ? " (asked in the settings)" : "")) }

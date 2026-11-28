@@ -163,6 +163,7 @@ class MockPhone:
         self.installs = True            # TrollStore installs what _install asks for: the running LiteBro is gone
         self.magnifier = False          # TrollStore's URL scheme is off: the install command would open Magnifier
         self.dead_taps = False          # in-app fingers do nothing, as on the user's phone on 2026-11-27
+        self.app_shot = True            # _remote/shot: LiteBro pictures its own screen (builds from 2026-11-28)
         self.leaves_after = 2.0         # s after Home or the side button until iOS freezes LiteBro; None: never
         self.log = log
         self._files = None
@@ -326,6 +327,24 @@ class MockPhone:
         if not (real == self.rootreal or real.startswith(self.rootreal + os.sep)):
             return None
         return full, parts
+
+    def through_link(self, parts):
+        """FileShare.throughLink: the path goes through a link before its last part. Nothing is changed
+        through a link: a program that empties a linked folder file by file would empty what it leads to."""
+        full = self.root
+        for p in parts[:-1]:
+            for piece in [x for x in p.replace("\\", "/").split("/") if x not in ("", ".", "..")]:
+                full = full + os.sep + self.stored(full, piece)
+                if os.path.islink(full):
+                    return True
+        return False
+
+    def own_picture(self):
+        """Remote.shot: LiteBro's own windows as a JPEG (the points of the screen twice over); None: no window."""
+        app = self.on_event.__self__ if self.on_event else None
+        if app is None:
+            return jpeg(["LiteBro"], size=(780, 1688))
+        return app.own_picture()
 
     def href(self, rel, is_dir):
         enc = [urllib.parse.quote(p, safe="-._~:") for p in rel]
@@ -527,7 +546,9 @@ class FilesHandler(Handler):
         path = uri.split("?", 1)[0]
         f = ph.resolve(uri)
         upload = None
-        if method == "PUT" and not ph.read_only and f:
+        t = ph.files_token
+        command = path == "/%s/_touch" % t or path.startswith("/%s/_remote/" % t)  # not files: nothing is kept of a PUT
+        if method == "PUT" and not ph.read_only and f and not command and not ph.through_link(f[1]):
             temp = os.path.join(os.path.dirname(f[0]), ".litebro-upload-" + uuid.uuid4().hex)
             try:
                 upload = (open(temp, "wb"), temp, f[0])
@@ -568,6 +589,11 @@ class FilesHandler(Handler):
             drop_upload()
             if not ph.control:
                 return self.respond(403)
+            if path == "/%s/_remote/shot" % t and ph.app_shot:
+                picture = ph.own_picture()
+                if picture is None:
+                    return self.respond(409)
+                return self.respond(200, [("Content-Type", "image/jpeg"), ("Cache-Control", "no-store")], picture)
             status, answer = self.remote(path[len("/%s/_remote/" % t):], self.json_body(body) or {})
             return self.respond(status, [("Content-Type", "application/json; charset=utf-8")],
                                 json.dumps(answer, ensure_ascii=False).encode("utf-8"))
@@ -601,7 +627,7 @@ class FilesHandler(Handler):
             drop_upload()
             return self.respond(404)
         full, rel = f
-        if ph.read_only and method in ("PUT", "DELETE", "MKCOL", "MOVE", "COPY", "PROPPATCH"):
+        if method in ("PUT", "DELETE", "MKCOL", "MOVE", "COPY", "PROPPATCH") and (ph.read_only or ph.through_link(rel)):
             drop_upload()
             return self.respond(403)
         exists = os.path.exists(full)  # follows a link, as fileExists does
@@ -680,6 +706,8 @@ class FilesHandler(Handler):
             to = ph.resolve(urllib.parse.urlsplit(d).path if "://" in d else d) if d else None
             if not exists or not rel or not to:
                 return self.respond(400)
+            if ph.through_link(to[1]):
+                return self.respond(403)
             overwrite = (self.headers.get("Overwrite") or "").upper() != "F"
             had = os.path.lexists(to[0])
             if had and not overwrite:
@@ -964,10 +992,14 @@ class FakeApp:
     def tile_box(self, i):
         return (0.08 + 0.30 * i, 0.18, 0.24, 0.12)
 
-    def picture(self, moving=None):
+    def own_picture(self):
+        """What _remote/shot gives: LiteBro's own windows, whatever else the phone shows; None once it left the screen."""
+        return None if self.screen == "springboard" else self.picture(size=(780, 1688))
+
+    def picture(self, moving=None, size=(591, 1280)):
         extra = [] if moving is None else [(0.0, 0.45 + 0.01 * moving, 1.0, 0.03, "... moving ...", (120, 90, 20))]
         if self.screen == "springboard":
-            return jpeg(["9:41", "", "Home screen of iOS", "(LiteBro is not on the screen)"], background=(10, 40, 80),
+            return jpeg(["9:41", "", "Home screen of iOS", "(LiteBro is not on the screen)"], size=size, background=(10, 40, 80),
                         boxes=[(0.08, 0.30, 0.2, 0.1, "LiteBro", (90, 60, 160)), (0.38, 0.30, 0.2, 0.1, "TrollStore", (40, 120, 60))] + extra)
         boxes = [self.ADDRESS + (("| " if self.focus else "") + (self.field or "Search or address"), (50, 50, 60) if not self.focus else (30, 70, 120)),
                  self.GO + ("Go", (40, 110, 60))]
@@ -979,7 +1011,7 @@ class FakeApp:
             lines = ["Page: " + self.url, "", "The page of " + (urllib.parse.urlsplit(self.url).hostname or "?"), "loaded."]
         if self.focus:
             boxes.append((0.0, 0.62, 1.0, 0.26, "[ keyboard ]", (40, 40, 44)))
-        return jpeg(lines, boxes=boxes + extra)
+        return jpeg(lines, size=size, boxes=boxes + extra)
 
     def hit(self, x, y):
         """The class of the view under a point, as hitTest names it."""

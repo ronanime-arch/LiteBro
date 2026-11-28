@@ -133,13 +133,17 @@ final class FrameStore {
         kept = nil
         lock.unlock()
         guard let pixels else { return }
-        var image = CIImage(cvPixelBuffer: pixels).oriented(o)
-        let longest = max(image.extent.width, image.extent.height)
-        if longest > 1280 { image = image.transformed(by: CGAffineTransform(scaleX: 1280 / longest, y: 1280 / longest)) }
-        guard let space = CGColorSpace(name: CGColorSpace.sRGB),
-              let jpeg = context.jpegRepresentation(of: image, colorSpace: space,
-                                                    options: [CIImageRepresentationOption(rawValue: kCGImageDestinationLossyCompressionQuality as String): 0.55])
-        else { return }
+        // In a pool of its own: Core Image leaves autoreleased objects, and the stream's loop is one block
+        // that never returns to let its thread's pool go (the extension has about 50 MB)
+        let made = autoreleasepool { () -> Data? in
+            var image = CIImage(cvPixelBuffer: pixels).oriented(o)
+            let longest = max(image.extent.width, image.extent.height)
+            if longest > 1280 { image = image.transformed(by: CGAffineTransform(scaleX: 1280 / longest, y: 1280 / longest)) }
+            guard let space = CGColorSpace(name: CGColorSpace.sRGB) else { return nil }
+            return context.jpegRepresentation(of: image, colorSpace: space,
+                                              options: [CIImageRepresentationOption(rawValue: kCGImageDestinationLossyCompressionQuality as String): 0.55])
+        }
+        guard let jpeg = made else { return }
         lock.lock()
         frame = jpeg
         number += 1
@@ -297,18 +301,21 @@ private final class ScreenHandler: HTTPHandler {
             var seen = 0
             var sent = Date()
             while channel.isActive, !frames.isClosed {
-                if let got = frames.next(after: seen, wait: 0.5) {
-                    seen = got.1
-                    send(got.0)
-                    sent = Date()
-                } else {
-                    // Half a second without a picture: the last frame of a burst may still wait for its own
-                    frames.encode()
-                    // A still screen: the same picture again now and then, so that a viewer who left is noticed
-                    // (a send to a closed connection fails) and the stream does not look dead
-                    if Date().timeIntervalSince(sent) > 5, let now = frames.current(), now.number <= seen {
-                        send(now.picture)
+                // Each turn in its own pool: this block runs for as long as the viewer watches
+                autoreleasepool {
+                    if let got = frames.next(after: seen, wait: 0.5) {
+                        seen = got.1
+                        send(got.0)
                         sent = Date()
+                    } else {
+                        // Half a second without a picture: the last frame of a burst may still wait for its own
+                        frames.encode()
+                        // A still screen: the same picture again now and then, so that a viewer who left is
+                        // noticed (a send to a closed connection fails) and the stream does not look dead
+                        if Date().timeIntervalSince(sent) > 5, let now = frames.current(), now.number <= seen {
+                            send(now.picture)
+                            sent = Date()
+                        }
                     }
                 }
             }

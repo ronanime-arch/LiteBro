@@ -383,6 +383,18 @@ def test_get(t):
             t.eq(read(os.path.join(t.work, "linked.mov")) == read(os.path.join(src, "IMG_0003.MOV")), True, "a linked file whole")
             out, _ = t.run("ls", "Media/Camera/100APPLE")
             t.eq(len(out.splitlines()), 3)
+            # Nothing is changed through a link: a program that empties a linked folder file by file before
+            # removing it would empty the folder the link leads to. The link itself can go.
+            _, err = t.run("rm", "Media/Camera/100APPLE/IMG_0002.JPG", code=3)
+            t.has(err, "refused (403)")
+            _, err = t.run("put", os.path.join(t.work, "movie.mov"), "Media/Camera/new.mov", code=3)
+            _, err = t.run("mkdir", "Media/Camera/New", code=3)
+            _, err = t.run("mv", "Media/Downloads/Отчёт за ноябрь.pdf", "Media/Camera/x.pdf", code=3)
+            t.eq(sorted(os.listdir(src)), ["IMG_0001.JPG", "IMG_0002.JPG", "IMG_0003.MOV"], "what the link leads to is as it was")
+            t.eq([n for n in os.listdir(os.path.join(ph.root, "Media", "DCIM")) if n.startswith(".litebro-upload-")], [], "no upload leftovers")
+            t.run("rm", "Media/Camera", "-r")
+            t.ok(not os.path.lexists(os.path.join(ph.root, "Media", "Camera")), "the link is gone")
+            t.eq(sorted(os.listdir(src)), ["IMG_0001.JPG", "IMG_0002.JPG", "IMG_0003.MOV"], "and the folder it led to stays whole")
 
 
 def test_put(t):
@@ -519,8 +531,15 @@ def test_shot(t):
         t.run("shot", "--out", os.path.join(t.work, "o.jpg"))
         t.eq(read(os.path.join(t.work, "o.jpg")), C)
         ph.stop_broadcast()
+        # The broadcast is gone and the phone is there: LiteBro pictures its own screen instead, and says so
+        out, err = t.run("shot", os.path.join(t.work, "own.jpg"))
+        t.has(out, "own.jpg 780x1688 app")
+        t.has(err, "note: the screen broadcast does not answer")
+        t.eq(read(os.path.join(t.work, "own.jpg")), ph.own_picture())
+        ph.app_shot = False  # a build that cannot: the first trouble is the one reported
         _, err = t.run("shot", code=2)
         t.has(err, "refused")
+        ph.app_shot = True
         ph.start_broadcast()  # a new broadcast: the extension starts again, with the frames of its own start
         out, _ = t.run("shot", os.path.join(t.work, "s.jpg"))
         t.eq(read(os.path.join(t.work, "s.jpg")), C)
@@ -683,9 +702,10 @@ def test_touch(t):
         _, err = t.run("touch", code=3)
         t.eq(ph.take_events(), [], "nothing reached the phone")
     with t.phone(broadcast=False) as ph:
-        # Looking needs the screen address: nothing is sent without it
+        # A look without the screen address on a build that cannot picture itself: nothing is sent
+        ph.app_shot = False
         _, err = t.run("tap", "0.5", "0.5", "--shot", code=1)
-        t.has(err, "no screen address yet")
+        t.has(err, "cannot picture its own screen")
         t.eq(ph.take_events(), [])
 
 
@@ -747,6 +767,63 @@ def test_look(t):
             out, err = t.run("tap", "0.5", "0.5", "--shot")
             t.has(out, "shot none changed=no")
             t.has(err, "no picture came")
+
+
+def test_own(t):
+    """LiteBro's own screen, pictured by the app: no screen address and no broadcast."""
+    with t.phone(app=True, broadcast=False) as ph:
+        app = ph.on_event.__self__
+        shot = os.path.join(t.work, "own.jpg")
+        out, err = t.run("shot", shot)  # only the files address is known
+        t.has(out, "own.jpg 780x1688 app")
+        t.lacks(err, "note:")
+        t.eq(read(shot), app.own_picture())
+        out, _ = t.run("shot", "--app", "--out", shot)
+        t.has(out, "780x1688 app")
+        # An action and a look: before and after, by the app itself
+        out, err = t.run("tap", "0.3", "0.93", "--shot", "--out", shot)
+        t.has(out, "tap 0.3000 0.9300 sent, under the finger: UITextField")
+        t.has(out, "own.jpg 780x1688 changed=yes app")
+        t.eq(app.focus, True)
+        t.eq(read(shot), app.own_picture(), "the screen after the tap")
+        out, err = t.run("click", "0.5", "0.3", "--shot", "--out", shot)
+        t.has(out, "changed=no app")
+        t.has(err, "did not change")
+        out, _ = t.run("type", "example.org", "--enter", "--shot", "--out", shot)
+        t.has(out, "changed=yes app")
+        t.eq(app.url, "https://example.org")
+        # Pixels of that picture
+        t.run("tap", "234", "1570")
+        e = [x for x in ph.take_events() if x["kind"] == "finger"]
+        t.ok(abs(e[-1]["x"] - 0.3) < 1e-6 and abs(e[-1]["y"] - 1570 / 1688.0) < 1e-6, "pixels of LiteBro's own picture: %r" % e[-1])
+        # A button takes LiteBro off the screen: its own picture would show nothing of that
+        _, err = t.run("button", "home", "--yes", "--shot", code=1)
+        t.has(err, "no screen address yet")
+        t.eq([x for x in ph.take_events() if x["kind"] == "button"], [], "the button was not pressed")
+    with t.phone(app=True) as ph:
+        # Both addresses: the phone's screen by default, LiteBro's own on request
+        shot = os.path.join(t.work, "own.jpg")
+        out, _ = t.run("shot", shot)
+        t.has(out, "591x1280 live")
+        out, _ = t.run("shot", shot, "--app")
+        t.has(out, "780x1688 app")
+        out, _ = t.run("tap", "0.3", "0.93", "--shot", "--app", "--out", shot)
+        t.has(out, "changed=yes app")
+        # The broadcast stops in the middle of the work: the look goes on with LiteBro's own screen
+        ph.stop_broadcast()
+        out, err = t.run("key", "backspace", "--shot", "--out", shot)
+        t.has(out, "key backspace x1 sent")
+        t.has(out, "app")
+        t.has(err, "the screen broadcast does not answer")
+        _, err = t.run("button", "side", "--yes", "--shot", code=2)
+        t.has(err, "refused")
+        t.eq([x for x in ph.take_events() if x["kind"] == "button"], [], "the button was not pressed")
+    with t.phone(app=True, broadcast=False, control=False):
+        _, err = t.run("shot", code=3)
+        t.has(err, "refused (403)")
+    with t.phone(app=True, broadcast=False, old_build=True):
+        _, err = t.run("shot", code=1)
+        t.has(err, "cannot picture its own screen")
 
 
 def test_page(t):
@@ -937,7 +1014,7 @@ def test_wait(t):
 
 
 TESTS = [test_help_and_misuse, test_connect, test_status, test_listing, test_reading, test_get, test_put, test_changes,
-         test_shot, test_watch, test_touch, test_look, test_page, test_text, test_button, test_install, test_wait]
+         test_shot, test_watch, test_touch, test_look, test_own, test_page, test_text, test_button, test_install, test_wait]
 
 
 def main():

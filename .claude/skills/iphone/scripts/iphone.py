@@ -38,7 +38,9 @@ menu "...", "Access from PC" (files: port 8080 or 8082-8089, screen: port 8081).
   put <local> <remote> [-r]    upload
   mkdir <remote>   rm <remote> [-r]   mv <from> <to> [--force]   cp <from> <to> [--force]
 
-  shot [file] [--wait 12]      a picture of the screen (needs the broadcast)
+  shot [file] [--wait 12]      a picture of the phone's screen (needs the broadcast)
+  shot [file] --app            a picture of LiteBro's own screen, made by the app: no broadcast needed
+                               (shot alone gives it too when the screen address is not set or does not answer)
   watch [dir] [--seconds 10] [--until-change]       pictures as the screen changes
 
   page [--json]                what LiteBro shows: the address, the title, whether it is loading
@@ -54,7 +56,8 @@ menu "...", "Access from PC" (files: port 8080 or 8082-8089, screen: port 8081).
   key backspace|enter [--count N]
   button home|side --yes       a button of the phone (takes LiteBro off the screen)
   touch [json | key=value ...] [--via app|screen]    the raw request; alone: what the phone can do
-    for tap, hold, swipe, type, key, button: --shot [--out file] looks at the screen after the action;
+    for tap, hold, swipe, type, key, click, button: --shot [--out file] looks at the screen after the action
+    (without the screen address, or with --app: at LiteBro's own screen; a button needs the screen address);
     for tap, hold, swipe: --system sends a system-wide finger, --opt key=value passes an option of the
     touch request (recipe, masks, sender, ...), --of WxH says what the pixels are of
 
@@ -78,9 +81,10 @@ LOGS = ["Media/LiteBro-Debug/log.txt", "Debug/log.txt"]
 
 
 class Fail(Exception):
-    def __init__(self, code, text):
+    def __init__(self, code, text, refused=False):
         Exception.__init__(self, text)
         self.code = code
+        self.refused = refused  # nothing listens at the address, while the phone itself is there
 
 
 def out(text=""):
@@ -190,7 +194,7 @@ class Server:
                 return self.conn.getresponse()
             except ConnectionRefusedError:
                 self.close()
-                raise Fail(2, "no answer from %s:%d: %s" % (self.host, self.port, REFUSED))
+                raise Fail(2, "no answer from %s:%d: %s" % (self.host, self.port, REFUSED), refused=True)
             except (socket.timeout, TimeoutError):
                 self.close()
                 raise Fail(2, "no answer from %s:%d: %s" % (self.host, self.port, SILENT))
@@ -670,7 +674,7 @@ class Stream:
         try:
             self.sock = socket.create_connection((s.host, s.port), timeout=s.timeout)
         except ConnectionRefusedError:
-            raise Fail(2, "no answer from %s:%d: refused (the screen broadcast is not running)" % (s.host, s.port))
+            raise Fail(2, "no answer from %s:%d: refused (the screen broadcast is not running)" % (s.host, s.port), refused=True)
         except (socket.timeout, TimeoutError):
             raise Fail(2, "no answer from %s:%d: %s" % (s.host, s.port, SILENT))
         except OSError as e:
@@ -891,11 +895,57 @@ def save_shot(picture, path):
     return w, h
 
 
+OWN_SETTLE = 0.8  # s after an action before LiteBro pictures its own screen
+
+
+def app_shot(files):
+    """LiteBro's own screen as a JPEG, made by the app itself (the phone's command shot): no broadcast is needed.
+    None: this build of LiteBro has no such command."""
+    status, _, data = files.request("POST", files.base + "_remote/shot", body=b"{}", headers={"Content-Type": "application/json"})
+    if status == 403:
+        raise Fail(3, "the phone refused (403): touch control is not switched on with the screen permission, or the "
+                      "permission ran out")
+    if status == 405 or (status == 404 and data.lstrip().startswith(b"{")):
+        return None
+    if status == 409:
+        raise Fail(5, "LiteBro has no window to picture right now")
+    check(status, "shot", ok=(200,))
+    return data
+
+
+NO_OWN = ("this build of LiteBro cannot picture its own screen: update it on the phone (iphone install), "
+          "or use the screen broadcast (iphone connect <the screen address from the phone>)")
+
+
+def own_screen(opt, pos=(), why=None):
+    """shot --app: LiteBro's own screen, pictured by the app."""
+    picture = app_shot(need("files"))
+    if picture is None:
+        raise Fail(1, NO_OWN)
+    path = shot_path(opt, pos)
+    w, h = save_shot(picture, path)
+    out("shot %s %dx%d app" % (path, w, h))
+    if why:
+        note(why)
+
+
 def cmd_shot(argv):
-    pos, opt = parse(argv, options=("wait", "out"))
+    pos, opt = parse(argv, flags=("app",), options=("wait", "out"))
     wait = number(opt, "wait", 12.0)
+    state = load_state()
+    if "app" in opt or (state.get("files") and not state.get("screen")):
+        return own_screen(opt, pos)
     screen = need("screen")
-    got = frame(screen)
+    try:
+        got = frame(screen)
+    except Fail as e:
+        # The phone is there and the broadcast is not: LiteBro's own screen, if this build can picture it
+        if not (e.refused and state.get("files")):
+            raise
+        try:
+            return own_screen(opt, pos, "note: the screen broadcast does not answer; this is LiteBro's own screen, pictured by the app.")
+        except Fail:
+            raise e
     if got is not None:
         deadline = time.monotonic() + wait
         while got[0] is None and time.monotonic() < deadline:
@@ -954,7 +1004,7 @@ def cmd_watch(argv):
 
 # --- taps and text ---
 
-TOUCH = ("system", "shot")
+TOUCH = ("system", "shot", "app")
 TOUCH_OPTIONS = ("ms", "out", "of", "via")
 
 
@@ -1033,14 +1083,57 @@ def finger_options(opt):
     return pairs(opt.get("opt", []), {"recipe": "trollvnc"} if "system" in opt else {"inApp": True})
 
 
-def acted(opt, action, label, more=None):
+def acted_own(opt, action, sent, before=None):
+    """--shot without the screen broadcast: LiteBro pictures its own screen before and after the action."""
+    files = need("files")
+    if before is None:
+        before = app_shot(files)
+    if before is None:
+        raise Fail(1, NO_OWN)
+    action()
+    time.sleep(OWN_SETTLE)
+    sent()
+    try:
+        after = app_shot(files)
+    except Fail as e:
+        out("shot none changed=no")
+        return note("note: no picture came after the action: %s" % e)
+    if after is None:
+        out("shot none changed=no")
+        return note("note: no picture came after the action.")
+    path = shot_path(opt)
+    w, h = save_shot(after, path)
+    out("shot %s %dx%d changed=%s app" % (path, w, h, "yes" if after != before else "no"))
+    if after == before:
+        note("note: LiteBro's own screen did not change within %g s after the action." % OWN_SETTLE)
+
+
+def acted(opt, action, label, more=None, own=True):
     """Runs the action; with --shot watches the screen around it and saves what it became.
-    `more` gives what to add to the line once the action is done."""
+    `more` gives what to add to the line once the action is done. `own`: LiteBro's own picture will do
+    when the screen broadcast is not there (not after a button: it takes LiteBro off the screen)."""
     sent = lambda: out(label + " sent" + (more() if more else ""))
     if "shot" not in opt:
         action()
         return sent()
+    state = load_state()
+    can_own = own and bool(state.get("files"))
+    if "app" in opt or (can_own and not state.get("screen")):
+        return acted_own(opt, action, sent)
     screen = need("screen")
+    try:
+        frame(screen, NEVER)  # asked before anything is sent: is the broadcast there?
+    except Fail as e:
+        if not (e.refused and can_own):
+            raise
+        try:
+            before = app_shot(need("files"))
+        except Fail:
+            before = None
+        if before is None:
+            raise e
+        note("note: the screen broadcast does not answer: looking at LiteBro's own screen instead.")
+        return acted_own(opt, action, sent, before)
     result = follow(screen, action=action)
     asked = result is not None
     if not asked:
@@ -1110,7 +1203,7 @@ def cmd_swipe(argv):
 
 
 def cmd_type(argv):
-    pos, opt = parse(argv, flags=("shot", "enter"), options=("out", "file"))
+    pos, opt = parse(argv, flags=("shot", "app", "enter"), options=("out", "file"))
     if "file" in opt and not pos:
         try:
             with open(opt["file"], "r", encoding="utf-8-sig", newline="") as f:
@@ -1134,7 +1227,7 @@ def cmd_type(argv):
 
 
 def cmd_key(argv):
-    pos, opt = parse(argv, flags=("shot",), options=("count", "out"))
+    pos, opt = parse(argv, flags=("shot", "app"), options=("count", "out"))
     keys = {"backspace": "\b", "enter": "\n"}
     if len(pos) != 1 or pos[0] not in keys:
         raise Fail(1, "key backspace|enter [--count N]")
@@ -1158,7 +1251,7 @@ def cmd_button(argv):
         raise Fail(1, "button %s takes LiteBro off the screen: files, taps and text stop answering until the person "
                       "opens LiteBro again, and nothing from the computer can bring it back. Add --yes to send it." % pos[0])
     server, name = target(opt)
-    acted(opt, lambda: post_touch(server, name, {"button": pos[0]}), "button %s" % pos[0])
+    acted(opt, lambda: post_touch(server, name, {"button": pos[0]}), "button %s" % pos[0], own=False)
 
 
 def cmd_touch(argv):
@@ -1271,7 +1364,7 @@ def cmd_js(argv):
 
 
 def cmd_click(argv):
-    pos, opt = parse(argv, flags=("shot",), options=("out", "of"))
+    pos, opt = parse(argv, flags=("shot", "app"), options=("out", "of"))
     if len(pos) != 2:
         raise Fail(1, "click <x> <y>")
     x, y = coordinate(pos[0], "w", opt), coordinate(pos[1], "h", opt)

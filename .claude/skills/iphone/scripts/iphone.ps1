@@ -46,7 +46,9 @@ menu "...", "Access from PC" (files: port 8080 or 8082-8089, screen: port 8081).
   put <local> <remote> [-r]    upload
   mkdir <remote>   rm <remote> [-r]   mv <from> <to> [--force]   cp <from> <to> [--force]
 
-  shot [file] [--wait 12]      a picture of the screen (needs the broadcast)
+  shot [file] [--wait 12]      a picture of the phone's screen (needs the broadcast)
+  shot [file] --app            a picture of LiteBro's own screen, made by the app: no broadcast needed
+                               (shot alone gives it too when the screen address is not set or does not answer)
   watch [dir] [--seconds 10] [--until-change]       pictures as the screen changes
 
   page [--json]                what LiteBro shows: the address, the title, whether it is loading
@@ -62,7 +64,8 @@ menu "...", "Access from PC" (files: port 8080 or 8082-8089, screen: port 8081).
   key backspace|enter [--count N]
   button home|side --yes       a button of the phone (takes LiteBro off the screen)
   touch [json | key=value ...] [--via app|screen]    the raw request; alone: what the phone can do
-    for tap, hold, swipe, type, key, button: --shot [--out file] looks at the screen after the action;
+    for tap, hold, swipe, type, key, click, button: --shot [--out file] looks at the screen after the action
+    (without the screen address, or with --app: at LiteBro's own screen; a button needs the screen address);
     for tap, hold, swipe: --system sends a system-wide finger, --opt key=value passes an option of the
     touch request (recipe, masks, sender, ...), --of WxH says what the pixels are of
 
@@ -90,6 +93,8 @@ $KeptWait = 0.4      # the kept picture is sent at once; what comes later than t
 $PaceWait = 0.15     # the phone encodes a picture at most every 0.12 s: changes closer than that are not all seen
 $NeverNumber = 2147483647   # no picture has this number: asking after it brings the number alone
 $PollWait = 0.12     # how often the screen is asked while it is followed
+$OwnSettle = 0.8     # s after an action before LiteBro pictures its own screen
+$NoOwn = 'this build of LiteBro cannot picture its own screen: update it on the phone (iphone install), or use the screen broadcast (iphone connect <the screen address from the phone>)'
 $Clock = [System.Diagnostics.Stopwatch]::StartNew()
 $AnsweredFrom = @{}   # host:port that answered in this run: a connection to it may be one kept from before
 
@@ -103,6 +108,23 @@ function Fail([int]$code, [string]$text) {
     $e = New-Object System.Exception $text
     $e.Data['code'] = $code
     throw $e
+}
+
+# The same for an address where nothing listens, while the phone itself is there
+function Fail-Refused([string]$text) {
+    $e = New-Object System.Exception $text
+    $e.Data['code'] = 2
+    $e.Data['refused'] = $true
+    throw $e
+}
+
+function Is-Refused($err) {
+    $e = $err.Exception
+    while ($e) {
+        if ($e.Data.Contains('refused')) { return $true }
+        $e = $e.InnerException
+    }
+    return $false
 }
 
 # The exit code a caught error carries (0: not one of ours), and its text
@@ -458,9 +480,9 @@ function Fail-NoAnswer($server, $webError) {
         $e = $e.InnerException
     }
     $status = [string]$webError.Status
-    if ($socket -and $socket.SocketErrorCode -eq [System.Net.Sockets.SocketError]::ConnectionRefused) { Fail 2 ($where + $RefusedWords) }
+    if ($socket -and $socket.SocketErrorCode -eq [System.Net.Sockets.SocketError]::ConnectionRefused) { Fail-Refused ($where + $RefusedWords) }
     if ($status -eq 'Timeout' -or ($socket -and $socket.SocketErrorCode -eq [System.Net.Sockets.SocketError]::TimedOut)) { Fail 2 ($where + $SilentWords) }
-    if ($status -eq 'ConnectFailure' -and -not $socket) { Fail 2 ($where + $RefusedWords) }
+    if ($status -eq 'ConnectFailure' -and -not $socket) { Fail-Refused ($where + $RefusedWords) }
     Fail 2 ($where + $webError.Message)
 }
 
@@ -1308,7 +1330,7 @@ function Stream-Open($s) {
         $e = $_.Exception
         while ($e.InnerException) { $e = $e.InnerException }
         if ($e -is [System.Net.Sockets.SocketException] -and $e.SocketErrorCode -eq [System.Net.Sockets.SocketError]::ConnectionRefused) {
-            Fail 2 ($where + 'refused (the screen broadcast is not running)')
+            Fail-Refused ($where + 'refused (the screen broadcast is not running)')
         }
         if ($e -is [System.Net.Sockets.SocketException] -and $e.SocketErrorCode -eq [System.Net.Sockets.SocketError]::TimedOut) { Fail 2 ($where + $SilentWords) }
         Fail 2 ($where + $e.Message)
@@ -1600,11 +1622,51 @@ function Save-Shot($picture, [string]$path) {
     return $size
 }
 
+# LiteBro's own screen as a JPEG, made by the app itself (the phone's command shot): no broadcast is needed.
+# $null: this build of LiteBro has no such command. Else @{ Picture }.
+function App-Shot($files) {
+    $r = Send-Request $files 'POST' ($files.Base + '_remote/shot') ($Utf8.GetBytes('{}')) @{ 'Content-Type' = 'application/json' } 0 $null
+    if ($r.Status -eq 403) { Fail 3 'the phone refused (403): touch control is not switched on with the screen permission, or the permission ran out' }
+    if ($r.Status -eq 405 -or ($r.Status -eq 404 -and (Text-Of-Bytes $r.Data).TrimStart().StartsWith('{'))) { return $null }
+    if ($r.Status -eq 409) { Fail 5 'LiteBro has no window to picture right now' }
+    Check-Status $r.Status 'shot' @(200)
+    return @{ Picture = $r.Data }
+}
+
+# shot --app: LiteBro's own screen, pictured by the app
+function Own-Screen($opt, $pos, [string]$why) {
+    $own = App-Shot (Need-Server 'files')
+    if ($null -eq $own) { Fail 1 $NoOwn }
+    $path = Shot-Path $opt $pos
+    $size = Save-Shot $own.Picture $path
+    Say ('shot ' + $path + ' ' + $size.w + 'x' + $size.h + ' app')
+    if ($why) { Note $why }
+}
+
 function Cmd-Shot($argv) {
-    $a = Parse-Args $argv $null @('wait', 'out') $null
+    $a = Parse-Args $argv @('app') @('wait', 'out') $null
     $wait = Opt-Number $a.Opt 'wait' 12.0
+    $state = Load-State
+    if ($a.Opt.ContainsKey('app') -or ($state.ContainsKey('files') -and -not $state.ContainsKey('screen'))) {
+        Own-Screen $a.Opt $a.Pos ''
+        return
+    }
     $screen = Need-Server 'screen'
-    $got = Get-Frame $screen (-1)
+    $got = $null
+    try {
+        $got = Get-Frame $screen (-1)
+    } catch {
+        # The phone is there and the broadcast is not: LiteBro's own screen, if this build can picture it
+        if (-not ((Is-Refused $_) -and $state.ContainsKey('files'))) { throw }
+        $first = $_
+        try {
+            Own-Screen $a.Opt $a.Pos "note: the screen broadcast does not answer; this is LiteBro's own screen, pictured by the app."
+        } catch {
+            if (-not (FailCode $_)) { throw }
+            throw $first
+        }
+        return
+    }
     if ($null -ne $got) {
         $deadline = (Now) + $wait
         while ($null -eq $got.Picture -and (Now) -lt $deadline) {
@@ -1761,13 +1823,69 @@ function More-Text([string]$kind, $box) {
 }
 
 # Runs the action; with --shot watches the screen around it and saves what it became.
-function Acted($opt, $steps, [string]$label, [string]$more, $box) {
+# --shot without the screen broadcast: LiteBro pictures its own screen before and after the action
+function Acted-Own($opt, $steps, [string]$label, [string]$more, $box, $before) {
+    $files = Need-Server 'files'
+    if ($null -eq $before) { $before = App-Shot $files }
+    if ($null -eq $before) { Fail 1 $NoOwn }
+    Run-Steps $steps $box
+    Wait-Seconds $OwnSettle
+    Say ($label + ' sent' + (More-Text $more $box))
+    $after = $null
+    try {
+        $after = App-Shot $files
+    } catch {
+        if (-not (FailCode $_)) { throw }
+        Say 'shot none changed=no'
+        Note ('note: no picture came after the action: ' + (FailText $_))
+        return
+    }
+    if ($null -eq $after) {
+        Say 'shot none changed=no'
+        Note 'note: no picture came after the action.'
+        return
+    }
+    $path = Shot-Path $opt $null
+    $size = Save-Shot $after.Picture $path
+    $same = Same-Bytes $after.Picture $before.Picture
+    $changed = 'yes'
+    if ($same) { $changed = 'no' }
+    Say ('shot ' + $path + ' ' + $size.w + 'x' + $size.h + ' changed=' + $changed + ' app')
+    if ($same) { Note ("note: LiteBro's own screen did not change within " + (G $OwnSettle) + ' s after the action.') }
+}
+
+# $own: LiteBro's own picture will do when the screen broadcast is not there (not after a button: it takes
+# LiteBro off the screen)
+function Acted($opt, $steps, [string]$label, [string]$more, $box, [bool]$own) {
     if (-not $opt.ContainsKey('shot')) {
         Run-Steps $steps $box
         Say ($label + ' sent' + (More-Text $more $box))
         return
     }
+    $state = Load-State
+    $canOwn = $own -and $state.ContainsKey('files')
+    if ($opt.ContainsKey('app') -or ($canOwn -and -not $state.ContainsKey('screen'))) {
+        Acted-Own $opt $steps $label $more $box $null
+        return
+    }
     $screen = Need-Server 'screen'
+    try {
+        [void](Get-Frame $screen $NeverNumber)   # asked before anything is sent: is the broadcast there?
+    } catch {
+        if (-not ((Is-Refused $_) -and $canOwn)) { throw }
+        $first = $_
+        $before = $null
+        try {
+            $before = App-Shot (Need-Server 'files')
+        } catch {
+            if (-not (FailCode $_)) { throw }
+            $before = $null
+        }
+        if ($null -eq $before) { throw $first }
+        Note "note: the screen broadcast does not answer: looking at LiteBro's own screen instead."
+        Acted-Own $opt $steps $label $more $box $before
+        return
+    }
     $seen = Follow $screen $steps $box 0 2.5 0.6 (-1) $null
     $asked = ($null -ne $seen)
     if (-not $asked) { $seen = Observe $screen $steps $box 12.0 2.5 0.6 (-1) $null }   # an older build: its pictures have to be watched for
@@ -1793,7 +1911,7 @@ function New-Box { return @{ Met = $null; Has = $false } }
 function New-Steps { return ,(New-Object System.Collections.Generic.List[object]) }
 
 function Cmd-Tap($argv, [bool]$hold) {
-    $a = Parse-Args $argv @('system', 'shot') @('ms', 'out', 'of', 'via') @('opt')
+    $a = Parse-Args $argv @('system', 'shot', 'app') @('ms', 'out', 'of', 'via') @('opt')
     $word = 'tap'
     $ms = 70.0
     if ($hold) { $word = 'hold'; $ms = 800.0 }
@@ -1809,11 +1927,11 @@ function Cmd-Tap($argv, [bool]$hold) {
     $steps.Add((Finger-Step $target $extra 'up' $x $y))
     $label = $word + ' ' + (F4 $x) + ' ' + (F4 $y)
     if ($a.Opt.ContainsKey('system')) { $label += ' system' }
-    Acted $a.Opt $steps $label 'finger' (New-Box)
+    Acted $a.Opt $steps $label 'finger' (New-Box) $true
 }
 
 function Cmd-Swipe($argv) {
-    $a = Parse-Args $argv @('system', 'shot') @('ms', 'out', 'of', 'via', 'steps') @('opt')
+    $a = Parse-Args $argv @('system', 'shot', 'app') @('ms', 'out', 'of', 'via', 'steps') @('opt')
     if ($a.Pos.Count -ne 4) { Fail 1 'swipe <x1> <y1> <x2> <y2>' }
     $x1 = Coordinate $a.Pos[0] 'w' $a.Opt
     $y1 = Coordinate $a.Pos[1] 'h' $a.Opt
@@ -1837,7 +1955,7 @@ function Cmd-Swipe($argv) {
     $steps.Add((Finger-Step $target $extra 'up' $x2 $y2))
     $label = 'swipe ' + (F4 $x1) + ' ' + (F4 $y1) + ' ' + (F4 $x2) + ' ' + (F4 $y2)
     if ($a.Opt.ContainsKey('system')) { $label += ' system' }
-    Acted $a.Opt $steps $label '' (New-Box)
+    Acted $a.Opt $steps $label '' (New-Box) $true
 }
 
 # The text of a file given to --file, as it is
@@ -1848,7 +1966,7 @@ function Read-Text([string]$file) {
 }
 
 function Cmd-Type($argv) {
-    $a = Parse-Args $argv @('shot', 'enter') @('out', 'file') $null
+    $a = Parse-Args $argv @('shot', 'app', 'enter') @('out', 'file') $null
     $text = ''
     if ($a.Opt.ContainsKey('file') -and $a.Pos.Count -eq 0) { $text = Read-Text $a.Opt['file'] }
     elseif ($a.Pos.Count -gt 0 -and -not $a.Opt.ContainsKey('file')) { $text = ($a.Pos -join ' ') }
@@ -1864,11 +1982,11 @@ function Cmd-Type($argv) {
         $steps.Add((Text-Step $server "`n"))
         $label += ' and enter'
     }
-    Acted $a.Opt $steps $label '' (New-Box)
+    Acted $a.Opt $steps $label '' (New-Box) $true
 }
 
 function Cmd-Key($argv) {
-    $a = Parse-Args $argv @('shot') @('count', 'out') $null
+    $a = Parse-Args $argv @('shot', 'app') @('count', 'out') $null
     $keys = @{ backspace = [string][char]8; enter = "`n" }
     if ($a.Pos.Count -ne 1 -or -not $keys.ContainsKey($a.Pos[0]) -or ($a.Pos[0] -cne 'backspace' -and $a.Pos[0] -cne 'enter')) { Fail 1 'key backspace|enter [--count N]' }
     $count = [Math]::Max(1, (Opt-Int $a.Opt 'count' 1))
@@ -1878,7 +1996,7 @@ function Cmd-Key($argv) {
         if ($i -gt 0 -and $a.Opt.ContainsKey('shot')) { $steps.Add(@{ Kind = 'sleep'; Seconds = $PaceWait }) }
         $steps.Add((Text-Step $server $keys[$a.Pos[0]]))
     }
-    Acted $a.Opt $steps ('key ' + $a.Pos[0] + ' x' + $count) '' (New-Box)
+    Acted $a.Opt $steps ('key ' + $a.Pos[0] + ' x' + $count) '' (New-Box) $true
 }
 
 function Cmd-Button($argv) {
@@ -1892,7 +2010,7 @@ function Cmd-Button($argv) {
     $o['button'] = $a.Pos[0]
     $steps = New-Steps
     $steps.Add(@{ Kind = 'touch'; Server = $target.Server; Name = $target.Name; Payload = $o })
-    Acted $a.Opt $steps ('button ' + $a.Pos[0]) '' (New-Box)
+    Acted $a.Opt $steps ('button ' + $a.Pos[0]) '' (New-Box) $false
 }
 
 # A request given as JSON text or as key=value items, as an ordered dictionary
@@ -2031,7 +2149,7 @@ function Cmd-Js($argv) {
 }
 
 function Cmd-Click($argv) {
-    $a = Parse-Args $argv @('shot') @('out', 'of') $null
+    $a = Parse-Args $argv @('shot', 'app') @('out', 'of') $null
     if ($a.Pos.Count -ne 2) { Fail 1 'click <x> <y>' }
     $x = Coordinate $a.Pos[0] 'w' $a.Opt
     $y = Coordinate $a.Pos[1] 'h' $a.Opt
@@ -2041,7 +2159,7 @@ function Cmd-Click($argv) {
     $steps = New-Steps
     $steps.Add(@{ Kind = 'remote'; Name = 'click'; Payload = $o })
     $box = New-Box
-    Acted $a.Opt $steps ('click ' + (F4 $x) + ' ' + (F4 $y)) 'click' $box
+    Acted $a.Opt $steps ('click ' + (F4 $x) + ' ' + (F4 $y)) 'click' $box $true
     if ($box.Has -and -not (Field $box.Met 'control')) {
         Note 'note: there is no button or switch of LiteBro at that point, so nothing was pressed. click does not press what a page draws: use js for a page (document.querySelector(...).click()).'
     }

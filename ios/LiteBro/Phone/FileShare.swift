@@ -146,6 +146,24 @@ private final class DAVHandler: HTTPHandler {
         return (url, parts)
     }
 
+    /// Whether the path goes through a link before its last part. Reading through a link is fine; a change is
+    /// not: a program that empties a folder file by file before removing it (Explorer does) would, given a
+    /// linked folder, empty the folder the link leads to. The link itself (the last part) can be removed.
+    private func throughLink(_ f: (url: URL, rel: [String])) -> Bool {
+        var u = root
+        for part in f.rel.dropLast() {
+            u.appendPathComponent(part)
+            if (try? FileManager.default.destinationOfSymbolicLink(atPath: u.path)) != nil { return true }
+        }
+        return false
+    }
+
+    /// The addresses that are commands, not files
+    private func isCommand(_ uri: String) -> Bool {
+        let path = String(uri.split(separator: "?").first ?? "")
+        return path == "/\(token)/_touch" || path.hasPrefix("/\(token)/_remote/")
+    }
+
     private func href(_ rel: [String], dir: Bool) -> String {
         var allowed = CharacterSet.urlPathAllowed
         allowed.remove(charactersIn: "/?#[]@!$&'()*+,;=")
@@ -164,7 +182,8 @@ private final class DAVHandler: HTTPHandler {
     func onHead(_ h: HTTPRequest, _ c: HTTPConnection) {
         body = Data()
         upload = nil
-        if h.method == "PUT", !readOnly, let f = file(h.uri) {
+        // (a PUT to a command would leave its piece behind: nothing takes it)
+        if h.method == "PUT", !readOnly, !isCommand(h.uri), let f = file(h.uri), !throughLink(f) {
             let dir = f.url.deletingLastPathComponent()
             let temp = dir.appendingPathComponent(".litebro-upload-" + UUID().uuidString)
             if FileManager.default.createFile(atPath: temp.path, contents: nil),
@@ -267,7 +286,7 @@ private final class DAVHandler: HTTPHandler {
             return channel.respond(404, keepAlive: keepAlive)
         }
         let writes = ["PUT", "DELETE", "MKCOL", "MOVE", "COPY", "PROPPATCH"]
-        if readOnly && writes.contains(h.method) { return channel.respond(403, keepAlive: keepAlive) }
+        if writes.contains(h.method) && (readOnly || throughLink(f)) { return channel.respond(403, keepAlive: keepAlive) }
         var isDir: ObjCBool = false
         let exists = fm.fileExists(atPath: f.url.path, isDirectory: &isDir)
 
@@ -337,6 +356,7 @@ private final class DAVHandler: HTTPHandler {
                   let path = URLComponents(string: d)?.percentEncodedPath ?? Optional(d), let to = file(path) else {
                 return channel.respond(400, keepAlive: keepAlive)
             }
+            if throughLink(to) { return channel.respond(403, keepAlive: keepAlive) }
             let overwrite = h.header("Overwrite")?.uppercased() != "F"
             let had = fm.fileExists(atPath: to.url.path)
             if had && !overwrite { return channel.respond(412, keepAlive: keepAlive) }

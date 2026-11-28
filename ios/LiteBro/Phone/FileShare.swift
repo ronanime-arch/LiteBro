@@ -117,6 +117,14 @@ private final class DAVHandler: HTTPHandler {
         self.readOnly = readOnly
     }
 
+    deinit {
+        // The connection ended in the middle of an upload: its piece is not left beside the target
+        if let u = upload {
+            try? u.handle.close()
+            try? FileManager.default.removeItem(at: u.temp)
+        }
+    }
+
     // MARK: Paths
 
     /// The file of a request path, only inside the shared folder; nil for a wrong secret or a way out
@@ -138,6 +146,24 @@ private final class DAVHandler: HTTPHandler {
         return (url, parts)
     }
 
+    /// Whether the path goes through a link before its last part. Reading through a link is fine; a change is
+    /// not: a program that empties a folder file by file before removing it (Explorer does) would, given a
+    /// linked folder, empty the folder the link leads to. The link itself (the last part) can be removed.
+    private func throughLink(_ f: (url: URL, rel: [String])) -> Bool {
+        var u = root
+        for part in f.rel.dropLast() {
+            u.appendPathComponent(part)
+            if (try? FileManager.default.destinationOfSymbolicLink(atPath: u.path)) != nil { return true }
+        }
+        return false
+    }
+
+    /// The addresses that are commands, not files
+    private func isCommand(_ uri: String) -> Bool {
+        let path = String(uri.split(separator: "?").first ?? "")
+        return path == "/\(token)/_touch" || path.hasPrefix("/\(token)/_remote/")
+    }
+
     private func href(_ rel: [String], dir: Bool) -> String {
         var allowed = CharacterSet.urlPathAllowed
         allowed.remove(charactersIn: "/?#[]@!$&'()*+,;=")
@@ -156,7 +182,8 @@ private final class DAVHandler: HTTPHandler {
     func onHead(_ h: HTTPRequest, _ c: HTTPConnection) {
         body = Data()
         upload = nil
-        if h.method == "PUT", !readOnly, let f = file(h.uri) {
+        // (a PUT to a command would leave its piece behind: nothing takes it)
+        if h.method == "PUT", !readOnly, !isCommand(h.uri), let f = file(h.uri), !throughLink(f) {
             let dir = f.url.deletingLastPathComponent()
             let temp = dir.appendingPathComponent(".litebro-upload-" + UUID().uuidString)
             if FileManager.default.createFile(atPath: temp.path, contents: nil),
@@ -259,7 +286,7 @@ private final class DAVHandler: HTTPHandler {
             return channel.respond(404, keepAlive: keepAlive)
         }
         let writes = ["PUT", "DELETE", "MKCOL", "MOVE", "COPY", "PROPPATCH"]
-        if readOnly && writes.contains(h.method) { return channel.respond(403, keepAlive: keepAlive) }
+        if writes.contains(h.method) && (readOnly || throughLink(f)) { return channel.respond(403, keepAlive: keepAlive) }
         var isDir: ObjCBool = false
         let exists = fm.fileExists(atPath: f.url.path, isDirectory: &isDir)
 
@@ -303,6 +330,11 @@ private final class DAVHandler: HTTPHandler {
         case "PUT":
             guard let upload else { return channel.respond(409, keepAlive: keepAlive) }
             try? upload.handle.close()
+            // Never a file in place of a folder: replaceItemAt would take the folder with all it holds
+            if isDir.boolValue {
+                try? fm.removeItem(at: upload.temp)
+                return channel.respond(405, keepAlive: keepAlive)
+            }
             do {
                 let had = fm.fileExists(atPath: upload.target.path)
                 if had { _ = try fm.replaceItemAt(upload.target, withItemAt: upload.temp) } else { try fm.moveItem(at: upload.temp, to: upload.target) }
@@ -324,6 +356,7 @@ private final class DAVHandler: HTTPHandler {
                   let path = URLComponents(string: d)?.percentEncodedPath ?? Optional(d), let to = file(path) else {
                 return channel.respond(400, keepAlive: keepAlive)
             }
+            if throughLink(to) { return channel.respond(403, keepAlive: keepAlive) }
             let overwrite = h.header("Overwrite")?.uppercased() != "F"
             let had = fm.fileExists(atPath: to.url.path)
             if had && !overwrite { return channel.respond(412, keepAlive: keepAlive) }
@@ -369,8 +402,17 @@ private final class DAVHandler: HTTPHandler {
         UTType(filenameExtension: url.pathExtension)?.preferredMIMEType ?? "application/octet-stream"
     }
 
+    /// The attributes of what a path leads to. attributesOfItem describes a link itself: a linked folder
+    /// would be listed as a file, and a linked file would be sent cut to the length of the link.
+    /// A link that leaves the shared folder stays the link it is: nothing is told of what is outside.
+    private func attributes(_ url: URL) -> [FileAttributeKey: Any] {
+        let real = url.resolvingSymlinksInPath().standardizedFileURL.path
+        let inside = real == rootPath || real.hasPrefix(rootPath + "/")
+        return (try? FileManager.default.attributesOfItem(atPath: inside ? real : url.path)) ?? [:]
+    }
+
     private func entry(_ url: URL, rel: [String]) -> String {
-        let a = (try? FileManager.default.attributesOfItem(atPath: url.path)) ?? [:]
+        let a = attributes(url)
         let dir = (a[.type] as? FileAttributeType) == .typeDirectory
         let size = (a[.size] as? NSNumber)?.int64Value ?? 0
         let mod = a[.modificationDate] as? Date ?? Date()
@@ -390,7 +432,7 @@ private final class DAVHandler: HTTPHandler {
     private func send(_ url: URL, head h: HTTPRequest, channel: HTTPConnection, keepAlive: Bool) {
         guard let handle = try? FileHandle(forReadingFrom: url) else { return channel.respond(403, keepAlive: keepAlive) }
         defer { try? handle.close() }
-        let attrs = (try? FileManager.default.attributesOfItem(atPath: url.path)) ?? [:]
+        let attrs = attributes(url)
         let size = (attrs[.size] as? NSNumber)?.int64Value ?? 0
         var start: Int64 = 0, end = size - 1, partial = false
         if let r = h.header("Range"), r.hasPrefix("bytes="), !r.contains(",") {
@@ -436,7 +478,7 @@ private final class DAVHandler: HTTPHandler {
         let names = ((try? fm.contentsOfDirectory(atPath: dir.path)) ?? []).filter { !$0.hasPrefix(".litebro-upload-") }
         var rows: [(name: String, dir: Bool, size: Int64, date: Date)] = []
         for n in names {
-            let a = (try? fm.attributesOfItem(atPath: dir.appendingPathComponent(n).path)) ?? [:]
+            let a = attributes(dir.appendingPathComponent(n))
             rows.append((n, (a[.type] as? FileAttributeType) == .typeDirectory, (a[.size] as? NSNumber)?.int64Value ?? 0,
                          a[.modificationDate] as? Date ?? .distantPast))
         }

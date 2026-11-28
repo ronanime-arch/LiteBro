@@ -10,7 +10,6 @@ import UIKit
 final class SampleHandler: RPBroadcastSampleHandler {
     private let server = MiniHTTP()
     private let frames = FrameStore()
-    private let context = CIContext(options: [.useSoftwareRenderer: false])
     private var last = Date.distantPast
     /// Checks every second that LiteBro still allows the showing: «Запретить показ» or the end of its time stop it
     /// even while the screen does not change (no frames come then, so the frame handler cannot notice)
@@ -75,46 +74,80 @@ final class SampleHandler: RPBroadcastSampleHandler {
     }
 
     override func processSampleBuffer(_ sampleBuffer: CMSampleBuffer, with type: RPSampleBufferType) {
-        guard type == .video else { return }
-        // About 8 pictures a second, while somebody watches: the extension has little memory and CPU
+        guard type == .video, let pixels = CMSampleBufferGetImageBuffer(sampleBuffer) else { return }
+        // The phone turned: the frame says how
+        var orientation = CGImagePropertyOrientation.up
+        if let o = CMGetAttachment(sampleBuffer, key: RPVideoSampleOrientationKey as CFString, attachmentModeOut: nil) as? NSNumber,
+           let known = CGImagePropertyOrientation(rawValue: o.uint32Value) {
+            orientation = known
+        }
+        // iOS hands a frame only when the screen changes, so the newest one is what the screen shows until the
+        // next. It is always kept (one frame, not encoded): /frame and a new viewer get the screen as it is now,
+        // not the picture left from the last viewer, and the last frame of a burst is not lost.
+        frames.keep(pixels, orientation)
+        // About 8 pictures a second, while somebody watches the stream: the extension has little memory and CPU
         let now = Date()
         guard frames.watched, now.timeIntervalSince(last) >= 0.12 else { return }
         if let until = ScreenShare.until, until < now { return stop(T("Время показа экрана вышло.", "Screen sharing time is over.")) }
         last = now
-        guard let pixels = CMSampleBufferGetImageBuffer(sampleBuffer) else { return }
-        var image = CIImage(cvPixelBuffer: pixels)
-        // The phone turned: the frame says how
-        if let o = CMGetAttachment(sampleBuffer, key: RPVideoSampleOrientationKey as CFString, attachmentModeOut: nil) as? NSNumber,
-           let orientation = CGImagePropertyOrientation(rawValue: o.uint32Value) {
-            image = image.oriented(orientation)
-            frames.orientation = orientation
-        }
-        let longest = max(image.extent.width, image.extent.height)
-        if longest > 1280 { image = image.transformed(by: CGAffineTransform(scaleX: 1280 / longest, y: 1280 / longest)) }
-        guard let space = CGColorSpace(name: CGColorSpace.sRGB),
-              let jpeg = context.jpegRepresentation(of: image, colorSpace: space,
-                                                    options: [CIImageRepresentationOption(rawValue: kCGImageDestinationLossyCompressionQuality as String): 0.55])
-        else { return }
-        frames.put(jpeg)
+        frames.encode(wait: false)
     }
 }
 
-/// The last picture; viewers wait for the next one
+/// The screen for the viewers: the newest frame as iOS gave it, and the last picture made of it
 final class FrameStore {
     private let lock = NSCondition()
     private var frame: Data?
     private var number = 0
     private var viewers = 0
     private var closed = false
+    /// The newest frame of the screen until its picture is made
+    private var kept: CVPixelBuffer?
+    private var keptOrientation = CGImagePropertyOrientation.up
+    /// When the screen last changed
+    private var changed = Date()
+    /// One picture is made at a time
+    private let encoding = NSLock()
+    private let context = CIContext(options: [.useSoftwareRenderer: false])
     /// How the last picture was turned from the upright screen: taps go back the other way
     var orientation = CGImagePropertyOrientation.up
 
     var watched: Bool { lock.lock(); defer { lock.unlock() }; return viewers > 0 }
+    var isClosed: Bool { lock.lock(); defer { lock.unlock() }; return closed }
 
-    func put(_ d: Data) {
+    func keep(_ pixels: CVPixelBuffer, _ o: CGImagePropertyOrientation) {
         lock.lock()
-        frame = d
+        kept = pixels
+        keptOrientation = o
+        changed = Date()
+        lock.unlock()
+    }
+
+    /// Makes the picture of the newest frame unless it has one. Any thread; with `wait` off it gives way
+    /// to a picture being made (the frame stays kept for the next call).
+    func encode(wait: Bool = true) {
+        if wait { encoding.lock() } else if !encoding.try() { return }
+        defer { encoding.unlock() }
+        lock.lock()
+        let pixels = kept, o = keptOrientation
+        kept = nil
+        lock.unlock()
+        guard let pixels else { return }
+        // In a pool of its own: Core Image leaves autoreleased objects, and the stream's loop is one block
+        // that never returns to let its thread's pool go (the extension has about 50 MB)
+        let made = autoreleasepool { () -> Data? in
+            var image = CIImage(cvPixelBuffer: pixels).oriented(o)
+            let longest = max(image.extent.width, image.extent.height)
+            if longest > 1280 { image = image.transformed(by: CGAffineTransform(scaleX: 1280 / longest, y: 1280 / longest)) }
+            guard let space = CGColorSpace(name: CGColorSpace.sRGB) else { return nil }
+            return context.jpegRepresentation(of: image, colorSpace: space,
+                                              options: [CIImageRepresentationOption(rawValue: kCGImageDestinationLossyCompressionQuality as String): 0.55])
+        }
+        guard let jpeg = made else { return }
+        lock.lock()
+        frame = jpeg
         number += 1
+        orientation = o
         lock.broadcast()
         lock.unlock()
     }
@@ -122,6 +155,7 @@ final class FrameStore {
     func close() {
         lock.lock()
         closed = true
+        kept = nil
         lock.broadcast()
         lock.unlock()
     }
@@ -129,20 +163,31 @@ final class FrameStore {
     func join() { lock.lock(); viewers += 1; lock.unlock() }
     func leave() { lock.lock(); viewers -= 1; lock.unlock() }
 
-    /// The picture after the one numbered `after`; nil once closed or after 10 s without one
-    func next(after: Int) -> (Data, Int)? {
+    /// The screen as it is now: its picture, the picture's number and for how long the screen has been still;
+    /// nil when iOS has given no frame yet
+    func current() -> (picture: Data, number: Int, still: TimeInterval)? {
+        encode()
         lock.lock()
         defer { lock.unlock() }
-        let deadline = Date().addingTimeInterval(10)
-        while number <= after && !closed {
-            if !lock.wait(until: deadline) { return nil }
-        }
         guard !closed, let f = frame else { return nil }
+        return (f, number, Date().timeIntervalSince(changed))
+    }
+
+    /// The picture after the one numbered `after`, waited for up to `wait` s; nil when none came (or closed)
+    func next(after: Int, wait: TimeInterval) -> (Data, Int)? {
+        lock.lock()
+        defer { lock.unlock() }
+        let deadline = Date().addingTimeInterval(wait)
+        while number <= after && !closed {
+            if !lock.wait(until: deadline) { break }
+        }
+        guard !closed, number > after, let f = frame else { return nil }
         return (f, number)
     }
 }
 
-/// The page with the picture and the stream of pictures (multipart/x-mixed-replace, as webcams send)
+/// The page with the picture, one picture (/frame) and the stream of pictures (multipart/x-mixed-replace,
+/// as webcams send)
 private final class ScreenHandler: HTTPHandler {
     private let token: String
     private let frames: FrameStore
@@ -167,6 +212,8 @@ private final class ScreenHandler: HTTPHandler {
         if path == "/\(token)/" || path == "/\(token)" {
             channel.respond(200, headers: [("Content-Type", "text/html; charset=utf-8"), ("Cache-Control", "no-store")],
                             body: Data(Self.page(control: ScreenShare.control && Touch.available).utf8))
+        } else if path == "/\(token)/frame" {
+            frame(h, channel)
         } else if path == "/\(token)/stream" {
             stream(channel)
         } else if path == "/\(token)/touch", h.method == "POST" {
@@ -221,6 +268,20 @@ private final class ScreenHandler: HTTPHandler {
         """
     }
 
+    /// One picture: the screen as it is now. X-Frame is its number (it grows with every change of the screen),
+    /// X-Frame-Age for how many milliseconds the screen has been still. With ?after=N nothing is sent (204)
+    /// unless there is a picture newer than N: a cheap way to wait for the screen to change.
+    private func frame(_ h: HTTPRequest, _ channel: HTTPConnection) {
+        let after = URLComponents(string: h.uri)?.queryItems?.first { $0.name == "after" }?.value.flatMap { Int($0) }
+        let frames = self.frames
+        DispatchQueue.global(qos: .userInitiated).async {
+            guard let now = frames.current() else { return channel.respond(503) }
+            let state = [("X-Frame", String(now.number)), ("X-Frame-Age", String(Int(now.still * 1000))), ("Cache-Control", "no-store")]
+            if let after, now.number <= after { return channel.respond(204, headers: state) }
+            channel.respond(200, headers: state + [("Content-Type", "image/jpeg")], body: now.picture)
+        }
+    }
+
     private func stream(_ channel: HTTPConnection) {
         let boundary = "litebroframe"
         channel.sendHead(200, headers: [("Content-Type", "multipart/x-mixed-replace; boundary=\(boundary)"),
@@ -229,14 +290,34 @@ private final class ScreenHandler: HTTPHandler {
         DispatchQueue.global(qos: .userInitiated).async {
             frames.join()
             defer { frames.leave() }
-            var seen = 0
-            while channel.isActive, let got = frames.next(after: seen) {
-                let jpeg = got.0
-                seen = got.1
+            func send(_ jpeg: Data) {
                 var part = Data("--\(boundary)\r\nContent-Type: image/jpeg\r\nContent-Length: \(jpeg.count)\r\n\r\n".utf8)
                 part.append(jpeg)
                 part.append(Data("\r\n".utf8))
                 channel.sendAndWait(part)
+            }
+            // The screen as it is now first
+            frames.encode()
+            var seen = 0
+            var sent = Date()
+            while channel.isActive, !frames.isClosed {
+                // Each turn in its own pool: this block runs for as long as the viewer watches
+                autoreleasepool {
+                    if let got = frames.next(after: seen, wait: 0.5) {
+                        seen = got.1
+                        send(got.0)
+                        sent = Date()
+                    } else {
+                        // Half a second without a picture: the last frame of a burst may still wait for its own
+                        frames.encode()
+                        // A still screen: the same picture again now and then, so that a viewer who left is
+                        // noticed (a send to a closed connection fails) and the stream does not look dead
+                        if Date().timeIntervalSince(sent) > 5, let now = frames.current(), now.number <= seen {
+                            send(now.picture)
+                            sent = Date()
+                        }
+                    }
+                }
             }
             channel.close()
         }

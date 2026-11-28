@@ -344,6 +344,7 @@ final class HTTPConnection {
         case 100: return "Continue"
         case 200: return "OK"
         case 201: return "Created"
+        case 202: return "Accepted"
         case 204: return "No Content"
         case 206: return "Partial Content"
         case 207: return "Multi-Status"
@@ -356,6 +357,8 @@ final class HTTPConnection {
         case 412: return "Precondition Failed"
         case 416: return "Range Not Satisfiable"
         case 431: return "Request Header Fields Too Large"
+        case 503: return "Service Unavailable"
+        case 504: return "Gateway Timeout"
         default: return "Status"
         }
     }

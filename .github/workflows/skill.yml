@@ -1,0 +1,48 @@
+# The helper scripts of the iphone skill (.claude/skills/iphone) against a made-up phone, on Windows:
+# iphone.ps1 must run on Windows PowerShell 5.1 as the user's computer has it (Russian regional settings),
+# and cloud sessions that write it have no PowerShell to try it on.
+name: Skill
+
+on:
+  push:
+    branches: [main]
+    paths: ['.claude/skills/iphone/**', '.github/workflows/skill.yml']
+  pull_request:
+    paths: ['.claude/skills/iphone/**', '.github/workflows/skill.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: skill-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  iphone:
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Tools
+        shell: powershell
+        run: |
+          python -m pip install --quiet pillow
+          # Decimal comma and Russian dates, as on the user's computer: new processes take them
+          Set-Culture ru-RU
+          Get-Culture
+
+      - name: iphone.ps1 on Windows PowerShell 5.1
+        shell: pwsh
+        run: python .claude/skills/iphone/evals/selftest.py powershell
+
+      - name: iphone.ps1 on PowerShell 7
+        if: always()
+        shell: pwsh
+        run: python .claude/skills/iphone/evals/selftest.py pwsh
+
+      - name: iphone.py
+        if: always()
+        shell: pwsh
+        run: python .claude/skills/iphone/evals/selftest.py py

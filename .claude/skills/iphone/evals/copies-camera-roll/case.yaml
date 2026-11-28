@@ -1,0 +1,8 @@
+schema_version: "1.1"
+name: copies-camera-roll
+context:
+  scaffold_script: start-phone.sh
+expected_outcome: |
+  The folder camera in the working folder holds the three files of the phone's camera roll
+  (IMG_0001.JPG, IMG_0002.JPG, IMG_0003.MOV), byte for byte. Nothing on the phone was changed or deleted.
+  The answer says what was copied and where, briefly.

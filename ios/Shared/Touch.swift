@@ -15,6 +15,7 @@ enum Touch {
     private typealias KeyboardEvent = @convention(c) (CFAllocator?, UInt64, UInt32, UInt32, DarwinBoolean, UInt32) -> UnsafeMutableRawPointer?
     private typealias Append = @convention(c) (UnsafeMutableRawPointer, UnsafeMutableRawPointer, UInt32) -> Void
     private typealias SetInteger = @convention(c) (UnsafeMutableRawPointer, UInt32, Int) -> Void
+    private typealias SetFloat = @convention(c) (UnsafeMutableRawPointer, UInt32, Double) -> Void
     private typealias SetSender = @convention(c) (UnsafeMutableRawPointer, UInt64) -> Void
     private typealias Dispatch = @convention(c) (UnsafeMutableRawPointer, UnsafeMutableRawPointer) -> Void
     private typealias DigitizerInfo = @convention(c) (UnsafeMutableRawPointer, UInt32, UInt8, UInt8, CFString?, Double, Float) -> Void
@@ -33,6 +34,7 @@ enum Touch {
     private static let keyboard = fn("IOHIDEventCreateKeyboardEvent", KeyboardEvent.self)
     private static let append = fn("IOHIDEventAppendEvent", Append.self)
     private static let setInteger = fn("IOHIDEventSetIntegerValue", SetInteger.self)
+    private static let setFloat = fn("IOHIDEventSetFloatValue", SetFloat.self)
     private static let setSender = fn("IOHIDEventSetSenderID", SetSender.self)
     private static let dispatch = fn("IOHIDEventSystemClientDispatchEvent", Dispatch.self)
     /// backboardd routes a touch by this info
@@ -58,17 +60,21 @@ enum Touch {
         return made
     }
 
-    /// What can be made, for the computer's check
+    /// What can be made, for the computer's check; `recipes`: the ready sets of options a request can name
     static var report: String {
-        "{\"available\":\(available),\"simple\":\(createSimple != nil),\"withType\":\(createWithType != nil),\"bks\":\(digitizerInfo != nil)}"
+        "{\"available\":\(available),\"simple\":\(createSimple != nil),\"withType\":\(createWithType != nil),\"bks\":\(digitizerInfo != nil),\"recipes\":[\"trollvnc\"]}"
     }
 
     // IOHIDEventTypes.h
     private static let handType: UInt32 = 3
     private static let rangeBit: UInt32 = 1 << 0, touchBit: UInt32 = 1 << 1, positionBit: UInt32 = 1 << 2
+    private static let identityBit: UInt32 = 1 << 5, attributeBit: UInt32 = 1 << 6
     private static let fieldIsBuiltIn: UInt32 = 4
+    private static let fieldMajorRadius: UInt32 = (11 << 16) + 20, fieldMinorRadius: UInt32 = (11 << 16) + 21
     private static let fieldDisplayIntegrated: UInt32 = (11 << 16) + 25
     private static let builtInSender: UInt64 = 0x0000_0001_0000_027F
+    /// The sender TrollVNC gives its touches
+    private static let touchSender: UInt64 = 0x8000_0008_1731_9371
 
     static var available: Bool { createPlain != nil && digitizer != nil && fingerEvent != nil && dispatch != nil }
 
@@ -84,23 +90,62 @@ enum Touch {
         var index: UInt32 = 1, identity: UInt32 = 2
         var builtIn = true
         var pressure = 1.0
+        var twist = 0.0
+        var radius = 0.0        // of the finger's spot (major and minor); 0: not set
+        /// The event mask of each phase: "plain" (down: range | touch | position, move: position, up: range | touch)
+        /// or "webkit", as WebKit's HIDEventGenerator makes it (a touch that begins or ends: touch | identity;
+        /// one that moves: position | attribute)
+        var masks = "plain"
         /// Into this app only, as Apple's UI tests do (UIApplication's own HID queue): no rights needed,
         /// and it works where system-wide taps do not; x, y become points of the window
         var inApp = false
 
         init() {}
         init(_ m: [String: Any]) {
+            if m["recipe"] as? String == "trollvnc" {
+                // A touch as TrollVNC makes it: an open-source VNC server for TrollStore that taps system-wide on
+                // these iOS versions; its generator comes from WebKit's (the one UIKit's own tests run on).
+                // The keys below still change any of it.
+                sender = Touch.touchSender
+                masks = "webkit"
+                index = 2
+                identity = 2
+                pressure = 0
+                twist = 90
+                radius = 5
+                parentXY = false
+                // TrollVNC makes no BackBoardServices call; in-app the digitizer info carries the window
+                if m["inApp"] as? Bool != true { bks = false }
+            }
             if let v = m["client"] as? String { client = v }
             if let v = m["sender"] as? String, let n = UInt64(v.replacingOccurrences(of: "0x", with: ""), radix: 16) { sender = n }
             if let v = m["bks"] as? Bool { bks = v }
             if let v = m["points"] as? Bool { points = v }
             if let v = m["parentXY"] as? Bool { parentXY = v }
-            if let v = m["index"] as? Int { index = UInt32(v) }
-            if let v = m["identity"] as? Int { identity = UInt32(v) }
+            // exactly: a negative or too big number would trap and take the app down
+            if let v = m["index"] as? Int, let n = UInt32(exactly: v) { index = n }
+            if let v = m["identity"] as? Int, let n = UInt32(exactly: v) { identity = n }
             if let v = m["builtIn"] as? Bool { builtIn = v }
             if let v = m["pressure"] as? Double { pressure = v }
+            if let v = m["twist"] as? Double { twist = v }
+            if let v = m["radius"] as? Double { radius = v }
+            if let v = m["masks"] as? String { masks = v }
             if let v = m["inApp"] as? Bool { inApp = v; if v && m["points"] == nil { points = true } }
         }
+    }
+
+    private static func eventMask(_ phase: Phase, _ o: Options) -> UInt32 {
+        if o.masks == "webkit" {
+            return phase == .move ? (positionBit | attributeBit) : (touchBit | identityBit)
+        }
+        return phase == .move ? positionBit : (rangeBit | touchBit | (phase == .down ? positionBit : 0))
+    }
+
+    /// The finger's spot, when the request gives it a size
+    private static func setRadius(_ finger: UnsafeMutableRawPointer, _ o: Options) {
+        guard o.radius > 0 else { return }
+        setFloat?(finger, fieldMajorRadius, o.radius)
+        setFloat?(finger, fieldMinorRadius, o.radius)
     }
 
     /// A finger at (x, y) of the screen as the phone holds it upright, 0…1 each
@@ -117,12 +162,13 @@ enum Touch {
             px = x * Double(size.width); py = y * Double(size.height)
         }
         let down = phase != .up
-        let mask: UInt32 = phase == .move ? positionBit : (rangeBit | touchBit | (phase == .down ? positionBit : 0))
+        let mask = eventMask(phase, o)
         let now = mach_absolute_time()
         guard let hand = digitizer(kCFAllocatorDefault, now, handType, 0, 0, mask, 0, o.parentXY ? px : 0, o.parentXY ? py : 0, 0, 0, 0,
                                    DarwinBoolean(down), DarwinBoolean(down), 0),
-              let one = fingerEvent(kCFAllocatorDefault, now, o.index, o.identity, mask, px, py, 0, down ? o.pressure : 0, 0,
+              let one = fingerEvent(kCFAllocatorDefault, now, o.index, o.identity, mask, px, py, 0, down ? o.pressure : 0, o.twist,
                                     DarwinBoolean(down), DarwinBoolean(down), 0) else { return }
+        setRadius(one, o)
         if o.builtIn { setInteger?(hand, fieldIsBuiltIn, 1) }
         setInteger?(hand, fieldDisplayIntegrated, 1)
         append(hand, one, 0)
@@ -152,12 +198,13 @@ enum Touch {
         let size = window?.bounds.size ?? UIScreen.main.bounds.size
         let px = o.points ? x * Double(size.width) : x, py = o.points ? y * Double(size.height) : y
         let down = phase != .up
-        let mask: UInt32 = phase == .move ? positionBit : (rangeBit | touchBit | (phase == .down ? positionBit : 0))
+        let mask = eventMask(phase, o)
         let now = mach_absolute_time()
         guard let hand = digitizer(kCFAllocatorDefault, now, handType, 0, 0, mask, 0, 0, 0, 0, 0, 0,
                                    DarwinBoolean(down), DarwinBoolean(down), 0),
-              let one = fingerEvent(kCFAllocatorDefault, now, o.index, o.identity, mask, px, py, 0, down ? o.pressure : 0, 0,
+              let one = fingerEvent(kCFAllocatorDefault, now, o.index, o.identity, mask, px, py, 0, down ? o.pressure : 0, o.twist,
                                     DarwinBoolean(down), DarwinBoolean(down), 0) else { return "{\"error\":\"event not made\"}" }
+        setRadius(one, o)
         setInteger?(hand, fieldDisplayIntegrated, 1)
         append(hand, one, 0)
         // As the system path does: UIKit may drop an event without a sender

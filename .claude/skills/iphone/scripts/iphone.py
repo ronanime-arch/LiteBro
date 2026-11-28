@@ -61,8 +61,10 @@ menu "...", "Access from PC" (files: port 8080 or 8082-8089, screen: port 8081).
     for tap, hold, swipe: --system sends a system-wide finger, --opt key=value passes an option of the
     touch request (recipe, masks, sender, ...), --of WxH says what the pixels are of
 
-  log [--tail 60] [--launch]   LiteBro's own log on the phone
-  install                      TrollStore installs LiteBro's released build (the "ios" release)
+  log [--tail 60] [--launch]   LiteBro's own log on the phone (--launch: the last launch, and the one before
+                               it when that one did not finish)
+  install                      TrollStore installs LiteBro's released build (the "ios" release): the whole-phone
+                               LiteBro.tipa; over the Browser build only with --whole-phone
   install <file.tipa>          put another build into LiteBro's folder on the phone, to open with TrollStore by hand
 
 Exit codes: 0 done, 1 wrong use, 2 the phone does not answer, 3 the phone refused (403),
@@ -1290,7 +1292,9 @@ def remote(name, payload=None, timeout=None):
                                     headers={"Content-Type": "application/json"}, timeout=timeout)
     try:
         answer = json.loads(data.decode("utf-8")) if data else {}
-    except ValueError:
+    except (ValueError, RecursionError):
+        if status == 200:
+            raise Fail(1, "the phone's answer to %s is not JSON this helper can read (%d bytes)" % (name, len(data)))
         answer = {}
     if not isinstance(answer, dict):
         answer = {"result": answer}
@@ -1384,6 +1388,8 @@ def cmd_remote(argv):
     pos, _ = parse(argv)
     if not pos:
         raise Fail(1, "remote <name> [json | key=value ...]")
+    if pos[0] == "shot":
+        raise Fail(1, "shot gives a picture, not JSON: iphone shot --app")
     if len(pos) > 1 and pos[1].lstrip().startswith("{"):
         try:
             payload = json.loads(" ".join(pos[1:]))
@@ -1415,7 +1421,11 @@ def cmd_log(argv):
     if "launch" in opt:
         starts = [i for i, l in enumerate(lines) if l.startswith("===== launch")]
         if starts:
-            lines = lines[starts[-1]:]
+            first = starts[-1]
+            # A launch that says the one before did not finish is shown with it: that one is where it went wrong
+            if len(starts) > 1 and any(l.startswith("!! the last launch did not finish") for l in lines[first:]):
+                first = starts[-2]
+            lines = lines[first:]
         return out("\n".join(lines))
     out("\n".join(lines[max(0, len(lines) - number(opt, "tail", 60, int)):]))
 
@@ -1589,11 +1599,15 @@ def cmd_wait(argv):
         time.sleep(2)
 
 
+def whole_phone(files):
+    """Whether the build on the phone shares all of /var/mobile (LiteBro.tipa) and not LiteBro's folder alone."""
+    names = [e["name"] for e in propfind(files, "")[1] if e["dir"]]
+    return "Media" in names and "Containers" in names
+
+
 def litebro_documents(files):
     """LiteBro's own folder in the Files app of the phone, as a path of the shared root."""
-    _, inside = propfind(files, "")
-    names = [e["name"] for e in inside if e["dir"]]
-    if "Media" not in names or "Containers" not in names:
+    if not whole_phone(files):
         return ""  # the build that shares only that folder: the root is it
     try:
         _, text = read_log(files, 64 * 1024)
@@ -1619,10 +1633,15 @@ def litebro_documents(files):
 
 
 def cmd_install(argv):
-    pos, _ = parse(argv, flags=("latest",))
+    pos, opt = parse(argv, flags=("latest", "whole-phone"))
     if len(pos) > 1:
         raise Fail(1, "install (the released build), or install <file.tipa> (a file for TrollStore, opened by hand)")
     files = need("files")
+    if not pos and "whole-phone" not in opt and not whole_phone(files):
+        raise Fail(1, "this phone has the build that shares only LiteBro's folder (LiteBro-Browser.tipa), and install puts "
+                      "the released LiteBro.tipa over it: the whole-phone build, which is not in Settings and cannot be the "
+                      "default browser. Ask the person first, then add --whole-phone. To stay on the Browser build, pass "
+                      "its file: iphone install LiteBro-Browser.tipa")
     if not pos:
         # The phone installs by itself only LiteBro's own released build, and only this address of it
         status, _, _ = files.request("POST", files.base + "_install", body=json.dumps({"url": OWN_BUILD}).encode("utf-8"),

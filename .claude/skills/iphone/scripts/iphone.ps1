@@ -69,8 +69,10 @@ menu "...", "Access from PC" (files: port 8080 or 8082-8089, screen: port 8081).
     for tap, hold, swipe: --system sends a system-wide finger, --opt key=value passes an option of the
     touch request (recipe, masks, sender, ...), --of WxH says what the pixels are of
 
-  log [--tail 60] [--launch]   LiteBro's own log on the phone
-  install                      TrollStore installs LiteBro's released build (the "ios" release)
+  log [--tail 60] [--launch]   LiteBro's own log on the phone (--launch: the last launch, and the one before
+                               it when that one did not finish)
+  install                      TrollStore installs LiteBro's released build (the "ios" release): the whole-phone
+                               LiteBro.tipa; over the Browser build only with --whole-phone
   install <file.tipa>          put another build into LiteBro's folder on the phone, to open with TrollStore by hand
 
 Exit codes: 0 done, 1 wrong use, 2 the phone does not answer, 3 the phone refused (403),
@@ -148,10 +150,38 @@ function FailText($err) {
     return $e.Message
 }
 
-# Numbers as iphone.py writes them: %.4f and %.1f (a half goes to the even digit), %g
-function F4([double]$v) { return ([Math]::Round([decimal]$v, 4, [System.MidpointRounding]::ToEven)).ToString('F4', $Inv) }
-function F1([double]$v) { return ([Math]::Round([decimal]$v, 1, [System.MidpointRounding]::ToEven)).ToString('F1', $Inv) }
-function G([double]$v) { return $v.ToString($Inv) }
+# A number with $places digits after the point as Python's %.Nf writes it: rounded on the exact binary value,
+# a half to the even digit (.NET Framework rounds its own 15 digits, and a half away from zero)
+function Fixed([double]$v, [int]$places) {
+    if ([double]::IsNaN($v) -or [double]::IsInfinity($v)) { return $v.ToString($Inv) }
+    $bits = [System.BitConverter]::DoubleToInt64Bits($v)
+    $exponent = [int](($bits -shr 52) -band 2047)
+    $mantissa = [bigint]($bits -band 4503599627370495)
+    if ($exponent -eq 0) { $exponent = 1 } else { $mantissa = $mantissa + [bigint]::Pow(2, 52) }
+    $exponent = $exponent - 1075   # the number is mantissa * 2^exponent
+    $q = $mantissa * [bigint]::Pow(10, $places)
+    if ($exponent -ge 0) {
+        $q = $q * [bigint]::Pow(2, $exponent)
+    } else {
+        $d = [bigint]::Pow(2, -$exponent)
+        $r = [bigint]::Zero
+        $q = [bigint]::DivRem($q, $d, [ref]$r)
+        $twice = $r + $r
+        if ($twice -gt $d -or ($twice -eq $d -and -not $q.IsEven)) { $q = $q + [bigint]::One }
+    }
+    $t = $q.ToString()
+    if ($places -gt 0) {
+        $t = $t.PadLeft($places + 1, '0')
+        $t = $t.Substring(0, $t.Length - $places) + '.' + $t.Substring($t.Length - $places)
+    }
+    if ($bits -lt 0) { $t = '-' + $t }
+    return $t
+}
+
+# Numbers as iphone.py writes them: %.4f, %.1f and %g
+function F4([double]$v) { return Fixed $v 4 }
+function F1([double]$v) { return Fixed $v 1 }
+function G([double]$v) { return $v.ToString('G6', $Inv).Replace('E', 'e') }
 
 # --- arguments ---
 
@@ -231,10 +261,31 @@ function Json-Double([double]$v) {
     if ([double]::IsNaN($v)) { return 'NaN' }
     if ([double]::IsPositiveInfinity($v)) { return 'Infinity' }
     if ([double]::IsNegativeInfinity($v)) { return '-Infinity' }
-    $t = $v.ToString('R', $Inv)
-    if ($t.Contains('E')) { return $t.Replace('E', 'e') }
-    if (-not $t.Contains('.')) { return $t + '.0' }
-    return $t
+    if ($v -eq 0) { if ([System.BitConverter]::DoubleToInt64Bits($v) -lt 0) { return '-0.0' } else { return '0.0' } }
+    # The fewest digits that read back as the same number (1 to 17), as Python's repr finds them;
+    # .NET's own "R" gives 17 where 16 would do, and turns to the exponent form one power of ten early
+    $t = ''
+    for ($k = 0; $k -le 16; $k++) {
+        $t = $v.ToString('E' + $k, $Inv)
+        if ([double]::Parse($t, [System.Globalization.NumberStyles]::Float, $Inv) -eq $v) { break }
+    }
+    $at = $t.IndexOf('E')
+    $power = [int]::Parse($t.Substring($at + 1), [System.Globalization.NumberStyles]::Integer, $Inv)
+    $sign = ''
+    $digits = $t.Substring(0, $at).Replace('.', '')
+    if ($digits.StartsWith('-')) { $sign = '-'; $digits = $digits.Substring(1) }
+    $digits = $digits.TrimEnd('0')
+    if ($digits.Length -eq 0) { $digits = '0' }
+    if ($power -lt -4 -or $power -ge 16) {
+        $m = $digits.Substring(0, 1)
+        if ($digits.Length -gt 1) { $m = $m + '.' + $digits.Substring(1) }
+        $e = [Math]::Abs($power).ToString('00', $Inv)
+        if ($power -lt 0) { return $sign + $m + 'e-' + $e }
+        return $sign + $m + 'e+' + $e
+    }
+    if ($power -lt 0) { return $sign + '0.' + ('0' * (-$power - 1)) + $digits }
+    if ($digits.Length -le $power + 1) { return $sign + $digits + ('0' * ($power + 1 - $digits.Length)) + '.0' }
+    return $sign + $digits.Substring(0, $power + 1) + '.' + $digits.Substring($power + 1)
 }
 
 # Any value as JSON text: only ASCII comes out, so no code page can spoil it
@@ -334,15 +385,22 @@ function From-Json([string]$text) {
     if ($null -eq $text -or $text.Trim().Length -eq 0) { return @{ Ok = $false; Value = $null } }
     try {
         if ($PSVersionTable.PSVersion.Major -ge 6) {
-            $doc = [System.Text.Json.JsonDocument]::Parse($text)
+            $deep = New-Object System.Text.Json.JsonDocumentOptions
+            $deep.MaxDepth = 1000   # 64 otherwise
+            $doc = [System.Text.Json.JsonDocument]::Parse($text, $deep)
             try { return @{ Ok = $true; Value = (Json-Element $doc.RootElement) } } finally { $doc.Dispose() }
         }
         if ($null -eq $script:JsonReader) {
             Add-Type -AssemblyName System.Web.Extensions
             $script:JsonReader = New-Object System.Web.Script.Serialization.JavaScriptSerializer
             $script:JsonReader.MaxJsonLength = [int]::MaxValue
+            $script:JsonReader.RecursionLimit = 1000   # 100 otherwise
         }
-        return @{ Ok = $true; Value = (As-Plain ($script:JsonReader.DeserializeObject($text))) }
+        # iOS writes every slash as \/, and this reader turns a text written "\/Date(1700000000000)\/" into a date:
+        # with the slashes as they are it stays the text it is
+        $plain = $text
+        if ($text.Contains('\/Date(')) { $plain = [regex]::Replace($text, '(?<=(?:^|[^\\])(?:\\\\)*)\\/', '/') }
+        return @{ Ok = $true; Value = (As-Plain ($script:JsonReader.DeserializeObject($plain))) }
     } catch {
         return @{ Ok = $false; Value = $null }
     }
@@ -963,7 +1021,8 @@ function Bplist-Object($ctx, [int]$index, [int]$deep) {
     if ($kind -eq 3) {
         $seconds = [System.BitConverter]::ToDouble((Be-Reversed $b ($at + 1) 8), 0)
         $epoch = New-Object System.DateTime(2001, 1, 1, 0, 0, 0, [System.DateTimeKind]::Utc)
-        return $epoch.AddSeconds($seconds).ToString("yyyy-MM-dd'T'HH:mm:ss'Z'", $Inv)
+        # (to the microsecond, as plistlib does: AddSeconds of .NET Framework rounds to the millisecond)
+        return $epoch.AddTicks([long][Math]::Round($seconds * 1000000.0, [System.MidpointRounding]::ToEven) * 10).ToString("yyyy-MM-dd'T'HH:mm:ss'Z'", $Inv)
     }
     if ($kind -eq 8) {
         $o = New-Object System.Collections.Specialized.OrderedDictionary
@@ -1060,6 +1119,7 @@ function Read-Plist($server, [string]$rel) {
         $reader = [System.Xml.XmlReader]::Create($memory, $settings)
         $doc = New-Object System.Xml.XmlDocument
         $doc.XmlResolver = $null
+        $doc.PreserveWhitespace = $true   # a text of spaces alone is a text
         try { $doc.Load($reader) } finally { $reader.Close() }
         if ($doc.DocumentElement.LocalName -cne 'plist') { throw (New-Object System.Exception 'no plist') }
         foreach ($c in $doc.DocumentElement.ChildNodes) {
@@ -1489,7 +1549,7 @@ function Watch-Frame($watch, $picture, [bool]$wasThere) {
     $size = Save-Shot $picture $path
     $mark = ''
     if ($wasThere) { $mark = '  ' + $watch.First }
-    Say (((Now) - $watch.Start).ToString('F2', $Inv).PadLeft(6) + '  ' + $path + '  ' + $size.w + 'x' + $size.h + $mark)
+    Say ((Fixed ((Now) - $watch.Start) 2).PadLeft(6) + '  ' + $path + '  ' + $size.w + 'x' + $size.h + $mark)
     return ([bool]$watch.Until -and -not $wasThere)
 }
 
@@ -2078,6 +2138,8 @@ function Remote-Call([string]$name, $payload, [double]$timeout) {
     $got = From-Json (Text-Of-Bytes $r.Data)
     if ($got.Ok) {
         if (Is-Object $got.Value) { $answer = $got.Value } else { $answer['result'] = $got.Value }
+    } elseif ($r.Status -eq 200 -and $r.Data.Length -gt 0) {
+        Fail 1 ("the phone's answer to " + $name + ' is not JSON this helper can read (' + $r.Data.Length + ' bytes)')
     }
     $status = $r.Status
     if ($status -eq 403) { Fail 3 'the phone refused (403): touch control is not switched on with the screen permission, or the permission ran out' }
@@ -2168,6 +2230,7 @@ function Cmd-Click($argv) {
 function Cmd-Remote($argv) {
     $a = Parse-Args $argv $null $null $null
     if ($a.Pos.Count -eq 0) { Fail 1 'remote <name> [json | key=value ...]' }
+    if ($a.Pos[0] -ceq 'shot') { Fail 1 'shot gives a picture, not JSON: iphone shot --app' }
     $rest = New-Object System.Collections.Generic.List[string]
     for ($i = 1; $i -lt $a.Pos.Count; $i++) { $rest.Add($a.Pos[$i]) }
     $r = Remote-Call $a.Pos[0] (Request-Of $rest '') 0
@@ -2192,7 +2255,16 @@ function Cmd-Log($argv) {
     $lines = Split-Lines ((Read-Log (Need-Server 'files') 262144).Text)
     if ($a.Opt.ContainsKey('launch')) {
         $from = 0
-        for ($i = 0; $i -lt $lines.Count; $i++) { if ($lines[$i].StartsWith('===== launch', [System.StringComparison]::Ordinal)) { $from = $i } }
+        $before = -1
+        for ($i = 0; $i -lt $lines.Count; $i++) {
+            if ($lines[$i].StartsWith('===== launch', [System.StringComparison]::Ordinal)) { $before = $from; $from = $i }
+        }
+        # A launch that says the one before did not finish is shown with it: that one is where it went wrong
+        $unfinished = $false
+        for ($i = $from; $i -lt $lines.Count; $i++) {
+            if ($lines[$i].StartsWith('!! the last launch did not finish', [System.StringComparison]::Ordinal)) { $unfinished = $true }
+        }
+        if ($unfinished -and $before -ge 0 -and $lines[$before].StartsWith('===== launch', [System.StringComparison]::Ordinal)) { $from = $before }
         Say (($lines.GetRange($from, $lines.Count - $from)) -join "`n")
         return
     }
@@ -2394,10 +2466,15 @@ function Cmd-Wait($argv) {
 }
 
 # LiteBro's own folder in the Files app of the phone, as a path of the shared root
-function LiteBro-Documents($files) {
+# Whether the build on the phone shares all of /var/mobile (LiteBro.tipa) and not LiteBro's folder alone
+function Whole-Phone($files) {
     $names = New-Object System.Collections.Generic.List[string]
     foreach ($e in (Propfind $files '' 1).Inside) { if ($e.dir) { $names.Add($e.name) } }
-    if (-not $names.Contains('Media') -or -not $names.Contains('Containers')) { return '' }   # the build that shares only that folder: the root is it
+    return ($names.Contains('Media') -and $names.Contains('Containers'))
+}
+
+function LiteBro-Documents($files) {
+    if (-not (Whole-Phone $files)) { return '' }   # the build that shares only that folder: the root is it
     $text = ''
     try {
         $text = (Read-Log $files 65536).Text
@@ -2423,9 +2500,12 @@ function LiteBro-Documents($files) {
 }
 
 function Cmd-Install($argv) {
-    $a = Parse-Args $argv @('latest') $null $null
+    $a = Parse-Args $argv @('latest', 'whole-phone') $null $null
     if ($a.Pos.Count -gt 1) { Fail 1 'install (the released build), or install <file.tipa> (a file for TrollStore, opened by hand)' }
     $files = Need-Server 'files'
+    if ($a.Pos.Count -eq 0 -and -not $a.Opt.ContainsKey('whole-phone') -and -not (Whole-Phone $files)) {
+        Fail 1 "this phone has the build that shares only LiteBro's folder (LiteBro-Browser.tipa), and install puts the released LiteBro.tipa over it: the whole-phone build, which is not in Settings and cannot be the default browser. Ask the person first, then add --whole-phone. To stay on the Browser build, pass its file: iphone install LiteBro-Browser.tipa"
+    }
     if ($a.Pos.Count -eq 0) {
         # The phone installs by itself only LiteBro's own released build, and only this address of it
         $o = New-Object System.Collections.Specialized.OrderedDictionary

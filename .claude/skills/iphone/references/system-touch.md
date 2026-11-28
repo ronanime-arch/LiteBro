@@ -32,11 +32,11 @@ LiteBro собирает касание так только по ключу за
 | Маска события: начало и конец касания | touch + identity | range + touch (+ position в начале) | touch + identity (`masks=webkit`) |
 | Маска: движение | position + attribute | position | position + attribute |
 | Координаты пальца | доли 0…1 | доли 0…1 | доли 0…1 |
-| Точка в событии «рука» | нет, 0 и 0 | есть | нет (`parentXY=false`) |
+| Точка в событии «рука» (по всей системе; внутри LiteBro она всегда 0 и 0, `parentXY` там не действует) | нет, 0 и 0 | есть | нет (`parentXY=false`) |
 | Палец: `index` и `identity` | 2 и 2 | 1 и 2 | 2 и 2 |
 | Давление, поворот, радиус пятна | 0, 90, 5 | 1, 0, не задан | 0, 90, 5 (`pressure`, `twist`, `radius`) |
 | `BKSHIDEventSetDigitizerInfo` | не вызывается | вызывается | по всей системе не вызывается (`bks=false`); внутри LiteBro вызывается: он несёт окно |
-| Поля «встроенный» и «экран в дисплее» на событии «рука» | ставятся | ставятся | ставятся |
+| Поля «встроенный» и «экран в дисплее» на событии «рука» (внутри LiteBro ставится только «экран в дисплее», `builtIn` там не действует) | ставятся | ставятся | ставятся |
 | Права в подписи сверх наших | `…hid.client.event-filter`, `…event-monitor`, `com.apple.backboard.client`, список `com.apple.security.iokit-user-client-class` | — | добавлены в `ios/TrollStore.entitlements` |
 
 Любой ключ рецепта меняется опцией: `--opt masks=plain`, `--opt sender=0x000000010000027F`, `--opt bks=true`, `--opt index=1` и так далее. `--opt recipe=none` у `--system` — собрать как раньше.

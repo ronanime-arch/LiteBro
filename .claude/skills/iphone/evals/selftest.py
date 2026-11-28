@@ -85,11 +85,11 @@ class T:
             raise Wrong("%s\n%s" % (what, self.last))
 
     @contextlib.contextmanager
-    def phone(self, whole=True, broadcast=True, connect=True, app=False, **kw):
+    def phone(self, whole=True, broadcast=True, connect=True, app=False, scene=None, **kw):
         """A made-up phone, by default with the build that keeps its screen (GET frame); old_build=True: the one before."""
         root = tempfile.mkdtemp(prefix="phone-", dir=self.work)
         if whole:
-            sample_tree(root)
+            sample_tree(root, scene)
         else:
             os.makedirs(os.path.join(root, "Downloads"))
             os.makedirs(os.path.join(root, "Debug"))
@@ -318,6 +318,24 @@ def test_reading(t):
             t.eq(got["long"], "я" * 40, name)
         _, err = t.run("plist", "Media/note.txt", code=1)
         t.has(err, "is not a property list")
+        # The text itself, not only what it means: both helpers write numbers, keys and lines the same way
+        exact = {"third": 1 / 3.0, "sum": 0.1 + 0.2, "e15": 1e15, "e16": 1e16, "small": 1e-05, "tiny": -1.5e-07,
+                 "whole": 2.0, "plain": 123456.789, "zero": 0.0, "int": 7, "list": [0.5, [], {}], "empty": {}}
+        for fmt, name in ((plistlib.FMT_BINARY, "nb.plist"), (plistlib.FMT_XML, "nx.plist")):
+            with open(os.path.join(ph.root, "Media", name), "wb") as f:
+                plistlib.dump(exact, f, fmt=fmt)
+            out, _ = t.run("plist", "Media/" + name)
+            t.eq(out, json.dumps(exact, indent=1, sort_keys=True) + "\n", name + ": the text of the numbers")
+        # A date just under a whole second stays in its second; a text of spaces stays as it is
+        with open(os.path.join(ph.root, "Media", "d.plist"), "wb") as f:
+            plistlib.dump({"when": datetime.datetime(2025, 11, 28, 5, 20, 2, 999600)}, f, fmt=plistlib.FMT_BINARY)
+        out, _ = t.run("plist", "Media/d.plist")
+        t.eq(json.loads(out), {"when": "2025-11-28T05:20:02Z"}, "a date is cut to its second, not rounded")
+        with open(os.path.join(ph.root, "Media", "w.plist"), "wb") as f:
+            f.write(b'<?xml version="1.0" encoding="UTF-8"?>\n<plist version="1.0"><dict><key>space</key><string> </string>'
+                    b'<key>lines</key><string>\n\n</string></dict></plist>')
+        out, _ = t.run("plist", "Media/w.plist")
+        t.eq(json.loads(out), {"space": " ", "lines": "\n\n"}, "a text of spaces alone")
 
         out, _ = t.run("apps")
         t.eq(out.splitlines(), ["com.apple.mobilenotes\tContainers/Data/Application/7A1E55D0-1234-4ABC-9DEF-0123456789AB",
@@ -332,6 +350,14 @@ def test_reading(t):
         t.eq(len(out.splitlines()), 3)
         out, _ = t.run("log", "--launch")
         t.ok(out.startswith("===== launch"), "the last launch from its first line")
+        t.eq(out.count("===== launch"), 1, "one launch")
+    with t.phone(scene="crashed"):
+        # The last launch says the one before it did not finish: that one is shown too, it is where it went wrong
+        out, _ = t.run("log", "--launch")
+        t.eq(out.count("===== launch"), 2, "the launch that died and the one after it")
+        t.has(out, "memory warning, 412 MB")
+        t.has(out, "SAFE MODE")
+        t.lacks(out, "15:40:02")
     with t.phone(whole=False):
         out, _ = t.run("log")
         t.has(out, "build abc1234")
@@ -517,6 +543,8 @@ def test_shot(t):
         _, err = t.run("shot", os.path.join(t.work, "s.jpg"), "--wait", "2", code=5)
         t.has(err, "no picture in 2 s: the broadcast has only begun")
         t.ok(time.time() - started >= 2, "it waited for the first frame")
+        _, err = t.run("shot", "--wait", "0.1234567", code=5)
+        t.has(err, "no picture in 0.123457 s")
         frames.screen_changed(A)  # nobody watches: the phone keeps it all the same
         out, err = t.run("shot", os.path.join(t.work, "s.jpg"))
         t.has(out, "s.jpg 400x800 live")
@@ -658,6 +686,9 @@ def test_touch(t):
         t.eq((e[0]["x"], e[0]["y"]), (0.25, 0.75), "pixels of the last shot")
         t.run("tap", "1", "1")  # the far corner as a fraction
         t.eq(fingers(ph)[0]["x"], 1.0)
+        out, _ = t.run("tap", "0.12345", "0.00015")  # rounded on the number itself, as %.4f does
+        t.has(out, "tap 0.1235 0.0001 sent")
+        fingers(ph)
         _, err = t.run("tap", "left", "0.5", code=1)
         t.has(err, "not a coordinate")
         _, err = t.run("tap", "0.5", "0.5", "--system", "--opt", "index=-1", code=1)
@@ -855,6 +886,18 @@ def test_page(t):
         t.eq(json.loads(out), "The page of example.org")
         out, _ = t.run("js", "document.querySelector('a').click()")
         t.eq(out, "null\n")
+        # What the page gives back comes out as it is: a text that looks like a date, lists of one and of none,
+        # numbers with a fraction
+        out, _ = t.run("js", 'return "/Date(1700000000000)/"')
+        t.eq(out, "/Date(1700000000000)/\n")
+        out, _ = t.run("js", "return [1]")
+        t.eq(out, "[1]\n")
+        out, _ = t.run("js", "return []")
+        t.eq(out, "[]\n")
+        out, _ = t.run("js", 'return {"a": [1, 2.5, "x/y", 1.0], "b": null, "c": {"d": true}}')
+        t.eq(out, '{"a": [1, 2.5, "x/y", 1.0], "b": null, "c": {"d": true}}\n')
+        out, _ = t.run("js", 'return "2026-11-27T10:00:00.000Z"')
+        t.eq(out, "2026-11-27T10:00:00.000Z\n")
         code = 'const s = "кавычки \'и\' такие";\nreturn document.body.innerText'
         out, _ = t.run("js", "--file", t.write("page.js", code))
         t.eq(out.splitlines(), ["The page of example.org", "loaded."])
@@ -885,6 +928,8 @@ def test_page(t):
         t.eq(json.loads(out), {"result": "https://example.com/"})
         _, err = t.run("remote", "dance", code=1)
         t.has(err, "does not know the command dance")
+        _, err = t.run("remote", "shot", code=1)
+        t.has(err, "iphone shot --app")
         _, err = t.run("open", code=1)
     with t.phone(app=True, control=False):
         for args in (("page",), ("open", "example.org"), ("js", "return 1"), ("click", "0.5", "0.5")):
@@ -987,6 +1032,15 @@ def test_install(t):
         t.has(err, "URL Scheme")
         t.eq(ph.take_events(), [])
     with t.phone(whole=False) as ph:
+        # The Browser build: the released build is another kind, so it is not put over it without a word
+        _, err = t.run("install", code=1)
+        t.has(err, "LiteBro-Browser.tipa")
+        t.has(err, "--whole-phone")
+        t.eq(ph.take_events(), [], "the phone was not asked")
+        ph.installs = False
+        out, _ = t.run("install", "--whole-phone")
+        t.has(out, "asked the phone to install")
+        ph.take_events()
         # The build that shares only LiteBro's folder: the file goes to its top
         local = t.write("builds/y.tipa", b"y" * 10)
         out, _ = t.run("install", local)

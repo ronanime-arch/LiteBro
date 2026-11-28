@@ -595,8 +595,9 @@ class FilesHandler(Handler):
                     return self.respond(409)
                 return self.respond(200, [("Content-Type", "image/jpeg"), ("Cache-Control", "no-store")], picture)
             status, answer = self.remote(path[len("/%s/_remote/" % t):], self.json_body(body) or {})
+            # (JSONSerialization of iOS writes every slash as \/)
             return self.respond(status, [("Content-Type", "application/json; charset=utf-8")],
-                                json.dumps(answer, ensure_ascii=False).encode("utf-8"))
+                                json.dumps(answer, ensure_ascii=False).replace("/", "\\/").encode("utf-8"))
         if path == "/%s/_touch" % t:
             drop_upload()
             if not ph.control:
@@ -1037,8 +1038,11 @@ class FakeApp:
                            ("document.body.innerText", self.title() + "\nloaded."), ("navigator.userAgent", "Mozilla/5.0 (iPhone; made up)")):
             if ask in code:
                 return {"result": value}
-        if code.startswith("return ") and code[7:].strip().rstrip(";").isdigit():
-            return {"result": int(code[7:].strip().rstrip(";"))}
+        if code.startswith("return "):
+            try:  # a value written out in the code comes back as it is
+                return {"result": json.loads(code[7:].strip().rstrip(";"))}
+            except ValueError:
+                pass
         return {"result": None}
 
     def changed(self):
